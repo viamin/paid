@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "time"
+require "temporalio/worker/tuner"
 
 module Paid
   # File-based readiness signaling for background worker processes.
@@ -33,6 +34,7 @@ module Paid
   # the bin/ scripts.
   module WorkerReadiness
     DEFAULT_FILE_PREFIX = "paid-worker-ready"
+    ADMISSION_POLL_INTERVAL = 0.05
     # Matches TrustedMeasurements::DeploymentSignal::ENV_KEY: the deploy
     # pipeline's revision identity when present, development HEAD otherwise.
     REVISION_ENV_KEY = "PAID_DEPLOYED_REVISION"
@@ -93,24 +95,21 @@ module Paid
       File.exist?(file_path(env))
     end
 
-    # The updater takes this lock exclusively before stopping workers. Each
-    # activity holds shared ownership for its entire execution, making idle
-    # observation and admission closure one atomic boundary.
+    # The updater takes this lock exclusively before stopping workers. The
+    # Temporal activity slot supplier holds shared ownership before polling and
+    # through task release, making admission closure an atomic boundary.
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
     def admission_lock_path(env = ENV)
       "#{file_path(env)}.admission.lock"
     end
 
+    # Supplies Temporal activity execution slots only after the worker can
+    # acquire its shared admission lock. Temporal reserves a slot before it
+    # polls a task, so an updater's exclusive lock keeps queued work from being
+    # assigned and consuming an activity attempt while a restart is draining.
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    def with_activity(env = ENV)
-      FileUtils.mkdir_p(File.dirname(admission_lock_path(env)))
-      File.open(admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        lock.flock(File::LOCK_SH)
-        activity_started!(env)
-        yield
-      ensure
-        activity_finished!(env)
-      end
+    def activity_slot_supplier(slots:, env: ENV)
+      ActivitySlotSupplier.new(slots:, env:)
     end
 
     # Activity counts are deliberately coarse, process-local readiness metadata:
@@ -172,6 +171,93 @@ module Paid
       File.rename(temporary_path, path)
     ensure
       File.delete(temporary_path) if defined?(temporary_path) && File.exist?(temporary_path)
+    end
+
+    # This is a Temporal custom slot supplier rather than an activity wrapper:
+    # the latter runs only after Temporal has already assigned the task and
+    # starts its heartbeat deadline. A permit owns both a bounded SDK slot and
+    # a shared admission lock until the SDK releases it.
+    class ActivitySlotSupplier < Temporalio::Worker::Tuner::SlotSupplier::Custom
+      Permit = Struct.new(:lock, :used)
+
+      def initialize(slots:, env: ENV)
+        @env = env
+        @available_slots = slots
+        @mutex = Mutex.new
+        @available = ConditionVariable.new
+      end
+
+      def reserve_slot(_context, cancellation)
+        permit = wait_for_permit(cancellation)
+        yield permit if permit
+      end
+
+      def try_reserve_slot(_context)
+        acquire_permit(nonblocking: true)
+      end
+
+      def mark_slot_used(context)
+        return if context.permit.used
+
+        context.permit.used = true
+        WorkerReadiness.activity_started!(@env)
+      end
+
+      def release_slot(context)
+        permit = context.permit
+        WorkerReadiness.activity_finished!(@env) if permit.used
+        permit.lock.close
+        return_slot
+      end
+
+      private
+
+      attr_reader :env
+
+      def wait_for_permit(cancellation)
+        until cancellation.canceled?
+          permit = acquire_permit(nonblocking: true)
+          return permit if permit
+
+          wait_for_slot
+        end
+      end
+
+      def acquire_permit(nonblocking:)
+        return unless claim_slot(nonblocking:)
+
+        lock = File.open(WorkerReadiness.admission_lock_path(env), File::RDWR | File::CREAT, 0o644)
+        return Permit.new(lock, false) if lock.flock(File::LOCK_SH | File::LOCK_NB)
+
+        lock.close
+        return_slot
+        nil
+      rescue SystemCallError
+        lock&.close
+        return_slot
+        nil
+      end
+
+      def claim_slot(nonblocking:)
+        @mutex.synchronize do
+          return false if nonblocking && @available_slots.zero?
+
+          @available.wait(@mutex, ADMISSION_POLL_INTERVAL) while @available_slots.zero?
+          @available_slots -= 1
+          true
+        end
+      end
+
+      def wait_for_slot
+        @mutex.synchronize { @available.wait(@mutex, ADMISSION_POLL_INTERVAL) }
+      end
+
+      def return_slot
+        @mutex.synchronize do
+          @available_slots += 1
+          @available.signal
+        end
+      end
     end
   end
 end

@@ -142,6 +142,18 @@ forced_exit_timeout = graceful_shutdown + forced_exit_buffer
 
 activity_instances = activities.map(&:new)
 
+# Reserve an activity slot before Temporal polls a task. The custom supplier
+# keeps work queued while bin/dev-update owns a worker's admission barrier,
+# avoiding a heartbeat timeout for a task that would otherwise block inside
+# BaseActivity after Temporal had already assigned it.
+def activity_admission_tuner(workflow_slots:, activity_slots:, local_activity_slots:)
+  Temporalio::Worker::Tuner.new(
+    workflow_slot_supplier: Temporalio::Worker::Tuner::SlotSupplier::Fixed.new(workflow_slots),
+    activity_slot_supplier: Paid::WorkerReadiness.activity_slot_supplier(slots: activity_slots),
+    local_activity_slot_supplier: Temporalio::Worker::Tuner::SlotSupplier::Fixed.new(local_activity_slots)
+  )
+end
+
 workers = case worker_mode
 when "poll"
   [
@@ -152,7 +164,7 @@ when "poll"
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: activity_admission_tuner(
         workflow_slots: poll_workflow_slots,
         activity_slots: poll_activity_slots,
         local_activity_slots: poll_local_activity_slots
@@ -171,7 +183,7 @@ when "agent"
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: activity_admission_tuner(
         workflow_slots: agent_workflow_slots,
         activity_slots: agent_activity_slots,
         local_activity_slots: agent_local_activity_slots
@@ -190,7 +202,7 @@ else
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: activity_admission_tuner(
         workflow_slots: poll_workflow_slots,
         activity_slots: poll_activity_slots,
         local_activity_slots: poll_local_activity_slots
@@ -206,7 +218,7 @@ else
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: activity_admission_tuner(
         workflow_slots: agent_workflow_slots,
         activity_slots: agent_activity_slots,
         local_activity_slots: agent_local_activity_slots

@@ -83,24 +83,6 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    it "holds activity admission ownership until the activity finishes" do
-      env = { "WORKER_READINESS_FILE" => file_path }
-      described_class.mark_ready!(env)
-      activity, release = start_owned_activity(env)
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
-      end
-      release << true
-      activity.join
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(0)
-      end
-    ensure
-      release << true if activity&.alive?
-      activity&.join
-    end
-
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
     it "writes JSON with the booted checkout revision" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -162,6 +144,51 @@ RSpec.describe Paid::WorkerReadiness do
     end
   end
 
+  describe ".activity_slot_supplier" do
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "keeps an activity task unadmitted while the updater owns the admission barrier" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      supplier = described_class.activity_slot_supplier(slots: 1, env:)
+
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |barrier|
+        barrier.flock(File::LOCK_EX)
+        expect(supplier.try_reserve_slot(nil)).to be_nil
+
+        barrier.flock(File::LOCK_UN)
+        permit = supplier.try_reserve_slot(nil)
+        expect(permit).to be_present
+
+        supplier.mark_slot_used(slot_context(permit))
+        expect(JSON.parse(File.read(file_path))).to include("active_activities" => 1)
+
+        supplier.release_slot(slot_context(permit))
+        expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
+      end
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "does not hand a task slot to Temporal until a held barrier releases" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      supplier = described_class.activity_slot_supplier(slots: 1, env:)
+      admitted = Queue.new
+
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |barrier|
+        barrier.flock(File::LOCK_EX)
+        reservation = Thread.new do
+          supplier.reserve_slot(nil, cancellation) { |permit| admitted << permit }
+        end
+
+        expect(admitted.empty?).to be(true)
+        barrier.flock(File::LOCK_UN)
+        permit = Timeout.timeout(1) { admitted.pop }
+        supplier.release_slot(slot_context(permit))
+        reservation.join
+      end
+    end
+  end
+
   describe ".mark_not_ready!" do
     it "removes the readiness file" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -210,16 +237,11 @@ RSpec.describe Paid::WorkerReadiness do
     end
   end
 
-  def start_owned_activity(env)
-    entered = Queue.new
-    release = Queue.new
-    activity = Thread.new do
-      described_class.with_activity(env) do
-        entered << true
-        release.pop
-      end
-    end
-    entered.pop
-    [ activity, release ]
+  def cancellation
+    Struct.new(:canceled?).new(false)
+  end
+
+  def slot_context(permit)
+    Temporalio::Worker::Tuner::SlotSupplier::Custom::MarkUsedContext.new(nil, permit)
   end
 end
