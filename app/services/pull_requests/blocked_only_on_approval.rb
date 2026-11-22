@@ -124,6 +124,7 @@ module PullRequests
       Reviews::OwnerApproval.approved_or_self_authored?(project: @project, reviews:, pr_data:)
     end
 
+    # @spec AUTO-MERGE-010
     def build_signals(pr_data:, checks:, reviews:, unresolved_threads:)
       reviews_fresh = fresh_reviews?(pr_data, reviews)
       review_feedback_clear = no_outstanding_review_feedback?(pr_data, reviews, unresolved_threads)
@@ -144,7 +145,10 @@ module PullRequests
         hold_for_review: hold_for_review?(pr_data),
         intent_conformance_ok: IntentConformance::Signal.ok?(
           project: @project, issue: @issue, head_sha: pr_data.head_sha
-        )
+        ),
+        conflict_repair_scope_ok: PullRequests::ConflictRepairScopeGate.call(
+          project: @project, issue: @issue, head_sha: pr_data.head_sha
+        ).allowed?
       )
     end
 
@@ -185,6 +189,7 @@ module PullRequests
     # cannot escalate as if owner approval alone would clear the merge
     # (INTENT-CONFORMANCE-009).
     # @spec PR-ESCALATION-025 @spec INTENT-CONFORMANCE-009 @spec AUTO-MERGE-009
+    # @spec AUTO-MERGE-010
     def blocked_only_on_approval?(signals)
       !signals.owner_approved? &&
         signals.checks_green? &&
@@ -194,6 +199,7 @@ module PullRequests
         signals.reviews_fresh? &&
         signals.dependencies_resolved? &&
         signals.intent_conformance_ok? &&
+        signals.conflict_repair_scope_ok? &&
         !signals.skip_auto_merge? &&
         !signals.hold_for_review?
     end

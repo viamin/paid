@@ -802,6 +802,27 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
 
+      # @spec AUTO-MERGE-010
+      it "reconciles an out-of-band merge despite rejected current-HEAD repair scope evidence" do
+        create(:agent_run, :automatic, :failed,
+          project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+          source_pull_request_number: issue.github_number, result_commit_sha: "abc",
+          external_metadata: {
+            "conflict_repair_scope_assessment" => {
+              "status" => "rejected", "explanation" => "Out of scope",
+              "base_sha" => "pre-repair", "head_sha" => "abc",
+              "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
+            }
+          })
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: true)
+        expect(issue.reload.pr_review_phase).to eq("merged")
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(issue.auto_merge_attempts).to be_empty
+      end
+
       it "clears a prior merge-permission rejection recorded on the issue" do
         issue.update!(merge_permission_rejected_at: 7.hours.ago, merge_permission_rejection_reason: "stale")
 

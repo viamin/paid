@@ -159,6 +159,29 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
       expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(true)
     end
 
+    # @spec AUTO-MERGE-010
+    it "returns false when current-HEAD conflict-repair scope evidence is unavailable" do
+      sha = "abc123"
+      create(:agent_run, :automatic, :failed,
+        project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+        source_pull_request_number: issue.github_number, result_commit_sha: sha,
+        external_metadata: {
+          "conflict_repair_scope_assessment" => {
+            "status" => "unavailable", "explanation" => "Assessment timed out",
+            "base_sha" => "pre-repair", "head_sha" => sha,
+            "base_imported_paths" => [], "repair_authored_paths" => []
+          }
+        })
+      stub_pr_data(green_pr_data(sha: sha))
+      stub_checks(sha, green_checks)
+      stub_reviews(green_reviews)
+      stub_review_threads([])
+      stub_head_commit(sha: sha)
+      stub_issue_comments
+
+      expect(described_class.call(project: project, client: client, issue: issue, logger: logger)).to be(false)
+    end
+
     # @spec INTENT-CONFORMANCE-009
     it "returns false when the current HEAD's intent-conformance signal is blocking" do
       FeatureFlags.enable!(:intent_conformance_enforcement, project: project)

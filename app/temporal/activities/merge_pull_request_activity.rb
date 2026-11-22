@@ -113,7 +113,6 @@ module Activities
       return closeout_refresh if closeout_refresh.is_a?(Hash)
       pr_data = refetch_after_source_closure_update(provider, project, issue, pr_number, pr_data, closeout_refresh)
       return pr_data if pr_data.is_a?(Hash)
-      return conflict_repair_scope_blocked_result(project, issue, pr_number) unless conflict_repair_scope_allowed?(project, issue, pr_data)
 
       merged = if pr_data.merged
         logger.info(
@@ -158,6 +157,8 @@ module Activities
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       else
+        return conflict_repair_scope_blocked_result(project, issue, pr_number) unless conflict_repair_scope_allowed?(project, issue, pr_data)
+
         attempt_merge(provider, project, issue, pr_data)
       end
 
