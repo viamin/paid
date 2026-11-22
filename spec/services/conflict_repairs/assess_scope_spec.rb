@@ -192,7 +192,7 @@ RSpec.describe ConflictRepairs::AssessScope do
   end
 
   it "fails closed when rendered unverified-path evidence exceeds its configured bound" do
-    component = "evidence-component-" + ("x" * 180)
+    component = "evidence-component-" + ("x" * 200)
     paths = Array.new(73) { |index| "app/#{component}-#{index}/repair.rb" }
     result_comparison = comparison(*paths.map { |path| file(path, patch: "+#{"y" * 3_999}") })
     expect(AgentHarness.conductor).not_to receive(:execute_direct)

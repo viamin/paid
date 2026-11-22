@@ -127,7 +127,7 @@ module ConflictRepairs
       @candidate_patch_share = if evidence_fits?(MAX_PATCH_CHARS)
         MAX_PATCH_CHARS
       elsif patch_evidence_required? && evidence_fits?(MIN_PATCH_CHARS)
-        first_unfitting_patch_share - 1
+        largest_fitting_patch_share
       elsif !patch_evidence_required? && evidence_fits?(0)
         0
       end
@@ -141,6 +141,17 @@ module ConflictRepairs
       (MIN_PATCH_CHARS..MAX_PATCH_CHARS).bsearch do |patch_share|
         !evidence_fits?(patch_share)
       end
+    end
+
+    # Patch labels become shorter when an excerpt reaches a patch's end, so the
+    # rendered size is not strictly monotonic at those boundaries. Confirm the
+    # binary-search estimate against the exact rendered evidence and step back
+    # if a label transition selected an oversized entry.
+    def largest_fitting_patch_share
+      patch_share = first_unfitting_patch_share - 1
+      return patch_share if evidence_fits?(patch_share)
+
+      patch_share.downto(MIN_PATCH_CHARS).find { |share| evidence_fits?(share) }
     end
 
     def patch_evidence_required?
