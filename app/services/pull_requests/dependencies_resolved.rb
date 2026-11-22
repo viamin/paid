@@ -9,8 +9,8 @@ module PullRequests
   # on the next dependency-parsing change.
   #
   # Returns false on any transient API failure that prevents verification,
-  # and conservatively when a cross-repo dependency cannot be checked
-  # locally.
+  # and conservatively when a cross-repo dependency is not tracked by the
+  # same account.
   class DependenciesResolved
     def self.call(collector:, project:, issue:, logger: Rails.logger)
       new(collector:, project:, issue:, logger:).call
@@ -23,7 +23,7 @@ module PullRequests
       @logger = logger
     end
 
-    def call # @spec DEPENDENCY-DECLARATIONS-005
+    def call # @spec DEPENDENCY-DECLARATIONS-005, DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
       local_deps, cross_deps = Issues::ParseDependencies.extract(
         body: @issue.body,
         comments: @collector.dependency_comment_bodies(issue: @issue),
@@ -32,14 +32,9 @@ module PullRequests
 
       return true if local_deps.empty? && cross_deps.empty?
 
-      same_repo = [ @project.owner.downcase, @project.repo.downcase ]
-      numbers = cross_deps.each_with_object(Set.new) do |((owner, repo, number), _), set|
-        return false unless [ owner, repo ] == same_repo
+      return false unless cross_deps.all? { |(owner, repo, number), _| cross_dependency_resolved?(owner:, repo:, number:) }
 
-        set << number
-      end
-
-      (local_deps.keys.to_set | numbers).all? { |number| @collector.dependency_resolved?(number:) }
+      local_deps.keys.all? { |number| @collector.dependency_resolved?(number:) }
     rescue GithubClient::Error => e
       @logger.warn(
         message: "pr_review.dependency_check_failed",
@@ -48,6 +43,40 @@ module PullRequests
         error: e.message
       )
       false
+    end
+
+    private
+
+    def cross_dependency_resolved?(owner:, repo:, number:)
+      return @collector.dependency_resolved?(number:) if current_repository?(owner:, repo:)
+
+      target_project = tracked_project(owner:, repo:)
+      return false unless target_project
+
+      collector_for(target_project).dependency_resolved?(number:)
+    end
+
+    def tracked_project(owner:, repo:)
+      return unless @project.respond_to?(:account) && @project.account
+
+      @project.account.projects.find_by(
+        "LOWER(owner) = ? AND LOWER(repo) = ?", owner.downcase, repo.downcase
+      )
+    end
+
+    def current_repository?(owner:, repo:)
+      [ owner.downcase, repo.downcase ] == [ @project.owner.downcase, @project.repo.downcase ]
+    end
+
+    def collector_for(target_project)
+      return @collector if target_project.id == @project.id
+
+      client = target_project.client
+      Automation::Signals::PullRequestCollector.new(
+        providers: Automation::Signals::ProviderContext.for(target_project, client:),
+        client:,
+        logger: @logger
+      )
     end
   end
 end

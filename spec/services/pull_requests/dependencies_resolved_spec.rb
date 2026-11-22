@@ -16,6 +16,20 @@ RSpec.describe PullRequests::DependenciesResolved do
     described_class.call(collector: collector, project: project, issue: issue, logger: logger)
   end
 
+  def tracked_project(owner: "viamin", repo: "agent-harness")
+    create(:project, account: project.account, owner:, repo:)
+  end
+
+  def resolve_external(result:)
+    external_collector = instance_double(Automation::Signals::PullRequestCollector)
+    allow(external_collector).to receive(:dependency_resolved?).with(number: 563).and_return(result)
+    allow(Automation::Signals::ProviderContext).to receive(:for)
+      .and_return(instance_double(Automation::Signals::ProviderContext))
+    allow(Automation::Signals::PullRequestCollector).to receive(:new)
+      .and_return(external_collector)
+    external_collector
+  end
+
   context "when the issue declares no dependencies" do
     let(:body) { "No dependencies here" }
 
@@ -114,12 +128,70 @@ RSpec.describe PullRequests::DependenciesResolved do
   end
 
   context "when a dependency references another repo" do
-    let(:body) { "Depends on other/repo#41" }
+    let(:body) { "Depends on viamin/agent-harness#563" }
 
-    it "returns false conservatively without checking it locally" do
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "accepts a tracked external closed issue through its provider identity" do
+      tracked_project
+      resolve_external(result: true)
+
+      expect(collector).not_to receive(:dependency_resolved?)
+
+      expect(call).to be(true)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "keeps tracked external open issues and closed-unmerged pull requests blocked" do
+      tracked_project
+      external_collector = resolve_external(result: false)
+
+      expect(call).to be(false)
+      expect(call).to be(false)
+      expect(external_collector).to have_received(:dependency_resolved?).with(number: 563).twice
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "matches tracked source identities case-insensitively" do
+      tracked_project(owner: "Viamin", repo: "Agent-Harness")
+      resolve_external(result: true)
+      issue.update!(body: "Depends on VIAMIN/AGENT-HARNESS#563")
+
+      expect(call).to be(true)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "keeps an untracked external source blocked without using the current repository client" do
       expect(collector).not_to receive(:dependency_resolved?)
 
       expect(call).to be(false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "does not trust an identically named project from another account" do
+      create(:project, owner: "viamin", repo: "agent-harness")
+      expect(collector).not_to receive(:dependency_resolved?)
+
+      expect(call).to be(false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "fails closed when the tracked source is inaccessible or transiently unavailable" do
+      tracked_project
+      external_collector = resolve_external(result: false)
+      allow(external_collector).to receive(:dependency_resolved?).with(number: 563)
+        .and_raise(GithubClient::Error, "source unavailable")
+
+      expect(call).to be(false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "re-verifies the tracked external source on every scan" do
+      tracked_project
+      external_collector = resolve_external(result: true)
+
+      expect(call).to be(true)
+      expect(call).to be(true)
+      expect(external_collector).to have_received(:dependency_resolved?).with(number: 563).twice
     end
   end
 
