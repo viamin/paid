@@ -104,6 +104,18 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
   end
 
   # @spec PARTIAL-CLOSEOUT-061
+  it "keeps a legacy exhausted lineage exhausted after its one operator claim" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run.reload)).to be(false)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(40)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
   it "stops automatic recovery when its current authorization, trust, pause, or budget is denied" do
     cases = {
       authorization: [ -> { run.project.update!(auto_pick_enabled: false) }, "automatic_recovery_authorization_withdrawn" ],
@@ -139,6 +151,34 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
     recovery = run.reload.reconciliation.fetch("source_closure_recovery")
     expect(recovery).to include("automatic_recovery_attempt" => 3, "operator_recovery_attempt" => 1,
       "recovery_attempt" => 4, "stop_reason" => "operator_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "keeps operator-first and automatic claims in separate budgets" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload)).to be(true)
+
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("operator_recovery_attempt" => 1, "automatic_recovery_attempt" => 1,
+      "recovery_attempt" => 2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "does not charge an operator claim against the automatic recovery budget" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload)).to be(true)
+
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("automatic_recovery_attempt" => 2, "operator_recovery_attempt" => 1,
+      "recovery_attempt" => 3)
   end
 
   # @spec PARTIAL-CLOSEOUT-060

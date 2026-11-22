@@ -128,6 +128,6 @@ RSpec.describe SourceClosureRecoveryJob do
       id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
     )
     expect(run.reload.reconciliation.dig("source_closure_recovery", "operator_recovery_attempt")).to eq(1)
-    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to be_nil
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(0)
   end
 end

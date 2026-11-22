@@ -55,6 +55,7 @@ module PartialCloseouts
         agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge(
           "claimed_at" => now.iso8601,
           "recovery_attempt" => state.fetch("recovery_attempt", 0).to_i + 1,
+          "automatic_recovery_attempt" => automatic_attempts,
           attempt_key => attempts_for_claim + 1,
           "stop_reason" => nil,
           "next_retry_at" => nil
@@ -108,7 +109,9 @@ module PartialCloseouts
     end
 
     def automatic_attempts
-      [ state.fetch("automatic_recovery_attempt", 0).to_i, state.fetch("recovery_attempt", 0).to_i ].max
+      return state.fetch("automatic_recovery_attempt").to_i if state.key?("automatic_recovery_attempt")
+
+      state.fetch("recovery_attempt", 0).to_i
     end
 
     def next_retry_at

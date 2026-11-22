@@ -306,7 +306,8 @@
   lineage across workflow epochs or process restarts, Paid SHALL admit no more
   than three automatic recovery claims, including the legacy
   `recovery_attempt` claim history recorded before the automatic counter was
-  introduced. It SHALL preserve prior claim history,
+  introduced; once the dedicated automatic counter is present, operator claims
+  SHALL NOT consume automatic capacity. It SHALL preserve prior claim history,
   failure category, branch, and commit, retain a visible
   `automatic_recovery_budget_exhausted` stop, and schedule no successor after
   exhaustion. Assessment request provenance and actual request count SHALL be
