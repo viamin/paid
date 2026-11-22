@@ -86,3 +86,15 @@
   prompt, response, credential, URL, HTTP body, or unbounded error text.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
+- [x] **LLM-ROUTING-013** — An isolated text request SHALL carry one finite
+  monotonic deadline from `Llm::Request` into each candidate executor. Candidate
+  setup, credential materialization or refresh, command execution, output
+  handling, and cleanup SHALL consume that candidate's allocation within the
+  shared request deadline. The executor SHALL reserve a bounded cleanup margin
+  before beginning command execution; setup that consumes the executable budget
+  SHALL not receive a new command allocation, and an exhausted shared deadline
+  SHALL not start a fallback. Physical cleanup remains best-effort and a
+  committed native credential harvest SHALL not be asynchronously interrupted.
+  *Tests:* `spec/services/llm/request_spec.rb`,
+  `spec/services/containers/standalone_text_executor_spec.rb`.

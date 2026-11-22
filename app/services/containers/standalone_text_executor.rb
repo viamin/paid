@@ -106,7 +106,7 @@ module Containers
       @clock = clock
     end
 
-    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-013
       validate_input_size!(command, env, preparation, stdin_data)
       raise AgentHarness::TimeoutError, "Isolated text request timed out" if deadline_expired?
 
@@ -190,7 +190,7 @@ module Containers
       wrapped.merge(
         "PAID_CREDENTIAL_URL" => "#{Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: false)}/api/proxy/standalone-text-credential",
         "PAID_CREDENTIAL_IDENTITY" => StandaloneTextCredential.issue(account: account, runner: runner,
-          expires_in: @timeout + CLEANUP_MARGIN, env_keys: credential_keys)
+          expires_in: credential_expires_in, env_keys: credential_keys)
       )
     end
 
@@ -333,7 +333,13 @@ module Containers
 
     def bounded_timeout(value)
       timeout = [ (value || @timeout).to_f, @timeout ].min
-      @deadline ? [ timeout, @deadline - monotonic_now ].min : timeout
+      @deadline ? [ timeout, @deadline - monotonic_now - CLEANUP_MARGIN ].min : timeout
+    end
+
+    def credential_expires_in
+      return @timeout + CLEANUP_MARGIN unless @deadline
+
+      [ @deadline - monotonic_now, CLEANUP_MARGIN ].max
     end
 
     def deadline_expired?

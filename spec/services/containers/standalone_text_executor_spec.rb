@@ -93,6 +93,24 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(backend).not_to have_received(:exec_in_container_with_stdin)
   end
 
+  # @spec LLM-ROUTING-013
+  it "reserves bounded cleanup time after slow setup before execution" do
+    clock_values = [ 100.0, 154.0, 154.0 ]
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 160.0,
+      clock: ->(_) { clock_values.shift || 154.0 })
+    issued = nil
+    allow(Containers::StandaloneTextCredential).to receive(:issue) do |**options|
+      issued = options
+      "scoped-identity"
+    end
+
+    executor.execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
+      hash_including(wait: 1.0))
+    expect(issued.fetch(:expires_in)).to eq(6.0)
+  end
+
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "keeps API credentials out of the Docker exec environment" do
     captured_payload

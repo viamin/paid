@@ -106,6 +106,15 @@ cancellation, timeout, and worker interruption all remove the disposable
 container. Failed provisioning is terminal for that candidate and never falls
 back to host execution. Timing out an assessment must not stop a live run's
 container or make all retries fail.
+Each route candidate receives an absolute monotonic deadline derived from the
+single request deadline and its allocated slice. Provisioning, credential
+materialization and refresh, command execution, and output handling consume
+that same slice; an executor retains the short cleanup margin before it starts
+a command. Thus slow setup cannot obtain a fresh command timeout and a spent
+request deadline cannot start another fallback. Cleanup remains deterministic:
+the executor removes its container even after its executable time is spent,
+while a native credential harvest that has begun is allowed to complete its
+canonical leased persistence rather than being asynchronously interrupted.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
@@ -137,4 +146,5 @@ credential mode, provenance, retries, and disposable-container cleanup.
 | --- | --- | --- |
 | Reuse existing runner preferences | Keeps credentials, model policy and provider selection together | Separate provider preference per helper fragments configuration |
 | Validate JSON locally | Subscription runners can perform text assessments | Requiring schema APIs excludes otherwise capable runners |
+| Reserve cleanup from candidate deadline | Prevents setup from receiving a second full execution allocation while retaining deterministic container removal | Give cleanup unbounded time after execution |
 | Explicit failure without ownership | Prevents billing another tenant or silently using host credentials | Global vendor fallback hides incomplete configuration |
