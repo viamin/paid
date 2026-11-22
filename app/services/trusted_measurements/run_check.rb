@@ -82,10 +82,14 @@ module TrustedMeasurements
       @source_issue ||= project.issues.find_by(github_number: external_issue_number)
     end
 
-    def record_unknown!(attempt, reason, result: {})
+    def persist_unknown!(attempt, reason, result: {})
       attempt.update!(status: "unknown", result:, failure_reason: reason, executed_at: Time.current,
         consecutive_failure_count: 0)
       attempt
+    end
+
+    def record_unknown!(attempt, reason, result: {})
+      persist_unknown!(attempt, reason, result:)
     ensure
       Escalate.call(attempt: attempt) if attempt&.persisted?
     end
@@ -97,7 +101,9 @@ module TrustedMeasurements
     # revision (@spec TRUSTED-MEASUREMENTS-004).
     def execute!(attempt, check_class)
       outcome = check_class.call(project: project)
-      return record_unknown!(attempt, outcome.failure_reason, result: outcome.to_h.stringify_keys) if outcome.respond_to?(:unknown?) && outcome.unknown?
+      if outcome.respond_to?(:unknown?) && outcome.unknown?
+        return persist_unknown!(attempt, outcome.failure_reason, result: outcome.to_h.stringify_keys)
+      end
 
       attempt.update!(
         status: "succeeded",

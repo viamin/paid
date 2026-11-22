@@ -138,6 +138,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
       workers: { "poll" => { "status" => "missing" } }, failure_reason: "missing_poll_readiness"
     )
     allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(worker_result)
+    expect(TrustedMeasurements::Escalate).to receive(:call).once.and_call_original
 
     attempt = call(key: "worker_adoption")
 
