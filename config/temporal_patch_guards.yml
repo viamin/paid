@@ -21,6 +21,10 @@ workflows:
       introduced_on: "2026-11-21"
     failure-bookkeeping-control-v1:
       introduced_on: "2026-11-21"
+    source-closure-recovery-control-routing-v1:
+      introduced_on: "2026-11-21"
+    enqueue-janitor-control-routing-v1:
+      introduced_on: "2026-11-21"
     source-closure-timeout-cause-v1:
       introduced_on: "2026-11-16"
     agent-execution-provision-browser-container-v1:
@@ -50,6 +54,8 @@ workflows:
     agent-execution-maintenance-tool-evidence-v1:
       introduced_on: "2026-11-19"
   Workflows::SourceClosureRecoveryWorkflow:
+    source-closure-recovery-control-routing-v1:
+      introduced_on: "2026-11-21"
     source-closure-timeout-cause-v1:
       introduced_on: "2026-11-16"
     source-closure-recovery-post-pr-v1:

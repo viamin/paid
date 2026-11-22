@@ -175,6 +175,29 @@
   `spec/temporal/workflow_replay_fixtures_spec.rb`.
   *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-017** — When a post-push source-closure
+  assessment needs to publish waiting recovery state, both the original agent
+  workflow and the narrow recovery workflow SHALL schedule only the existing
+  `ParkSourceClosureRecovery` activity through existing poll/control capacity,
+  retaining its 30-second execution bound, existing retry semantics and a
+  120-second total scheduling/recovery bound. The long assessment and agent
+  activities SHALL retain their original queue, and a per-workflow Temporal
+  patch SHALL preserve legacy commands and options for replay. Bounded
+  publication failure SHALL remain an actionable failure without creating a
+  PR, marking completion, bypassing assessment, changing authority/retry
+  allowances, or overwriting a late terminal state. The detached short
+  `EnqueueJanitor` scheduling operation SHALL use the same existing control
+  capacity and a finite 120-second total bound for new histories, while
+  expensive cleanup remains on its original route and a failed enqueue does
+  not claim cleanup completed (#5268).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#park_source_closure_recovery`,
+  `Workflows::SourceClosureRecoveryWorkflow#park_source_closure_recovery`,
+  `Workflows::AgentExecutionWorkflow#execute`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.
