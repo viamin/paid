@@ -19,6 +19,13 @@ class TestAgentControllerNodeHarness
       const message = controller.troubleshootingFor("authentication");
       controller.buttonTarget = { disabled: false, textContent: "" };
       controller.resultTarget = { innerHTML: "" };
+      global.document = {
+        createElement: () => {
+          const node = { innerHTML: "" };
+          Object.defineProperty(node, "textContent", { set: (value) => { node.innerHTML = value; } });
+          return node;
+        }
+      };
 
       if (message.includes("on this page")) {
         throw new Error(`Expected authentication troubleshooting to avoid page-local setup guidance, got: ${message}`);
@@ -40,6 +47,21 @@ class TestAgentControllerNodeHarness
       controller.showLoading();
       if (!controller.resultTarget.innerHTML.includes("Testing runner...")) {
         throw new Error(`Expected showLoading() to render Testing runner..., got: ${controller.resultTarget.innerHTML}`);
+      }
+
+      controller.showSuccess("Agent is healthy", {
+        execution_source: "host_harness",
+        authentication_source: "unconfirmed",
+        standalone_audit_readiness: "unsupported_refresh"
+      });
+      if (!controller.resultTarget.innerHTML.includes("Host health check")) {
+        throw new Error(`Expected success state to disclose the test source, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (!controller.resultTarget.innerHTML.includes("Standalone acceptance audits need reconnection")) {
+        throw new Error(`Expected success state to distinguish standalone readiness, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (controller.resultTarget.innerHTML.includes("token")) {
+        throw new Error(`Expected secret-free readiness copy, got: ${controller.resultTarget.innerHTML}`);
       }
     }
 

@@ -72,7 +72,7 @@ export default class extends Controller {
       if (!this.element.isConnected) return
 
       if (data.success) {
-        this.showSuccess(data.message)
+        this.showSuccess(data.message, data)
       } else {
         this.showError(data.error_type, data.message)
       }
@@ -96,7 +96,7 @@ export default class extends Controller {
     `
   }
 
-  showSuccess(message) {
+  showSuccess(message, context = {}) {
     this.resetButton()
     this.showAvailableStatus()
     this.resultTarget.innerHTML = `
@@ -105,8 +105,34 @@ export default class extends Controller {
           <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
         </svg>
         ${this.escapeHtml(message)}
+        ${this.authenticationContext(context)}
       </span>
     `
+  }
+
+  authenticationContext({ execution_source, authentication_source, standalone_audit_readiness }) {
+    const source = {
+      host_harness: "Host health check",
+      container_smoke_test: "Container smoke test",
+      unknown: "Test source unconfirmed"
+    }[execution_source] || "Test source unconfirmed"
+    const auth = {
+      managed: "managed credential",
+      host_forwarded: "host-forwarded authentication",
+      api_key_proxy: "Paid API-key proxy",
+      unconfirmed: "authentication source unconfirmed"
+    }[authentication_source] || "authentication source unconfirmed"
+    const readiness = {
+      fresh: "Standalone acceptance audits can use the managed credential.",
+      refreshable: "Standalone acceptance audits can attempt managed credential refresh.",
+      not_applicable: "Standalone acceptance readiness is not applicable to this runner.",
+      missing: "Standalone acceptance audits need a managed credential.",
+      revoked: "Standalone acceptance audits need reconnection.",
+      unsupported_refresh: "Standalone acceptance audits need reconnection.",
+      missing_refresh_material: "Standalone acceptance audits need reconnection."
+    }[standalone_audit_readiness] || "Standalone acceptance readiness is unconfirmed."
+
+    return `<span class="block mt-1 font-normal text-green-700">${this.escapeHtml(`${source}; ${auth}. ${readiness}`)}</span>`
   }
 
   showError(errorType, message) {

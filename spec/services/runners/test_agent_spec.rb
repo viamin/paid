@@ -121,6 +121,58 @@ RSpec.describe Runners::TestAgent do
   end
 
   describe ".call" do
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+    context "when a Codex host health check succeeds but its canonical managed credential is expired" do
+      let(:codex_runner) { create(:runner, user: user, runner_key: "codex", auth_type: "subscription") }
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "codex")
+        allow(Runners::ManagedCredentialLifecycle).to receive(:standalone_readiness)
+          .with(account: account, runner_key: "codex").and_return(:unsupported_refresh)
+      end
+
+      it "does not treat an unconfirmed host success as standalone-audit readiness" do
+        service = described_class.new(runner: codex_runner)
+        result = service.send(:process_harness_result,
+          { name: :codex, status: "ok", message: "OK" },
+          execution_source: :host_harness, authentication_source: :unconfirmed)
+        result = service.send(:annotate_authentication_context, result)
+
+        expect(result).to be_success
+        expect(result.execution_source).to eq(:host_harness)
+        expect(result.authentication_source).to eq(:unconfirmed)
+        expect(result.standalone_audit_readiness).to eq(:unsupported_refresh)
+      end
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+    context "when a container smoke test materializes managed Codex auth" do
+      let(:codex_runner) { create(:runner, user: user, runner_key: "codex", auth_type: "subscription") }
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "codex")
+        stub_container_smoke_test(name: :codex, status: "ok", message: "OK")
+        allow(Runners::ManagedCredentialLifecycle).to receive(:standalone_readiness)
+          .with(account: account, runner_key: "codex").and_return(:refreshable)
+      end
+
+      it "reports only the observed container source and independent refreshable readiness" do
+        allow(RunnerAuthAttempt).to receive(:where).with(
+          agent_run: test_run,
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION
+        )
+          .and_return(double(recent: double(pick: "managed")))
+
+        result = described_class.call(runner: codex_runner)
+
+        expect(result.execution_source).to eq(:container_smoke_test)
+        expect(result.authentication_source).to eq(:managed)
+        expect(result.standalone_audit_readiness).to eq(:refreshable)
+      end
+    end
+
     context "when claude smoke test succeeds via container" do
       let(:runner_record) { user.runners.find_or_create_by!(runner_key: "claude").tap { |p| p.update!(enabled_for_agent_runs: true, enabled_for_fallback: false) } }
 

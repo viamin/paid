@@ -273,7 +273,7 @@ module Providers
       AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
     end
 
-    def process_harness_result(result)
+    def process_harness_result(result, **)
       status = result[:status].to_s
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
