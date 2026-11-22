@@ -69,7 +69,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     it "publishes a coarse active activity count without exposing activity data" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -83,7 +83,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     it "observes activity ownership without claiming to control SDK admission" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -114,7 +114,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["revision"]).to eq("deployed-sha")
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     it "retains the boot revision while activity ownership changes" do
       env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "booted-sha" }
       described_class.mark_ready!(env)

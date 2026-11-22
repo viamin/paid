@@ -41,7 +41,7 @@ RSpec.describe Activities::BaseActivity do
       expect(connection_pool).to have_received(:release_connection)
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     it "publishes activity ownership as observation rather than admission control" do
       allow(Paid::WorkerReadiness).to receive(:with_activity_observation).and_yield
 

@@ -47,7 +47,7 @@ module Activities
         TenantContext.with_system_access(&block)
       end
 
-      # @spec TEMPORAL-ORCHESTRATION-017
+      # @spec TEMPORAL-ORCHESTRATION-018
       def with_worker_activity_readiness
         Paid::WorkerReadiness.with_activity_observation { yield }
       end

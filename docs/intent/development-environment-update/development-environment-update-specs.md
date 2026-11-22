@@ -48,5 +48,7 @@
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
 
 - [D] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Task-safe Temporal worker
-  quiescence is deferred to `TEMPORAL-ORCHESTRATION-017`. Activity-body counts
-  remain observability only and SHALL NOT be used to authorize a worker stop.
+  quiescence is deferred to `TEMPORAL-ORCHESTRATION-018`. Activity-body counts
+  remain observability only and SHALL NOT be used to authorize a worker stop,
+  and missing readiness metadata SHALL NOT be treated as a verified
+  no-Temporal-worker state.

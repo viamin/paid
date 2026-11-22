@@ -106,12 +106,12 @@ module Paid
     # Activity counts are deliberately coarse, process-local readiness metadata:
     # the updater needs only to know whether stopping this worker would interrupt
     # an owner. It never contains activity inputs or customer data.
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     def activity_started!(env = ENV)
       update_activity_count!(env, 1)
     end
 
-    # @spec TEMPORAL-ORCHESTRATION-017
+    # @spec TEMPORAL-ORCHESTRATION-018
     def activity_finished!(env = ENV)
       update_activity_count!(env, -1)
     end

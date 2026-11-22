@@ -22,7 +22,9 @@ suppliers, but neither is a task-safe pause-and-drain lifecycle operation.
 - **Major — recoverability:** timeout, abort, or unknown state must leave a
   resumable admission state without cancelling existing owners.
 - **Major — rollout coverage:** the contract must apply independently to poll
-  and agent workers, including replacement and legacy-worker detection.
+  and agent workers, including replacement and legacy-worker detection; until
+  it ships, missing readiness metadata defers like a ready worker unless the
+  supervisor state itself verifies that no Temporal worker will be stopped.
 
 ## Options in the Domain
 
@@ -81,8 +83,13 @@ grace period to finish work.
 ## Selection
 
 Paid defers updates before stopping ready legacy workers and requires the
-released SDK quiescence lifecycle before enabling admission closure. This
-protects finite-attempt tasks over updater availability: a deferred update is
+released SDK quiescence lifecycle before enabling admission closure. Missing
+readiness metadata is treated the same way: a worker that failed before
+`mark_ready!` (or whose flag was removed) can still own or have reserved work,
+so the updater defers unless the supervisor state itself verifies that no
+Temporal worker will be stopped — no Overmind process is running, or a running
+Overmind reports no `worker_poll`/`worker_agent` processes. This protects
+finite-attempt tasks over updater availability: a deferred update is
 actionable and recoverable, while an assign-then-block race can irreversibly
 consume work. The consuming change must pin the first containing SDK release
 through `docs/intent/toolchain-pin-management/`, add real SDK/server controls

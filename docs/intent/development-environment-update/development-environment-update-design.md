@@ -97,7 +97,15 @@ any ready Temporal worker and reports the missing capability. It does not infer
 safety from `active_activities`, block an SDK notification callback, cancel an
 owner, reset an attempt, enlarge a deadline, or alter control queue routing.
 
-`TEMPORAL-ORCHESTRATION-017` owns the required SDK contract and rollout. Once a
+Missing readiness metadata is not itself evidence that no worker is running: a
+worker can fail before it marks ready, or its flag can be removed, while the
+supervisor keeps the process. The deferral therefore also applies when metadata
+is missing and a running Overmind still reports Temporal worker processes; the
+update proceeds without quiescence only when the supervisor state verifies no
+Temporal worker will be stopped (no Overmind process, or a running Overmind
+reporting no `worker_poll`/`worker_agent` processes).
+
+`TEMPORAL-ORCHESTRATION-018` owns the required SDK contract and rollout. Once a
 released SDK implements that contract, the updater may use its acknowledged
 quiescence result for both poll and agent roles, retain it through the stop
 boundary, and resume normal update adoption on a timeout or abort. Until then,
@@ -114,7 +122,7 @@ is safe to stop.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
-| Temporal worker quiescence | Defer before stop when a legacy worker is ready; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking | A body count cannot include a task returned by an already-reserved long poll. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-017`. |
+| Temporal worker quiescence | Defer before stop when a Temporal worker is ready or a running Overmind reports one without readiness metadata; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, and missing metadata cannot prove no worker owns work. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-018`. |
 
 ## References
 

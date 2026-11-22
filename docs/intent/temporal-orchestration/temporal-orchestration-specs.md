@@ -39,7 +39,7 @@
   *Tests:* `spec/lib/paid/temporal_worker_config_spec.rb`.
   *Code:* `Paid::TemporalWorkerConfig`.
 
-- [ ] **TEMPORAL-ORCHESTRATION-017** — Before an updater stops a ready Temporal
+- [ ] **TEMPORAL-ORCHESTRATION-018** — Before an updater stops a ready Temporal
   worker, it SHALL obtain a public-SDK quiescence acknowledgement that closes
   new poll and eager task admission, includes every outstanding unused poll or
   eager reservation, and identifies each admitted task as either safely queued
@@ -49,9 +49,15 @@
   state, abort, replacement, or a worker that lacks the capability, the updater
   SHALL defer adoption before stop and leave admission recoverable; it SHALL
   NOT infer safety from an activity-body count, force-cancel an owner, change
-  queues, retries, deadlines, concurrency, or budgets. The released capability
-  SHALL cover both poll and agent roles and every enabled eager path.
-  *Current code:* `bin/dev-update` defers safely for ready legacy workers.
+  queues, retries, deadlines, concurrency, or budgets. Missing worker readiness
+  metadata SHALL NOT be treated as evidence that no Temporal worker is running:
+  the updater SHALL defer unless the supervisor state itself verifies that no
+  Temporal worker will be stopped (no Overmind process, or a running Overmind
+  reporting no Temporal worker processes). The released capability SHALL cover
+  both poll and agent roles and every enabled eager path (#5326).
+  *Current code:* `bin/dev-update` defers safely for ready legacy workers and
+  for a running Overmind that still reports Temporal workers whose readiness
+  metadata is missing.
   *Required dependency and rollout:*
   `decisions/task-safe-worker-quiescence.md`.
   *Focused test:* `spec/lib/dev_update_spec.rb`.
