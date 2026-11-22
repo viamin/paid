@@ -55,16 +55,44 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   describe "backing-storage evidence" do
     # @spec CONTAINER-RUNTIME-050
     it "measures only an explicitly configured backing-store probe" do
-      allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return("/docker-backing-store-probe")
-      allow(File).to receive(:directory?).with("/docker-backing-store-probe").and_return(true)
-      allow(Open3).to receive(:capture3).with("df", "-Pk", "--", "/docker-backing-store-probe")
-        .and_return([ "Filesystem 1024-blocks Used Available Capacity Mounted on\nprobe 100 90 10 90% /docker-backing-store-probe\n", "", instance_double(Process::Status, success?: true) ])
+      Dir.mktmpdir do |probe_path|
+        now = Time.zone.parse("2026-11-21 18:28:00 UTC")
+        original_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
 
-      expect(backend.backing_storage_observation(now: Time.zone.parse("2026-11-21 18:28:00 UTC"))).to eq(
-        scope: "configured_docker_backing_store_probe",
-        available_bytes: 10_240,
-        observed_at: Time.zone.parse("2026-11-21 18:28:00 UTC")
-      )
+        expect(backend.backing_storage_observation(now:)).to include(
+          scope: "configured_docker_backing_store_probe",
+          available_bytes: be_a(Integer),
+          observed_at: now
+        )
+      ensure
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_path
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "terminates and reaps a hanging df probe within its deadline" do
+      Dir.mktmpdir do |directory|
+        probe_path = File.join(directory, "probe")
+        command_path = File.join(directory, "df")
+        Dir.mkdir(probe_path)
+        File.write(command_path, "#!/bin/sh\nwhile :; do :; done\n")
+        File.chmod(0o755, command_path)
+        original_path = ENV.fetch("PATH")
+        original_probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+        ENV["PATH"] = directory
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        observation = backend.backing_storage_observation
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+        expect(observation).to eq(reason: "backing_storage_probe_unavailable")
+        expect(elapsed).to be < described_class::BACKING_STORE_PROBE_TIMEOUT + 1.second
+      ensure
+        ENV["PATH"] = original_path
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
+      end
     end
 
     # @spec CONTAINER-RUNTIME-050
@@ -72,7 +100,6 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return(nil)
 
       expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unconfigured")
-      expect(Open3).not_to receive(:capture3)
     end
   end
 

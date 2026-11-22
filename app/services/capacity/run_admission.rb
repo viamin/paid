@@ -322,7 +322,7 @@ module Capacity
 
     def backing_storage_denial
       return unless backing_storage_snapshot[:backing_storage_available]
-      return unless backing_storage_snapshot[:backing_storage_available_bytes].to_i <= BACKING_STORAGE_RESERVE_BYTES
+      return unless backing_storage_snapshot[:backing_storage_available_bytes] <= BACKING_STORAGE_RESERVE_BYTES
 
       [ "backing_storage_reserve_exhausted", now + BACKING_STORAGE_RECHECK_AFTER ]
     end
@@ -341,22 +341,43 @@ module Capacity
     end
 
     def backing_storage_snapshot
-      @backing_storage_snapshot ||= docker_snapshot || direct_backing_storage_snapshot
+      @backing_storage_snapshot ||= normalize_backing_storage_snapshot(docker_snapshot || direct_backing_storage_snapshot)
     end
 
     def direct_backing_storage_snapshot
       observation = selected_backend.backing_storage_observation(now: now).symbolize_keys
-      return { backing_storage_available: false, backing_storage_reason: observation[:reason].presence || "backing_storage_unavailable" } unless observation[:scope].present? && observation[:available_bytes].to_i >= 0 && observation[:observed_at].present?
+      return { backing_storage_available: false, backing_storage_reason: observation[:reason].presence || "backing_storage_unavailable" } unless observation[:scope].present? && observation[:observed_at].present?
+      return { backing_storage_available: false, backing_storage_reason: "backing_storage_measurement_invalid" } unless DockerSnapshot.valid_backing_storage_available_bytes?(observation[:available_bytes])
 
+      fresh = fresh_backing_storage_snapshot?(observation)
       {
-        backing_storage_available: observation[:observed_at] >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER,
+        backing_storage_available: fresh,
         backing_storage_scope: observation[:scope],
         backing_storage_available_bytes: observation[:available_bytes],
         backing_storage_observed_at: observation[:observed_at],
-        backing_storage_reason: observation[:observed_at] >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER ? nil : "backing_storage_stale"
+        backing_storage_reason: fresh ? nil : "backing_storage_stale"
       }
     rescue Containers::Backends::Resolver::UnknownBackendError, SystemCallError, IOError
       { backing_storage_available: false, backing_storage_reason: "backing_storage_unavailable" }
+    end
+
+    def normalize_backing_storage_snapshot(snapshot)
+      return snapshot unless snapshot[:backing_storage_available]
+      return unavailable_backing_storage_snapshot(snapshot, "backing_storage_measurement_invalid") unless DockerSnapshot.valid_backing_storage_available_bytes?(snapshot[:backing_storage_available_bytes])
+      return unavailable_backing_storage_snapshot(snapshot, "backing_storage_stale") unless fresh_backing_storage_snapshot?(snapshot)
+
+      snapshot
+    end
+
+    def fresh_backing_storage_snapshot?(snapshot)
+      observed_at = snapshot[:backing_storage_observed_at]
+      observed_at.present? && observed_at >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER
+    rescue ArgumentError, TypeError
+      false
+    end
+
+    def unavailable_backing_storage_snapshot(snapshot, reason)
+      snapshot.merge(backing_storage_available: false, backing_storage_reason: snapshot[:backing_storage_reason].presence || reason)
     end
 
     def execution_resource_denial

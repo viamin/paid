@@ -156,14 +156,21 @@ module Capacity
       end
 
       def backing_storage_available?(now: Time.current)
-        backing_storage_scope.present? && backing_storage_available_bytes.to_i >= 0 &&
-          backing_storage_observed_at.present? && backing_storage_observed_at >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER
+        backing_storage_scope.present? && DockerSnapshot.valid_backing_storage_available_bytes?(backing_storage_available_bytes) &&
+          backing_storage_fresh?(now: now)
       end
 
       def backing_storage_reason_for(now: Time.current)
         return backing_storage_reason if backing_storage_reason.present?
+        return "backing_storage_measurement_invalid" unless DockerSnapshot.valid_backing_storage_available_bytes?(backing_storage_available_bytes)
 
         "backing_storage_stale" unless backing_storage_available?(now: now)
+      end
+
+      def backing_storage_fresh?(now: Time.current)
+        backing_storage_observed_at.present? && backing_storage_observed_at >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER
+      rescue ArgumentError, TypeError
+        false
       end
     end
 
@@ -265,6 +272,10 @@ module Capacity
       default
     end
 
+    def self.valid_backing_storage_available_bytes?(value)
+      value.is_a?(Integer) && value >= 0
+    end
+
     def initialize(backend: Containers.backend, now: Time.current, cache: Rails.cache, force_refresh: false)
       @backend = backend
       @now = now
@@ -280,9 +291,9 @@ module Capacity
       snapshot = collect_snapshot
       write_snapshot(snapshot)
       snapshot
-    rescue Timeout::Error, Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error => e
+    rescue Timeout::Error, Docker::Error::DockerError, Excon::Error => e
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
-    rescue => e
+    rescue StandardError => e
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
     end
 
@@ -427,10 +438,12 @@ module Capacity
 
     def backing_storage_observation
       observation = backend.backing_storage_observation(now: now).symbolize_keys
-      return { reason: observation[:reason].presence || "backing_storage_unavailable" } unless observation[:scope].present? && observation[:available_bytes].to_i >= 0 && observation[:observed_at].present?
+      return { reason: observation[:reason] } if observation[:reason].present?
+      return { reason: "backing_storage_unavailable" } unless observation[:scope].present? && observation[:observed_at].present?
+      return { reason: "backing_storage_measurement_invalid" } unless self.class.valid_backing_storage_available_bytes?(observation[:available_bytes])
 
       observation.slice(:scope, :available_bytes, :observed_at)
-    rescue SystemCallError, IOError, Timeout::Error, Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error
+    rescue SystemCallError, IOError, Timeout::Error, Docker::Error::DockerError, Excon::Error
       { reason: "backing_storage_unavailable" }
     end
 
@@ -441,7 +454,7 @@ module Capacity
       return { changed: true, current_container_count: current_containers.size } if (current_ids - original_ids).any?
 
       { changed: false }
-    rescue Timeout::Error, Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error => error
+    rescue Timeout::Error, Docker::Error::DockerError, Excon::Error => error
       {
         changed: true,
         current_container_count: nil,
@@ -534,7 +547,7 @@ module Capacity
       case error
       when Timeout::Error
         "docker_timeout"
-      when Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error
+      when Docker::Error::DockerError, Excon::Error
         "docker_unavailable"
       else
         "snapshot_failed"

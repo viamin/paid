@@ -170,6 +170,54 @@ RSpec.describe Capacity::DockerSnapshot do
       )
     end
 
+    # @spec CONTAINER-RUNTIME-050
+    [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
+      it "keeps #{available_bytes.inspect} backing-store measurements unavailable" do
+        allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
+          scope: "configured_docker_backing_store_probe",
+          available_bytes: available_bytes,
+          observed_at: now
+        )
+
+        snapshot = described_class.call(backend:, now:, cache:)
+
+        expect(snapshot.to_run_admission_h(now: now)).to include(
+          backing_storage_available: false,
+          backing_storage_reason: "backing_storage_measurement_invalid"
+        )
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "keeps malformed cached backing-store measurements unavailable" do
+      cached_snapshot = described_class.call(backend:, now:, cache:)
+      cached_data = described_class.serialize(cached_snapshot).merge(
+        backing_storage_scope: "configured_docker_backing_store_probe",
+        backing_storage_available_bytes: "not-a-byte-count",
+        backing_storage_observed_at: now,
+        backing_storage_reason: nil
+      )
+
+      deserialized = described_class.deserialize(cached_data)
+
+      expect(deserialized.to_run_admission_h(now: now)).to include(
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_measurement_invalid"
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "handles an Excon failure from backing-store observation as unavailable" do
+      allow(backend).to receive(:backing_storage_observation).with(now: now).and_raise(Excon::Error, "backend unavailable")
+
+      snapshot = described_class.call(backend:, now:, cache:)
+
+      expect(snapshot.to_run_admission_h(now: now)).to include(
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_unavailable"
+      )
+    end
+
     it "tags the swarm backend as backend_kind 'swarm'" do
       swarm_backend = build_backend_double(
         identifier: "swarm",

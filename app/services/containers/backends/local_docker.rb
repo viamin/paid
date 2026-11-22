@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 require "docker-api"
-require "open3"
 require "timeout"
 
 module Containers
   module Backends
     class LocalDocker < Base
+      BACKING_STORE_PROBE_TIMEOUT = 2.seconds
+
       attr_reader :identifier
 
       def initialize(identifier: Containers::LOCAL_BACKEND_KEY.to_s)
@@ -147,14 +148,41 @@ module Containers
       end
 
       def backing_store_available_bytes(probe_path)
-        stdout, _stderr, status = Timeout.timeout(2) { Open3.capture3("df", "-Pk", "--", probe_path) }
-        return unless status.success?
+        stdout, status = capture_backing_store_probe(probe_path)
+        return unless status&.success?
 
-        available_blocks = stdout.lines.last.to_s.split.fetch(3, nil)&.to_i
-        return unless available_blocks
+        available_blocks = Integer(stdout.lines.last.to_s.split.fetch(3, nil), 10)
+        return if available_blocks.negative?
 
         available_blocks * 1024
-      rescue Timeout::Error, IndexError
+      rescue ArgumentError, IndexError
+        nil
+      end
+
+      def capture_backing_store_probe(probe_path)
+        reader, writer = IO.pipe
+        pid = Process.spawn("df", "-Pk", "--", probe_path, out: writer, err: File::NULL, pgroup: true)
+        writer.close
+
+        stdout = Timeout.timeout(BACKING_STORE_PROBE_TIMEOUT) { reader.read }
+        _pid, status = Process.wait2(pid)
+        [ stdout, status ]
+      rescue Timeout::Error
+        terminate_backing_store_probe(pid) if pid
+        [ "", nil ]
+      rescue SystemCallError, IOError
+        [ "", nil ]
+      ensure
+        writer&.close unless writer&.closed?
+        reader&.close unless reader&.closed?
+        terminate_backing_store_probe(pid) if pid && !status
+      end
+
+      def terminate_backing_store_probe(pid)
+        Process.kill("TERM", -pid)
+        Process.kill("KILL", -pid)
+        Process.waitpid(pid)
+      rescue Errno::ECHILD, Errno::ESRCH
         nil
       end
 

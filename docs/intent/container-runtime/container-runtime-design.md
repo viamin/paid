@@ -196,8 +196,10 @@ mounted a probe from the Docker backing filesystem and configured
 filesystem; it MUST NOT treat the control-plane container's root filesystem as
 the Docker daemon's backing store. Remote and unsupported backends report an
 explicit unavailable/unsupported reason rather than inspecting local disk.
-Missing, malformed, or stale observations remain distinguishable from known
-headroom and do not claim capacity.
+The probe executes in a bounded process group that is terminated and reaped at
+its deadline. Only a nonnegative integer byte count is known headroom;
+missing, malformed, negative, or stale observations remain distinguishable
+from known headroom and do not claim capacity.
 
 Normal run admission applies a 5 GiB backing-storage reserve to every mode,
 including provisioning and build consumers. A fresh known observation at or

@@ -156,6 +156,26 @@ RSpec.describe Capacity::RunAdmission do
       expect(described_class.call(user: user, project: project, docker_snapshot: unavailable, selected_host: "local", selected_host_limit: 8)[:allowed]).to be(true)
     end
 
+    # @spec CONTAINER-RUNTIME-050
+    [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
+      it "keeps #{available_bytes.inspect} injected backing-store evidence unavailable" do
+        malformed = docker_snapshot.merge(
+          backing_storage_available: true,
+          backing_storage_scope: "configured_docker_backing_store_probe",
+          backing_storage_available_bytes: available_bytes,
+          backing_storage_observed_at: Time.current
+        )
+
+        result = described_class.call(user: user, project: project, docker_snapshot: malformed, selected_host: "local", selected_host_limit: 8)
+
+        expect(result).to include(
+          allowed: true,
+          backing_storage_available: false,
+          backing_storage_reason: "backing_storage_measurement_invalid"
+        )
+      end
+    end
+
     it "counts active runs against the selected host limit only" do
       create(:agent_run, :running, project: project, container_host: "local")
       3.times { create(:agent_run, :running, project: project, container_host: "elguapo") }

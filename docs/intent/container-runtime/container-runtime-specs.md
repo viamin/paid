@@ -96,7 +96,10 @@
   remain explicitly distinguishable and SHALL NOT be mistaken for local
   control-plane disk capacity. The guard SHALL not change requested-resource
   ceilings or cleanup authority, and SHALL leave cancellation and cleanup
-  admission paths available.
+  admission paths available. A local probe SHALL terminate and reap its
+  process group within its deadline. Only a nonnegative integer byte
+  measurement is known headroom; missing, malformed, or negative measurements,
+  including cached evidence, SHALL remain unavailable.
   *Tests:* `spec/services/containers/backends/local_docker_spec.rb`,
   `spec/services/capacity/docker_snapshot_spec.rb`,
   `spec/services/capacity/run_admission_spec.rb`.
