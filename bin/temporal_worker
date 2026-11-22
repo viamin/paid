@@ -225,5 +225,5 @@ Paid::TemporalWorkerShutdown.install(request_shutdown:, forced_exit_timeout:)
 # connection is established, so polling will begin immediately inside run_all.
 at_exit { Paid::WorkerReadiness.mark_not_ready! }
 Paid::WorkerReadiness.mark_ready!
-puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path})"
+puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, revision: #{Paid::WorkerReadiness.boot_revision})"
 Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)
