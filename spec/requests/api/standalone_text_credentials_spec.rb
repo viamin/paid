@@ -34,9 +34,8 @@ RSpec.describe "Standalone text credentials" do
     credential = create(:runner_credential, account: account, runner: runner,
       token: valid_codex_auth, expires_at: 1.minute.from_now)
     refreshed = JSON.parse(valid_codex_auth)
-    refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed)
+    refreshed["tokens"]["access_token"] = fresh_codex_access_token(account_id: refreshed.fetch("tokens").fetch("account_id"))
+    stub_codex_harness_exchange(refreshed)
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize).and_return(materialization_double(secret: "fresh"))
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
@@ -45,9 +44,9 @@ RSpec.describe "Standalone text credentials" do
     post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
+    expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq(refreshed.fetch("tokens").fetch("access_token"))
     expect(provider).to have_received(:materialize)
-      .with(hash_including(secret: a_string_including("eyJserver-refreshed-access")))
+      .with(hash_including(secret: a_string_including(refreshed.fetch("tokens").fetch("access_token"))))
   end
 
   # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
@@ -55,10 +54,9 @@ RSpec.describe "Standalone text credentials" do
     credential = create(:runner_credential, account: account, runner: runner,
       token: valid_codex_auth, expires_at: 1.minute.ago)
     refreshed = JSON.parse(valid_codex_auth)
-    refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
+    refreshed["tokens"]["access_token"] = fresh_codex_access_token(account_id: refreshed.fetch("tokens").fetch("account_id"))
     refreshed["tokens"]["expires_at"] = 1.hour.from_now.utc.iso8601
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed)
+    stub_codex_harness_exchange(refreshed)
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize).and_return(materialization_double(secret: "fresh"))
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
@@ -69,16 +67,14 @@ RSpec.describe "Standalone text credentials" do
     expect(response).to have_http_status(:ok)
     expect(credential.reload).to be_active
     expect(provider).to have_received(:materialize)
-      .with(hash_including(secret: a_string_including("eyJserver-refreshed-access")))
+      .with(hash_including(secret: a_string_including(refreshed.fetch("tokens").fetch("access_token"))))
   end
 
   # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
   it "rejects an expired credential when the pre-run refresh exchange fails" do
     credential = create(:runner_credential, account: account, runner: runner,
       token: valid_codex_auth, expires_at: 1.minute.from_now)
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true,
-      exchange_refresh_token: { "error" => "invalid_grant" })
+    stub_codex_harness_exchange({ "error" => "invalid_grant" })
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize)
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
