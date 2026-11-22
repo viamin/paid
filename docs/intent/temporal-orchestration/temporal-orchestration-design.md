@@ -118,7 +118,10 @@ finite deadline and retry policy (#5310). The activity derives its internal
 budgets from the Temporal start-to-close deadline it is actually running
 under, rather than stacking independent fixed timeouts: the conflict-repair
 scope assessment request receives only the deadline remaining after a
-deliberate publication reserve, and rejection publication runs only inside
+deliberate publication reserve, every comparison read (assessment evidence
+and update-summary evidence alike) is bounded by the request budget it feeds
+and deducted from the shared deadline before that request is admitted, and
+rejection publication runs only inside
 what remains after a final stop reserve. An activity retry reuses the
 persisted assessment bound to the exact pre-run, integration-base, and pushed
 head SHAs instead of issuing another harness request, so retries add no spend.

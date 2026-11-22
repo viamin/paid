@@ -203,6 +203,37 @@ allow(GithubClient).to receive(:new).and_return(github_client)
             timeout: 20.0 - described_class::PUBLICATION_RESERVE_SECONDS)
       end
 
+      it "deducts comparison-read time before admitting the assessment request" do # @spec AUTO-MERGE-011
+        remaining = 30.0
+        allow(activity).to receive(:remaining_activity_seconds) { remaining }
+        allow(github_client).to receive(:compare_summary) do |_repository, _base_sha, head_sha|
+          remaining -= 4.0
+          head_sha == pr_data.base.sha ? files_payload([ "docs/base.md" ]) : files_payload([ "docs/base.md", "Gemfile" ])
+        end
+        allow(Llm::Request).to receive(:call).and_return(approved_request_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(Llm::Request).to have_received(:call)
+          .with(prompt: kind_of(String), agent_run: kind_of(AgentRun),
+            timeout: be <= 7.0)
+      end
+
+      it "bounds comparison reads by the assessment budget and fails closed" do # @spec AUTO-MERGE-011
+        allow(activity).to receive(:remaining_activity_seconds)
+          .and_return(described_class::PUBLICATION_RESERVE_SECONDS + 1.0)
+        allow(github_client).to receive(:compare_summary) { sleep 1.3 }
+        expect(AgentHarness.conductor).not_to receive(:execute_direct)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+          end
+
+        expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+      end
+
       it "records an unavailable assessment without a request when no assessment budget remains" do
         allow(activity).to receive_messages(
           remaining_activity_seconds: described_class::PUBLICATION_RESERVE_SECONDS.to_f,
@@ -374,6 +405,23 @@ allow(GithubClient).to receive(:new).and_return(github_client)
           .with(prompt: kind_of(String), agent_run: kind_of(AgentRun),
             timeout: 9.0).twice
       end
+    end
+
+    it "deducts the summary comparison read before admitting the summary request" do # @spec TEMPORAL-ORCHESTRATION-018
+      enable_summary_comments
+      remaining = 30.0
+      allow(activity).to receive(:remaining_activity_seconds) { remaining }
+      allow(github_client).to receive(:compare_summary) do |_repository, _base_sha, _head_sha|
+        remaining -= 4.0
+        summary_comparison
+      end
+      allow(Llm::Request).to receive(:call).and_return(summary_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(Llm::Request).to have_received(:call)
+        .with(prompt: kind_of(String), agent_run: kind_of(AgentRun),
+          timeout: be <= 11.0)
     end
 
     # @spec QUIET-MODE-007

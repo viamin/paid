@@ -30,6 +30,12 @@ module Activities
     # ConflictRepairScopeRejected stop survives slow or hung publication.
     class RejectionPublicationDeadlineExceeded < StandardError; end
 
+    # Raised only when a bounded comparison read exceeds its request budget,
+    # so a slow or hung GitHub compare can neither consume the enclosing
+    # deadline nor displace the fail-closed assessment path.
+    # @spec AUTO-MERGE-011
+    class ComparisonDeadlineExceeded < StandardError; end
+
     class << self
       def agent_update_comment?(body)
         normalized = body.to_s
@@ -336,16 +342,28 @@ module Activities
       elsif budget < MINIMUM_REQUEST_SECONDS
         ConflictRepairs::AssessScope::Result.new(status: "unavailable", explanation: "Scope assessment exceeded the enclosing activity deadline", base_imported_paths: [], repair_authored_paths: [])
       else
+        # Comparison I/O draws from the same finite enclosing deadline as the
+        # request it feeds: the reads are bounded by the assessment budget so
+        # a hung GitHub compare cannot consume the activity's deadline.
+        base_comparison, result_comparison = Timeout.timeout(budget, ComparisonDeadlineExceeded) do
+          [
+            client.compare_summary(agent_run.project.full_name, pre_run_sha, base_sha),
+            client.compare_summary(agent_run.project.full_name, pre_run_sha, head_sha)
+          ]
+        end
+        # The reads consumed real deadline time: admit the request only
+        # against what actually remains after them (#5316).
+        budget = assessment_budget_seconds
         ConflictRepairs::AssessScope.call(
           agent_run: agent_run,
-          base_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, base_sha),
-          result_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, head_sha),
+          base_comparison: base_comparison,
+          result_comparison: result_comparison,
           timeout: budget
         )
       end
       record_assessment_diagnostics(budget:, elapsed_seconds: monotonic_now - started, status: assessment.status)
       persist_conflict_repair_scope_assessment(agent_run, assessment.to_h.merge("base_sha" => pre_run_sha, "integration_base_sha" => base_sha, "head_sha" => head_sha))
-    rescue GithubClient::Error => e
+    rescue GithubClient::Error, ComparisonDeadlineExceeded => e
       logger.warn(message: "agent_execution.conflict_repair_scope_assessment_failed", agent_run_id: agent_run.id, error_class: e.class.name, error: e.message)
       record_assessment_diagnostics(budget: assessment_budget_seconds, elapsed_seconds: monotonic_now - started, status: "unavailable")
       persist_conflict_repair_scope_assessment(agent_run, unavailable_assessment(pre_run_sha, base_sha, head_sha))
@@ -527,7 +545,12 @@ module Activities
       budget = summary_budget_seconds
       return if budget < MINIMUM_REQUEST_SECONDS
 
-      comparison = client.compare_summary(project.full_name, summary_base_sha, agent_run.result_commit_sha)
+      comparison = summary_comparison(client, project, summary_base_sha, agent_run, bound: budget)
+      # The read consumed real deadline time: admit the request only against
+      # what actually remains after it (#5316).
+      budget = summary_budget_seconds
+      return if comparison.blank? || budget < MINIMUM_REQUEST_SECONDS
+
       result = Llm::GenerateAgentUpdateSummary.call(
         agent_run: agent_run,
         repository: project.full_name,
@@ -539,6 +562,25 @@ module Activities
       )
       track_summary_tokens(agent_run, result&.response)
       result&.body
+    end
+
+    # The summary comparison read draws from the same finite enclosing
+    # deadline as the summary request it feeds: bounded by that budget, and
+    # its elapsed time is deducted before the request is admitted. A read
+    # that exceeds the budget degrades to a skipped summary rather than a
+    # failed completion (#5316).
+    # @spec TEMPORAL-ORCHESTRATION-018
+    def summary_comparison(client, project, base_sha, agent_run, bound:)
+      Timeout.timeout(bound, ComparisonDeadlineExceeded) do
+        client.compare_summary(project.full_name, base_sha, agent_run.result_commit_sha)
+      end
+    rescue ComparisonDeadlineExceeded
+      logger.warn(
+        message: "agent_execution.update_summary_comparison_timed_out",
+        agent_run_id: agent_run.id,
+        repository: project.full_name
+      )
+      nil
     end
 
     def summary_base_sha(agent_run)

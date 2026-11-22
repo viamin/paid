@@ -104,8 +104,10 @@ authority for whether current-head review is required.
 
 The completion envelope around that assessment is bounded (#5310): the
 existing-PR completion activity derives one finite deadline from its Temporal
-start-to-close budget, gives the harness assessment request only what remains
-after a deliberate publication reserve, and reuses the already-persisted
+start-to-close budget, bounds the comparison reads that gather assessment
+evidence by that same envelope, deducts their elapsed time before admitting
+the harness assessment request, and gives that request only what remains
+after a deliberate publication reserve. It reuses the already-persisted
 assessment — bound to the exact pre-run, integration-base, and pushed head
 SHAs — on any activity retry rather than spending another request. The
 assessment plus its durable persistence always precede PR publication; a

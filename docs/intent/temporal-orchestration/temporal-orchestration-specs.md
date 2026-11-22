@@ -225,8 +225,11 @@
   completes a run that pushed to an existing pull request, the
   `CompleteExistingPrRun` activity SHALL keep its existing agent queue, finite
   start-to-close deadline, and existing retry policy, and SHALL derive its
-  internal assessment and publication budgets from the activity's actual
-  remaining deadline rather than introducing independent fixed timeouts. The
+  internal assessment, comparison-read, update-summary, and publication
+  budgets from the activity's actual
+  remaining deadline rather than introducing independent fixed timeouts, with
+  each bounded comparison read's elapsed time deducted from the shared
+  deadline before its model request is admitted. The
   bounded poll/control queue SHALL continue to carry only established bounded
   control bookkeeping (failure publication, cleanup-ownership resolution,
   janitor scheduling); the completion activity's AI and GitHub work SHALL stay
