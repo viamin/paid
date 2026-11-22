@@ -631,6 +631,7 @@ RSpec.describe ProcessRunQueueJob do
       user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
       queued_run = create(:agent_run, :queued, project: project)
       allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+      stub_policy_decision(local_auto_decision)
 
       expect(temporal_client).not_to receive(:start_workflow)
 
@@ -654,6 +655,7 @@ RSpec.describe ProcessRunQueueJob do
       eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
 
       allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+      stub_policy_decision(local_auto_decision)
 
       started_ids = []
       allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
@@ -676,6 +678,7 @@ RSpec.describe ProcessRunQueueJob do
       eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
       allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(available: false, reason: "docker_timeout",
         snapshot_at: Time.current, confidence: "low")
+      stub_policy_decision(local_auto_decision)
       started_ids = []
       allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
         started_ids << input[:agent_run_id]
@@ -698,6 +701,7 @@ RSpec.describe ProcessRunQueueJob do
         confidence: "high",
         docker_memory_bytes: 32 * 1024 * 1024 * 1024
       )
+      stub_policy_decision(local_auto_decision)
 
       described_class.new.perform
 
@@ -719,6 +723,7 @@ RSpec.describe ProcessRunQueueJob do
         confidence: "high",
         docker_memory_bytes: 32.gigabytes
       )
+      stub_policy_decision(local_auto_decision)
 
       queries = capture_queries do
         described_class.new.perform
@@ -751,6 +756,7 @@ RSpec.describe ProcessRunQueueJob do
         confidence: "high",
         docker_memory_bytes: 16.gigabytes
       )
+      stub_policy_decision(local_auto_decision)
 
       described_class.new.perform
 
@@ -1858,6 +1864,7 @@ RSpec.describe ProcessRunQueueJob do
         issue: issue,
         custom_prompt: "Fix the bug",
         source_pull_request_number: 42)
+      stub_policy_decision(remote_backend_decision)
 
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
