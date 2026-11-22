@@ -14,7 +14,7 @@ class SourceClosureRecoveryJob < ApplicationJob
     return unless agent_run&.waiting_recovery?
     operator = User.find_by(id: operator_id) if operator_id
     previous_attempt = agent_run.reconciliation.dig("source_closure_recovery", "recovery_attempt").to_i
-    return if prior_execution_active?(agent_run, attempt: previous_attempt)
+    return if prior_execution_active?(agent_run, attempt: previous_attempt, operator_id: operator_id)
 
     claim_acquired = PartialCloseouts::SourceClosureRecovery.claim!(agent_run: agent_run,
       expected_recovery_attempt: previous_attempt, **operator_argument(operator_id, operator))
@@ -46,19 +46,19 @@ class SourceClosureRecoveryJob < ApplicationJob
     operator_id ? { operator: } : {}
   end
 
-  def prior_execution_active?(agent_run, attempt:)
+  def prior_execution_active?(agent_run, attempt:, operator_id:)
     return false unless attempt.positive?
 
     handle = Paid.temporal_client.workflow_handle("source-closure-recovery-#{agent_run.id}-#{attempt}")
     status = handle.describe(rpc_options: Temporalio::Client::RPCOptions.new(timeout: 5, override_retry: false)).status
     return false if terminal_workflow_status?(status)
 
-    enqueue_retry(agent_run.id) unless status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
+    enqueue_retry(agent_run.id, operator_id: operator_id) unless status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
     true
   rescue Temporalio::Error::RPCError => error
     return false if error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
 
-    enqueue_retry(agent_run.id)
+    enqueue_retry(agent_run.id, operator_id: operator_id)
     Rails.logger.warn(message: "source_closure_recovery.status_unavailable", agent_run_id: agent_run.id, code: error.code)
     true
   end
@@ -68,7 +68,10 @@ class SourceClosureRecoveryJob < ApplicationJob
     [ statuses::COMPLETED, statuses::FAILED, statuses::CANCELED, statuses::TERMINATED, statuses::TIMED_OUT ].include?(status)
   end
 
-  def enqueue_retry(agent_run_id)
-    self.class.set(wait: PartialCloseouts::SourceClosureRecovery::RETRY_DELAY).perform_later(agent_run_id)
+  def enqueue_retry(agent_run_id, operator_id: nil)
+    job = self.class.set(wait: PartialCloseouts::SourceClosureRecovery::RETRY_DELAY)
+    return job.perform_later(agent_run_id, operator_id: operator_id) if operator_id
+
+    job.perform_later(agent_run_id)
   end
 end
