@@ -22,6 +22,7 @@ module Containers
     # "NAME=" prefix and NUL terminator.
     MAX_ENV_ENTRY_BYTES = 64 * 1024
     CLEANUP_MARGIN = 5
+    ROTATION_PERSISTENCE_TIMEOUT = CLEANUP_MARGIN
     STANDALONE_TEXT_MAX_LIFETIME = 10.minutes
     DEFAULTS = {
       image: Containers::ImageResolver::BASE_IMAGE,
@@ -218,7 +219,7 @@ module Containers
       return yield unless credential
 
       Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: runner.runner_key,
-        credential: credential, timeout: timeout || managed_credential_lease_timeout) { yield }
+        credential: credential, timeout: timeout || managed_credential_lease_timeout) { |lease| yield lease }
     end
 
     def managed_credential_lease_timeout
@@ -235,7 +236,7 @@ module Containers
       credential = rotating_subscription_credential
       return unless credential
 
-      with_managed_credential_lease(timeout: managed_credential_lease_timeout) do
+      with_managed_credential_lease(timeout: managed_credential_lease_timeout) do |lease|
         raw = within_deadline do
           read_managed_credential_rotation
         end
@@ -245,11 +246,7 @@ module Containers
           next
         end
 
-        # The Docker read is deadline-bound, but once it returns the canonical
-        # credential update must complete while the lease remains held.
-        result = Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
-          runner_key: runner.runner_key, raw: raw)
-        log_harvest(result, credential)
+        persist_captured_rotation(credential, raw, lease)
       end
     rescue DeadlineExceeded
       defer_credential_harvest!(credential)
@@ -264,6 +261,33 @@ module Containers
       return nil unless status.to_i.zero?
 
       Array(stdout).join
+    end
+
+    # The request thread never interrupts a database write. It transfers the
+    # captured rotation and its lockfile lease to a recovery thread, waits only
+    # through the candidate deadline, and leaves recovery a fixed write budget.
+    def persist_captured_rotation(credential, raw, lease)
+      return persist_rotation(credential, raw) unless @deadline
+
+      lease.transfer!
+      thread = Thread.new do
+        persist_rotation(credential, raw, timeout: ROTATION_PERSISTENCE_TIMEOUT)
+      ensure
+        lease.release!
+      end
+      thread.join(remaining_deadline)
+      defer_credential_harvest!(credential) if thread.alive?
+    end
+
+    def persist_rotation(credential, raw, timeout: nil)
+      result = TenantContext.with(account) do
+        Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+          runner_key: runner.runner_key, raw: raw, timeout: timeout)
+      end
+      log_harvest(result, credential)
+    rescue StandardError
+      log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+        performed: false, reason: "harvest_failed"), credential)
     end
 
     def rotating_subscription_credential

@@ -539,6 +539,15 @@ RSpec.describe Containers::StandaloneTextExecutor do
       end
     end
 
+    def stub_blocked_rotation_persistence(started:, release:, completed:)
+      allow(Runners::ManagedCredentialLifecycle).to receive(:persist_rotation!) do
+        started << true
+        release.pop
+        completed << true
+        Runners::ManagedCredentialLifecycle::Result.new(supported: true, performed: true, reason: "harvested")
+      end
+    end
+
     around do |example|
       File.delete(lockfile) if File.exist?(lockfile)
       example.run
@@ -596,24 +605,29 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end
 
     # @spec LLM-ROUTING-013
-    it "finishes persisting a rotation read before the candidate deadline" do
+    it "returns at the candidate deadline while a captured rotation persists in recovery" do
       now = 100.0
       executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
         clock: ->(_) { now })
       executor.execute([ "codex", "exec", "hello" ])
       now = 105.9
+      started = Queue.new
+      release = Queue.new
+      completed = Queue.new
+      stub_blocked_rotation_persistence(started:, release:, completed:)
       stub_text_exec do |_c, command, _options = {}|
-        if command.include?("base64 -w0 /home/agent/.codex/auth.json")
-          now = 106.0
-          next [ [ Base64.strict_encode64(rotated_codex_auth) ], [], 0 ]
-        end
+        next [ [ Base64.strict_encode64(rotated_codex_auth) ], [], 0 ] if command.include?("base64 -w0 /home/agent/.codex/auth.json")
 
         [ [], [], 0 ]
       end
 
-      executor.close
+      expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+      expect { Timeout.timeout(0.5) { started.pop } }.not_to raise_error
 
-      expect(JSON.parse(credential.reload.token).dig("tokens", "access_token")).to eq("eyJrotated-access-token")
+      release << true
+      expect { Timeout.timeout(0.5) { completed.pop } }.not_to raise_error
+    ensure
+      release << true if release && release.empty?
     end
 
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005

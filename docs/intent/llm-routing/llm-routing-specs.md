@@ -98,7 +98,10 @@
   credential lease acquisition and the container rotation read SHALL be bounded
   by the remaining candidate deadline; an incomplete read SHALL be deferred and
   logged without extending the candidate lifetime. Once a native rotation has
-  been read, its canonical persistence SHALL complete while retaining the lease
-  even if the candidate deadline expires during that persistence.
+  been read, persistence that cannot finish by the candidate deadline SHALL
+  transfer the captured rotation and its lease to a bounded recovery write. The
+  request SHALL return at its deadline; recovery SHALL either persist the
+  captured rotation atomically or report a deferred harvest without dropping,
+  overwriting, or exposing the credential.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/containers/standalone_text_executor_spec.rb`.

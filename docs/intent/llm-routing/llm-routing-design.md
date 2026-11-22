@@ -65,6 +65,12 @@ Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container
 rotation back into the canonical credential once before the container is deleted.
+When a native rotation has been read but its canonical write cannot finish by
+the candidate deadline, the executor transfers the captured rotation and its
+lockfile lease to a recovery write. The request returns at its deadline; the
+recovery keeps the lease until the atomic write completes or its fixed database
+statement budget expires, and records a deferred harvest rather than dropping
+or overwriting the captured credential.
 The command, preparation, and prompt travel through an upgraded Docker exec
 stdin connection, not as exec environment entries, because a single `execve`
 environment string is capped near 128 KiB. The materializer checks that every
@@ -117,8 +123,9 @@ deadline, and its immutable orphan-sweep label recovers a container when a
 Docker cleanup call cannot finish. Managed credential lease acquisition and
 the container read share that deadline; a read that cannot finish is deferred
 and logged without extending the candidate lifetime. Once a native rotation
-has been read, its canonical persistence completes while retaining the lease,
-even if the candidate deadline expires during that persistence.
+has been read, persistence that cannot finish by the candidate deadline moves
+to a bounded recovery write retaining the lease. That handoff never extends
+command execution or the candidate response lifetime.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
