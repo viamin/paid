@@ -505,6 +505,29 @@ RSpec.describe Prompts::BuildForPr do
       expect(builder.build).not_to include("Old finding.")
     end
 
+    # @spec PROMPT-ASSEMBLY-026
+    it "excludes a paid-agent clean verdict from review feedback context" do
+      enable_paid_agent_reviews(project)
+      clean_review = "#{Github::ReviewMarker.body_prefix}No repair is needed. #{Github::ReviewMarker::CLEAN_REVIEW_MARKER}"
+      allow(github_client).to receive(:pull_request_reviews)
+        .with(project.full_name, 42)
+        .and_return([
+          standalone_review(id: 3, author: "paid-code-reviewer[bot]", state: "COMMENTED",
+            body: clean_review, submitted_at: Time.utc(2026, 11, 22, 7, 51, 7))
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.build).not_to include("standalone review findings are actionable")
+      expect(builder.build).not_to include(clean_review)
+    end
+
     it "is false when at least one review-thread comment is prompt-eligible" do
       allow(github_client).to receive(:review_threads)
         .with(project.full_name, 42)

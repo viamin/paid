@@ -49,7 +49,7 @@ module Activities
     # review body. Once the dedicated paid-code-reviewer bot is registered in
     # PROVIDER_BOT_USERNAMES, we can safely key off both author identity and
     # the marker without matching human-authored text.
-    PAID_REVIEW_CLEAN_MARKER = "<!-- paid-review-clean -->"
+    PAID_REVIEW_CLEAN_MARKER = Github::ReviewMarker::CLEAN_REVIEW_MARKER
     PAID_ESCALATED_LABEL = Issue::ESCALATED_LABEL
     TDD_TESTS_READY_FOR_REVIEW_LABEL = Projects::EnsureStandardLabels::LABEL_DEFINITIONS
       .dig(:tdd_test_review, :name)
@@ -3351,6 +3351,7 @@ module Activities
       cutoff = last_run&.completed_at
       findings = latest_trusted_reviews(reviews, project).select do |review|
         review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
+          !paid_agent_clean_review?(review) &&
           (!cutoff || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
       end
       return [] if findings.empty?

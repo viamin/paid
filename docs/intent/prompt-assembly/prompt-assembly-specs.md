@@ -145,7 +145,9 @@
   exists or the finding concerns an unchanged file. It SHALL bound the body by
   the prompt-comment limit and render review ID, author, submitted time, and
   reviewed commit provenance. Reviews from excluded authors SHALL never enter
-  the prompt; only their body-free exclusion provenance may be recorded. The
+  the prompt; only their body-free exclusion provenance may be recorded. A
+  configured Paid Agent review that records its machine-readable clean verdict
+  SHALL not enter repair context despite its nonblank `COMMENTED` body. The
   latest review state from an eligible author SHALL supersede that author's
   earlier body, and standalone review bodies SHALL not produce resolvable
   inline-thread IDs or authority.

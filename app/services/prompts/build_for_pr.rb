@@ -1134,8 +1134,18 @@ module Prompts
     # @spec PROMPT-ASSEMBLY-026
     def trusted_top_level_reviews
       latest_reviews_by_trusted_author.values.select do |review|
-        review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) && review[:body].to_s.strip.present?
+        review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) &&
+          review[:body].to_s.strip.present? &&
+          !paid_agent_clean_review?(review)
       end
+    end
+
+    # The paid-agent verifier's clean marker records an agent_harness semantic
+    # verdict. It is not repair feedback even though GitHub represents the
+    # verdict as a COMMENTED review with a nonblank body.
+    def paid_agent_clean_review?(review)
+      RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login]) &&
+        review[:body].to_s.include?(Github::ReviewMarker::CLEAN_REVIEW_MARKER)
     end
 
     def latest_reviews_by_trusted_author
