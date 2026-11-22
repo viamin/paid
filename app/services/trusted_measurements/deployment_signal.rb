@@ -16,7 +16,6 @@ module TrustedMeasurements
   # TrustedMeasurementAttempt#current_for_revision?).
   module DeploymentSignal
     ENV_KEY = "PAID_DEPLOYED_REVISION"
-    DEVELOPMENT_IDENTITY = /\Adevelopment:(?<head>[0-9a-f]{40}):[0-9a-f]{64}\z/
     GIT_ENVIRONMENT = {
       "GIT_DIR" => nil,
       "GIT_WORK_TREE" => nil,
@@ -50,16 +49,6 @@ module TrustedMeasurements
       "development:#{head.strip}:#{digest.hexdigest}"
     rescue Errno::ENOENT, Errno::EACCES, Errno::EISDIR
       nil
-    end
-
-    # Development's deployment identity includes source drift that cannot be
-    # part of a worker's immutable boot identity. Project only a fully formed
-    # identity to its boot SHA; production workers retain exact signal matching.
-    # @spec TRUSTED-MEASUREMENTS-008
-    def self.worker_revision(deployment_revision, environment: Rails.env)
-      return deployment_revision unless environment.to_s == "development"
-
-      DEVELOPMENT_IDENTITY.match(deployment_revision.to_s)&.[](:head)
     end
 
     def self.git_output(root, *arguments)

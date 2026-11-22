@@ -12,7 +12,7 @@ module TrustedMeasurements
     # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 2
+      VERSION = 3
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -77,8 +77,7 @@ module TrustedMeasurements
       end
 
       def adopted_revision?(record, deployment_revision)
-        worker_revision = DeploymentSignal.worker_revision(deployment_revision, environment:)
-        worker_revision.present? && record.revision == worker_revision
+        deployment_revision.present? && record.deployment_revision == deployment_revision
       end
 
       def worker_result(record)
@@ -88,6 +87,7 @@ module TrustedMeasurements
           "pid" => record.pid,
           "ready_at" => record.ready_at&.utc&.iso8601,
           "revision" => record.revision,
+          "deployment_revision" => record.deployment_revision,
           "heartbeat_at" => record.heartbeat_at&.utc&.iso8601,
           "status" => "observed"
         }.compact

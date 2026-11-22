@@ -74,13 +74,14 @@
   measurement path; it SHALL read only the durable `poll` and `agent`
   readiness observations the owning Temporal worker roles publish about
   themselves into the shared application database — each role's PID,
-  readiness time, booted revision, and latest heartbeat. Both roles' observations
+  readiness time, raw boot revision, boot-time deployment identity, and latest
+  heartbeat. Both roles' observations
   SHALL be complete, timestamp-coherent, refreshed by the live worker's own
   heartbeat within the freshness window, and equal to the current deployment
-  revision before the result is successful. In development, the persisted
-  deployment identity SHALL retain its checkout-content fingerprint while the
-  worker comparison SHALL use its strictly parsed HEAD component to match the
-  worker's raw boot SHA; malformed development identities SHALL remain unknown.
+  revision before the result is successful. In development, both the persisted
+  deployment identity and worker comparison SHALL retain the checkout-content
+  fingerprint; a same-HEAD source change after worker boot SHALL remain unknown.
+  The updater-facing raw boot SHA contract SHALL remain unchanged.
   Missing, malformed, stale,
   incoherent, interrupted, restarted, unauthorized, cross-scope, or
   revision-mismatched observations SHALL remain unknown or failed evidence,

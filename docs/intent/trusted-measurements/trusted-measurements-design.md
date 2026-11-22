@@ -47,11 +47,13 @@ The worker-adoption check is a separate, narrowly scoped live observation. In
 the production topology the collector (`RunCheckJob` in the `job` container)
 cannot read the worker roles' readiness flag files or probe their PIDs — each
 role is an independent container. Each Temporal worker role therefore
-publishes its own readiness identity — PID, boot time, booted revision, and a
-periodic heartbeat timestamp — into a fixed system-wide `poll`/`agent`
+publishes its own readiness identity — PID, boot time, raw boot revision,
+boot-time deployment identity, and a periodic heartbeat timestamp — into a
+fixed system-wide `poll`/`agent`
 observation table through the shared application database, and the check reads
 only those durable, role-authored observations. It retains only each role's
-PID, boot time, booted revision, and latest beat. The check requires both
+PID, boot time, raw boot revision, boot-time deployment identity, and latest
+beat. The check requires both
 roles' observations to exist, carry a complete typed identity, be internally
 coherent, carry a heartbeat the live worker itself refreshed within the
 freshness window, and equal the current deployment identity. Freshness is the
@@ -60,12 +62,12 @@ whole lifetime, while a dead or interrupted worker stops, so long-lived
 workers stay current and missing adoption fails closed. It returns unknown
 evidence for a missing, stale, malformed, incoherent, or revision-mismatched
 worker observation, and never accepts a host path, host command, process
-argument, environment, credential, or foreign-namespace PID probe. The normal
-development deployment identity retains its HEAD and workspace-content digest;
-the worker comparison uses only the strictly parsed HEAD component because the
-worker's immutable boot contract publishes the raw boot SHA. A malformed
-development identity remains unknown rather than discarding source drift.
-The normal
+argument, environment, credential, or foreign-namespace PID probe. The raw
+boot revision remains available for the development updater's commit-adoption
+contract. The recorder separately compares the worker's immutable boot-time
+deployment identity with the complete current identity, including development's
+HEAD and workspace-content digest, so same-HEAD source drift remains unknown
+until the workers restart from that source. The normal
 measurement runner persists that typed result under the reviewed
 project/account/criterion/revision mapping, so a heartbeat observation is an
 input receipt rather than acceptance evidence by itself.

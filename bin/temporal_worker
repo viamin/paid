@@ -221,7 +221,7 @@ end
 Paid::TemporalWorkerShutdown.install(request_shutdown:, forced_exit_timeout:)
 
 # Publish this process's readiness identity for cross-role worker-adoption
-# evidence: each role heartbeats {pid, boot time, boot revision} into the
+# evidence: each role heartbeats its fixed boot and deployment identities into the
 # shared application database, which — unlike the readiness file below —
 # crosses container boundaries (config/deploy.yml runs job and worker_* as
 # independent containers). The trusted worker-adoption measurement reads
@@ -234,12 +234,17 @@ else WorkerReadinessObservation::ROLES
 end
 readiness_heartbeat = Paid::WorkerReadiness::Heartbeat.start(
   roles: readiness_roles,
-  identity: { pid: Process.pid, revision: Paid::WorkerReadiness.boot_revision },
+  identity: {
+    pid: Process.pid,
+    revision: Paid::WorkerReadiness.boot_revision,
+    deployment_revision: TrustedMeasurements::DeploymentSignal.current
+  },
   interval: ENV.fetch("WORKER_READINESS_HEARTBEAT_SECONDS", "30").to_f,
   recorder: lambda { |beat|
     WorkerReadinessObservation.record!(
       role: beat.fetch(:role), pid: beat.fetch(:pid), ready_at: beat.fetch(:ready_at),
-      revision: beat.fetch(:revision), heartbeat_at: beat.fetch(:at)
+      revision: beat.fetch(:revision), deployment_revision: beat.fetch(:deployment_revision),
+      heartbeat_at: beat.fetch(:at)
     )
   }
 )

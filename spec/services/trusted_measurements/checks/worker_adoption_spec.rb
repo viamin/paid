@@ -18,8 +18,8 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
   # The writer path the worker roles themselves use: bin/temporal_worker
   # heartbeats through WorkerReadinessObservation.record!, and this collector
   # reads the same durable rows from wherever RunCheck executes.
-  def record_role(role, pid:, ready_at:, heartbeat_at:, revision: "revision-1")
-    WorkerReadinessObservation.record!(role:, pid:, ready_at:, revision:, heartbeat_at:)
+  def record_role(role, pid:, ready_at:, heartbeat_at:, revision: "revision-1", deployment_revision: revision)
+    WorkerReadinessObservation.record!(role:, pid:, ready_at:, revision:, deployment_revision:, heartbeat_at:)
   end
 
   # Production topology regression: config/deploy.yml runs the collector in
@@ -46,12 +46,14 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     expect(result.environment).to eq(Rails.env.to_s)
   end
 
-  it "compares a development worker boot SHA with the source revision in the fingerprinted deployment identity" do
+  it "compares a development worker boot identity with the fingerprinted deployment identity" do
     head = "a73812f3c44ce6984fe00854059a17485d8c0617"
     deployment_revision = "development:#{head}:#{'b' * 64}"
     allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return(deployment_revision)
-    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
-    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
+      revision: head, deployment_revision:)
+    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
+      revision: head, deployment_revision:)
 
     result = described_class.new(project:, clock: -> { now }, environment: "development").call
 
@@ -59,15 +61,27 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     expect(result.deployment_revision).to eq(deployment_revision)
   end
 
-  it "does not discard development workspace identity when deriving a worker revision" do
+  it "keeps adoption unknown after a same-HEAD source edit changes the development fingerprint" do
     head = "a73812f3c44ce6984fe00854059a17485d8c0617"
-    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return("development:#{head}:invalid")
-    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
-    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+    boot_identity = "development:#{head}:#{'a' * 64}"
+    current_identity = "development:#{head}:#{'b' * 64}"
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return(current_identity)
+    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
+      revision: head, deployment_revision: boot_identity)
+    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
+      revision: head, deployment_revision: boot_identity)
 
     result = described_class.new(project:, clock: -> { now }, environment: "development").call
 
     expect(result).to have_attributes(failure_reason: "poll_revision_mismatch")
+  end
+
+  it "keeps legacy observations without a boot deployment identity unknown" do
+    record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds,
+      deployment_revision: nil)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
+    expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
   end
 
   it "keeps a healthy long-running worker current while its heartbeat stays fresh" do

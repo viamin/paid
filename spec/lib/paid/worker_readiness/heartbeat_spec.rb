@@ -7,7 +7,7 @@ require "paid/worker_readiness"
 RSpec.describe Paid::WorkerReadiness::Heartbeat do
   let(:booted_at) { Time.utc(2026, 11, 22, 6, 0, 0) }
   let(:clock) { -> { booted_at } }
-  let(:identity) { { pid: 4242, revision: "revision-1" } }
+  let(:identity) { { pid: 4242, revision: "revision-1", deployment_revision: "deployment-1" } }
   let(:beats) { [] }
   let(:recorder) { ->(beat) { beats << beat } }
 
@@ -15,8 +15,10 @@ RSpec.describe Paid::WorkerReadiness::Heartbeat do
     described_class.new(roles: %w[poll agent], identity:, recorder:, interval: 30.0, clock:).publish
 
     expect(beats).to contain_exactly(
-      { role: "poll", pid: 4242, ready_at: booted_at, revision: "revision-1", at: booted_at },
-      { role: "agent", pid: 4242, ready_at: booted_at, revision: "revision-1", at: booted_at }
+      { role: "poll", pid: 4242, ready_at: booted_at, revision: "revision-1",
+        deployment_revision: "deployment-1", at: booted_at },
+      { role: "agent", pid: 4242, ready_at: booted_at, revision: "revision-1",
+        deployment_revision: "deployment-1", at: booted_at }
     )
   end
 

@@ -50,8 +50,9 @@
 - [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — When a recorder-owned trusted
   measurement consumes Temporal worker readiness, it SHALL consume only the
   durable `poll` and `agent` role observations the worker processes publish
-  about themselves and their typed PID, readiness time, boot revision, and
-  latest heartbeat fields. It SHALL reject other roles and malformed
+  about themselves and their typed PID, readiness time, raw boot revision,
+  boot-time deployment identity, and latest heartbeat fields. It SHALL reject
+  other roles and malformed
   identities and SHALL NOT provide a generic host-path reader or process
   argument, environment, credential, or foreign-namespace PID inspection
   capability.

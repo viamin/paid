@@ -88,14 +88,18 @@ adoption.
 
 The same readiness contract has one read-only recorder consumer: the
 allowlisted worker-adoption measurement. Worker processes publish their own
-readiness identity — PID, boot time, booted revision, and a periodic
+readiness identity — PID, boot time, raw boot revision, boot-time deployment
+identity, and a periodic
 heartbeat — as durable per-role observations in the shared application
 database, and the measurement reads only those fixed `poll`/`agent`
 role observations and their typed fields. It does not accept a host path, run
 a host command, or inspect process arguments, environment, or credentials,
 and it never reads another role's filesystem or PID namespace. Its persisted
-collection receipt is owned by the trusted-measurements boundary; the
-readiness facts remain evidence about worker adoption only and do not attest
+collection receipt is owned by the trusted-measurements boundary. The raw boot
+revision remains the updater's commit-adoption contract; the recorder uses the
+separate complete boot-time deployment identity so later same-HEAD source drift
+cannot be accepted. The readiness facts remain evidence about worker adoption
+only and do not attest
 application-level behavior.
 
 ## Decisions & Alternatives

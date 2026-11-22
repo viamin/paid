@@ -20,9 +20,9 @@ module Paid
       # exit path; the loop's stop flag still ends it after the current beat.
       STOP_JOIN_TIMEOUT = 5
 
-      # Beat payload: { role:, pid:, ready_at:, revision:, at: }. `at` is the
-      # heartbeat timestamp; `ready_at` stays fixed at this process's boot so
-      # readers can distinguish boot identity from current liveness.
+      # `revision` preserves the updater's raw boot-revision contract, while
+      # `deployment_revision` fixes the complete deployment identity at boot.
+      # `at` is refreshed; `ready_at` and both identities remain immutable.
       def self.start(roles:, identity:, recorder:, interval: DEFAULT_INTERVAL_SECONDS, clock: -> { Time.now.utc })
         new(roles:, identity:, recorder:, interval:, clock:).tap(&:start)
       end
@@ -98,7 +98,8 @@ module Paid
 
       def record_role(role, at)
         recorder.call({ role:, pid: identity.fetch(:pid), ready_at: @ready_at,
-                        revision: identity.fetch(:revision), at: })
+                        revision: identity.fetch(:revision),
+                        deployment_revision: identity.fetch(:deployment_revision), at: })
       rescue StandardError => error
         warn "Failed to record worker readiness heartbeat for #{role}: #{error.class}: #{error.message}"
       end
