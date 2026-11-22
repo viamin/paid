@@ -63,6 +63,27 @@ RSpec.describe DependabotAutoMergeJob do
       )
     end
 
+    # @spec AUTO-MERGE-010
+    it "stops before merge I/O when the fetched HEAD has rejected repair scope evidence" do
+      create(:agent_run, :automatic, :failed,
+        project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+        source_pull_request_number: issue.github_number, result_commit_sha: "def456",
+        external_metadata: {
+          "conflict_repair_scope_assessment" => {
+            "status" => "rejected", "explanation" => "Out of scope",
+            "base_sha" => "pre-repair", "head_sha" => "def456",
+            "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
+          }
+        })
+
+      described_class.perform_now(project.id, pr_number: 42)
+
+      expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "blocked", reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED
+      )
+    end
+
     # @spec GH-LABELS-001
     it "syncs the standard label catalog before applying the auto-merged label" do
       issue

@@ -208,7 +208,9 @@
   `app/services/pull_requests/conflict_repair_scope_gate.rb`,
   `app/temporal/activities/complete_existing_pr_run_activity.rb`,
   `app/temporal/activities/scan_paid_prs_activity.rb`,
-  `app/temporal/activities/merge_pull_request_activity.rb`.
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `app/jobs/dependabot_auto_merge_job.rb`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
-  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
+  `spec/jobs/dependabot_auto_merge_job_spec.rb`.
