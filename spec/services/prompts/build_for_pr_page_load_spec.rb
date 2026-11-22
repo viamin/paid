@@ -82,6 +82,13 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("# CI Status: FAILING")
     end
 
+    # @spec PROMPT-ASSEMBLY-026
+    it "does not query standalone review bodies outside a review-feedback context" do
+      expect(github_client).not_to receive(:pull_request_reviews)
+
+      builder.build
+    end
+
     # @spec PROMPT-ASSEMBLY-003
     it "quarantines the section, since route names come from the repository" do
       section = builder.send(:page_load_regression_section)

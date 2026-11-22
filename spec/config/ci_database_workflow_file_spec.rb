@@ -177,7 +177,12 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           install_step = job.fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
 
           expect(install_step.fetch("run")).to include('mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"')
-          expect(install_step.fetch("run")).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
+          yarn_install = if workflow_path == ".github/workflows/ci.yml" && job_name == "test-shards"
+            "yarn install --frozen-lockfile --network-timeout 600000 && bin/yarn-postinstall"
+          else
+            "yarn install --frozen-lockfile && bin/yarn-postinstall"
+          end
+          expect(install_step.fetch("run")).to include(yarn_install)
         end
 
         it "creates workspace-backed temp and cache directories before tool setup for #{job_name}" do

@@ -631,7 +631,8 @@ module Prompts
     # untrusted, the included section is omitted but the excluded inputs
     # are still recorded so the audit trail captures who tried to inject.
     def review_section_with_excluded
-      excluded = excluded_review_thread_inputs + excluded_top_level_review_inputs
+      excluded = excluded_review_thread_inputs
+      excluded += excluded_top_level_review_inputs if standalone_review_feedback_context?
       return [] if excluded.empty? && !includes_code_review_feedback?
 
       sections = []
@@ -928,7 +929,17 @@ module Prompts
     end
 
     def review_feedback_present?
+      return review_threads_present? unless standalone_review_feedback_context?
+
       review_threads_present? || trusted_top_level_reviews.any?
+    end
+
+    # Standalone review bodies are repair context only for a general run or a
+    # focused review-feedback run. Other focused runs still inspect inline
+    # threads for their deferred-work summary, without paying for or exposing
+    # standalone review content outside its intended context.
+    def standalone_review_feedback_context?
+      focus.in?([ "general", "review_feedback" ])
     end
 
     def conversation_comments_present?
