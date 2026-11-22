@@ -29,10 +29,12 @@ module Activities
       # between reading the head and fetching the diff cannot assess a
       # different head's changes while labeling them as this one.
       evidence = client.detailed_compare_files(project.full_name, base_sha, head_sha)
-      response = Llm::Request.call(prompt: prompt(head_sha, threads, evidence), agent_run: agent_run, timeout: TIMEOUT)
+      prompt_threads = threads.map { |thread| thread_with_trusted_comments(project, thread) }
+      response = Llm::Request.call(prompt: prompt(head_sha, prompt_threads, evidence), agent_run: agent_run, timeout: TIMEOUT)
       return unavailable unless response.success?
 
-      assessment = parse(response.output, head_sha, threads.map { |thread| thread[:id] })
+      thread_versions = threads.to_h { |thread| [ thread[:id].to_s, ReviewThreads::ContentDigest.call(thread) ] }
+      assessment = parse(response.output, head_sha, thread_versions)
       assessment || unavailable
     rescue AgentHarness::Error, GithubClient::Error, JSON::ParserError => error
       logger.warn(message: "agent_execution.review_thread_assessment_failed", agent_run_id: input[:agent_run_id], error_class: error.class.name)
@@ -49,7 +51,7 @@ module Activities
     def unresolved_captured_threads(client, project, agent_run, captured_ids)
       client.review_threads(project.full_name, agent_run.source_pull_request_number)
         .select { |thread| !thread[:is_resolved] && captured_ids.include?(thread[:id].to_s) }
-        .filter_map { |thread| thread_with_trusted_comments(project, thread) }
+        .select { |thread| thread_with_trusted_comments(project, thread) }
     end
 
     def thread_with_trusted_comments(project, thread)
@@ -83,7 +85,7 @@ module Activities
       PROMPT
     end
 
-    def parse(output, head_sha, captured_ids)
+    def parse(output, head_sha, thread_versions)
       payload = JSON.parse(strip_markdown_fence(output.to_s))
       return unless payload.is_a?(Hash)
 
@@ -93,10 +95,12 @@ module Activities
       resolutions = payload["resolutions"]
       return unless resolutions.is_a?(Array) && resolutions.present?
 
-      normalized = resolutions.filter_map { |resolution| normalize_resolution(resolution, captured_ids) }
+      normalized = resolutions.filter_map { |resolution| normalize_resolution(resolution, thread_versions.keys) }
       return unless normalized.size == resolutions.size && normalized.map(&:first).uniq.size == normalized.size
 
-      { authorized: true, head_sha: head_sha, thread_ids: normalized.map(&:first), rationales: normalized.to_h }
+      thread_ids = normalized.map(&:first)
+      { authorized: true, head_sha: head_sha, thread_ids: thread_ids, rationales: normalized.to_h,
+        thread_versions: thread_versions.slice(*thread_ids) }
     end
 
     def normalize_resolution(resolution, captured_ids)
@@ -109,6 +113,6 @@ module Activities
       [ thread_id, rationale.strip ]
     end
 
-    def unavailable = { authorized: false, thread_ids: [], rationales: {} }
+    def unavailable = { authorized: false, thread_ids: [], rationales: {}, thread_versions: {} }
   end
 end

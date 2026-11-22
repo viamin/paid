@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATION-003
   let(:workflow) { described_class.new }
+  let(:thread_version) { "sha256:#{"a" * 64}" }
 
   describe "class" do
     it "inherits from BaseWorkflow" do
@@ -1407,29 +1408,32 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       stub_existing_pr_followup(pr_review_phase: "ready")
       allow(workflow).to receive(:run_activity)
         .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
-        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ], rationales: { "thread_1" => "The current head repairs the validation path." })
+        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ],
+          rationales: { "thread_1" => "The current head repairs the validation path." },
+          thread_versions: { "thread_1" => thread_version })
 
       workflow.execute(input)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity,
           { agent_run_id: 42, thread_ids: [ "thread_1" ], expected_head_sha: "current-head",
-            rationales: { "thread_1" => "The current head repairs the validation path." } }, timeout: 60)
+            rationales: { "thread_1" => "The current head repairs the validation path." },
+            thread_versions: { "thread_1" => thread_version } }, timeout: 60)
     end
 
     # Stubs the real SDK boundary (Temporalio::Workflow.execute_activity) instead of
     # run_activity, so run_activity's actual deep_symbolize_keys normalization runs on the
-    # assessment result: the rationales Hash's String keys become Symbols while the
-    # thread_ids Array's String elements are untouched. A validator that looked up
-    # rationales by the original String thread_id would find nil for every genuine
-    # assessment and never reach the public resolution call.
+    # assessment result: nested Hash String keys become Symbols while the thread_ids
+    # Array's String elements are untouched. A validator that looked up either map by
+    # the original String thread_id would reject every genuine assessment.
     # @spec FOCUSED-RUN-011
     it "resolves a repaired finding once BaseWorkflow#run_activity symbolizes the rationale map's keys" do
       allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _input, **_opts|
         case activity_class.name
         when "Activities::AssessFollowupReviewThreadsActivity"
           { "authorized" => true, "head_sha" => "current-head", "thread_ids" => [ "thread_1" ],
-            "rationales" => { "thread_1" => "The current head repairs the validation path." } }
+            "rationales" => { "thread_1" => "The current head repairs the validation path." },
+            "thread_versions" => { "thread_1" => thread_version } }
         when "Activities::ResolveReviewThreadsActivity"
           {}
         end
@@ -1440,7 +1444,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(Temporalio::Workflow).to have_received(:execute_activity)
         .with(Activities::ResolveReviewThreadsActivity,
           { agent_run_id: 42, thread_ids: [ "thread_1" ], expected_head_sha: "current-head",
-            rationales: { "thread_1" => "The current head repairs the validation path." } }, any_args)
+            rationales: { "thread_1" => "The current head repairs the validation path." },
+            thread_versions: { "thread_1" => thread_version } }, any_args)
     end
 
     it "does not resolve review threads after pushing commits when the prompt captured none" do
@@ -1630,7 +1635,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       stub_no_changes_followup_with_marker
       allow(workflow).to receive(:run_activity)
         .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
-        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ], rationales: { "thread_1" => "The finding is already fixed at the current head." })
+        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ],
+          rationales: { "thread_1" => "The finding is already fixed at the current head." },
+          thread_versions: { "thread_1" => thread_version })
 
       workflow.execute(input)
 

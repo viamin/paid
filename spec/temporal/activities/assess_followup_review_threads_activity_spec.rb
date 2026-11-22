@@ -32,7 +32,8 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
       authorized: true,
       head_sha: "current-head",
       thread_ids: [ "thread_1" ],
-      rationales: { "thread_1" => "The current head validates the missing input." }
+      rationales: { "thread_1" => "The current head validates the missing input." },
+      thread_versions: { "thread_1" => ReviewThreads::ContentDigest.call(thread) }
     )
   end
 

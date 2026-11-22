@@ -1722,8 +1722,10 @@ RSpec.describe GithubClient do
                           id: "thread_1",
                           isResolved: false,
                           comments: {
+                            totalCount: 1,
                             nodes: [
-                              { body: "Fix this", path: "app/model.rb", line: 10, author: { login: "reviewer" } }
+                              { id: "comment_1", body: "Fix this", path: "app/model.rb", line: 10,
+                                author: { login: "reviewer" } }
                             ]
                           }
                         },
@@ -1752,6 +1754,8 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.first[:id]).to eq("thread_1")
         expect(result.first[:is_resolved]).to be false
+        expect(result.first[:comment_count]).to eq(1)
+        expect(result.first[:comments].first[:id]).to eq("comment_1")
         expect(result.first[:comments].first[:body]).to eq("Fix this")
         expect(result.first[:comments].first[:path]).to eq("app/model.rb")
         expect(result.first[:comments].first[:line]).to eq(10)

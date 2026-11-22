@@ -1048,35 +1048,38 @@ module Workflows
     end
 
     def resolve_assessed_review_threads(agent_run_id, captured_thread_ids, resolution)
-      rationales = string_keyed_rationales(resolution[:rationales])
-      return unless valid_review_thread_resolution?(captured_thread_ids, resolution, rationales)
+      rationales = string_keyed_hash(resolution[:rationales])
+      thread_versions = string_keyed_hash(resolution[:thread_versions])
+      return unless valid_review_thread_resolution?(captured_thread_ids, resolution, rationales, thread_versions)
 
       run_activity(Activities::ResolveReviewThreadsActivity,
         { agent_run_id: agent_run_id,
           thread_ids: resolution[:thread_ids],
           expected_head_sha: resolution[:head_sha],
-          rationales: rationales }, timeout: 60)
+          rationales: rationales,
+          thread_versions: thread_versions }, timeout: 60)
     end
 
     # thread_ids are String elements of an Array, left untouched by
     # BaseWorkflow#run_activity's deep_symbolize_keys normalization of the
-    # activity result, while rationales' Hash keys are symbolized by that same
-    # call. Re-stringify them so the lookup below matches thread_id by value
-    # rather than by type.
-    def string_keyed_rationales(rationales)
-      return {} unless rationales.is_a?(Hash)
+    # activity result, while nested Hash keys are symbolized by that same call.
+    # Re-stringify them so the lookups below match thread_id by value rather
+    # than by type.
+    def string_keyed_hash(value)
+      return {} unless value.is_a?(Hash)
 
-      rationales.transform_keys(&:to_s)
+      value.transform_keys(&:to_s)
     end
 
-    def valid_review_thread_resolution?(captured_thread_ids, resolution, rationales)
+    def valid_review_thread_resolution?(captured_thread_ids, resolution, rationales, thread_versions)
       return false unless resolution.is_a?(Hash) && resolution[:authorized] == true
       return false unless resolution[:head_sha].is_a?(String) && resolution[:head_sha].present?
 
       thread_ids = resolution[:thread_ids]
       thread_ids.is_a?(Array) && thread_ids.present? && thread_ids.uniq == thread_ids &&
         thread_ids.all? { |thread_id| captured_thread_ids.include?(thread_id) } &&
-        thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? }
+        thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? } &&
+        thread_ids.all? { |thread_id| ReviewThreads::ContentDigest.valid?(thread_versions[thread_id]) }
     end
 
     def resolve_review_threads(agent_run_id, thread_ids:)

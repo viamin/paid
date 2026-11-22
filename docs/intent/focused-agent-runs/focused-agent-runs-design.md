@@ -69,14 +69,16 @@ or a rebase are not proof that any particular finding is repaired. Before the
 public GitHub mutation, `AssessFollowupReviewThreadsActivity` obtains a fresh
 agent-harness judgment over the captured threads at the current head. Its exact
 structured response is mechanically checked for captured trusted IDs, a
-supported disposition, explicit rationale, and the observed head SHA;
-`ResolveReviewThreadsActivity` reads that head again immediately before its
-mutation. The workflow leaves findings open when either boundary is unavailable,
-invalid, stale, or inconclusive. The Temporal patch guard retains old recorded
-resolution commands for replay until the patch-guard sunset sweep authorizes
-their removal. This preserves valid no-code dispositions (for example invalid,
-outdated, or already-fixed feedback) without equating unrelated changed lines
-or generic agent success with repair evidence.
+supported disposition, explicit rationale, the observed head SHA, and a digest
+of the exact thread content assessed. `ResolveReviewThreadsActivity` reads the
+head and threads again immediately before its mutation, and requires every
+authorized thread digest to remain unchanged. The workflow leaves findings open
+when either boundary is unavailable, invalid, stale, or inconclusive. The
+Temporal patch guard retains old recorded resolution commands for replay until
+the patch-guard sunset sweep authorizes their removal. This preserves valid
+no-code dispositions (for example invalid, outdated, or already-fixed feedback)
+without hiding feedback appended after assessment or equating unrelated changed
+lines or generic agent success with repair evidence.
 
 ## Focus-scoped quality scoring
 

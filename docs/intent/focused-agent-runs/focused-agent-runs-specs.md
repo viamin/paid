@@ -142,10 +142,11 @@
   changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
   captured review thread merely because the run completed, pushed, or reports
   that the feedback was already addressed. A thread remains actionable until a
-  current-head, thread-bound assessment supplies explicit supported rationale;
-  failed, unavailable, malformed, stale, or no-op assessment cannot resolve
-  it. This does not prohibit a supported no-code disposition such as invalid,
-  outdated, or already-fixed feedback.
+  current-head, exact-thread-version-bound assessment supplies explicit
+  supported rationale; failed, unavailable, malformed, stale, concurrently
+  changed, or no-op assessment cannot resolve it. This does not prohibit a
+  supported no-code disposition such as invalid, outdated, or already-fixed
+  feedback.
   *Code:* `AgentExecutionWorkflow#execute`,
   `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`.
   *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,

@@ -992,8 +992,10 @@ class GithubClient
               nodes {
                 id
                 isResolved
-                comments(first: 50) {
+                comments(last: 50) {
+                  totalCount
                   nodes {
+                    id
                     body
                     path
                     line
@@ -1017,9 +1019,10 @@ class GithubClient
       {
         id: thread["id"],
         is_resolved: thread["isResolved"],
+        comment_count: thread.dig("comments", "totalCount"),
         comments: (thread.dig("comments", "nodes") || []).map do |c|
           {
-            body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
+            id: c["id"], body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
             created_at: c["createdAt"], commit_id: c.dig("originalCommit", "oid")
           }
         end
