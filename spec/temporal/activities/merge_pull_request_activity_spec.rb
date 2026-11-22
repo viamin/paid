@@ -377,8 +377,16 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(provider).to receive(:add_comment)
       end
 
+      def allow_source_closure_refresh
+        client = instance_double(GithubClient, update_pull_request: nil)
+        allow(project).to receive(:client).and_return(client)
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        client
+      end
+
       # @spec AUTO-MERGE-010
       it "stops before merge I/O when the fetched HEAD has rejected repair scope evidence" do
+        client = allow_source_closure_refresh
         create(:agent_run, :automatic, :failed,
           project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
           source_pull_request_number: issue.github_number, result_commit_sha: "abc",
@@ -393,6 +401,8 @@ RSpec.describe Activities::MergePullRequestActivity do
         result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(result).to include(merged: false, skipped: true)
+        expect(client).to have_received(:update_pull_request)
+          .with(project.pr_target_repository, 42, body: "\n\n---\n\nTracks #42")
         expect(provider).not_to have_received(:merge_pull_request)
         expect(project.auto_merge_attempts.recent.first).to have_attributes(
           status: "blocked", reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED
@@ -401,6 +411,7 @@ RSpec.describe Activities::MergePullRequestActivity do
 
       # @spec AUTO-MERGE-010
       it "rechecks a conflict-scope stop that appears after scan eligibility but before merge" do
+        client = allow_source_closure_refresh
         expect(PullRequests::ConflictRepairScopeGate.call(project: project, issue: issue, head_sha: "abc")).to be_allowed
         create(:agent_run, :automatic, :failed,
           project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
@@ -416,6 +427,8 @@ RSpec.describe Activities::MergePullRequestActivity do
         result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(result).to include(merged: false, skipped: true)
+        expect(client).to have_received(:update_pull_request)
+          .with(project.pr_target_repository, 42, body: "\n\n---\n\nTracks #42")
         expect(provider).not_to have_received(:merge_pull_request)
       end
 
