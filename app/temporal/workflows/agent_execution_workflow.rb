@@ -1048,24 +1048,35 @@ module Workflows
     end
 
     def resolve_assessed_review_threads(agent_run_id, captured_thread_ids, resolution)
-      return unless valid_review_thread_resolution?(captured_thread_ids, resolution)
+      rationales = string_keyed_rationales(resolution[:rationales])
+      return unless valid_review_thread_resolution?(captured_thread_ids, resolution, rationales)
 
       run_activity(Activities::ResolveReviewThreadsActivity,
         { agent_run_id: agent_run_id,
           thread_ids: resolution[:thread_ids],
           expected_head_sha: resolution[:head_sha],
-          rationales: resolution[:rationales] }, timeout: 60)
+          rationales: rationales }, timeout: 60)
     end
 
-    def valid_review_thread_resolution?(captured_thread_ids, resolution)
+    # thread_ids are String elements of an Array, left untouched by
+    # BaseWorkflow#run_activity's deep_symbolize_keys normalization of the
+    # activity result, while rationales' Hash keys are symbolized by that same
+    # call. Re-stringify them so the lookup below matches thread_id by value
+    # rather than by type.
+    def string_keyed_rationales(rationales)
+      return {} unless rationales.is_a?(Hash)
+
+      rationales.transform_keys(&:to_s)
+    end
+
+    def valid_review_thread_resolution?(captured_thread_ids, resolution, rationales)
       return false unless resolution.is_a?(Hash) && resolution[:authorized] == true
       return false unless resolution[:head_sha].is_a?(String) && resolution[:head_sha].present?
 
       thread_ids = resolution[:thread_ids]
-      rationales = resolution[:rationales]
       thread_ids.is_a?(Array) && thread_ids.present? && thread_ids.uniq == thread_ids &&
         thread_ids.all? { |thread_id| captured_thread_ids.include?(thread_id) } &&
-        rationales.is_a?(Hash) && thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? }
+        thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? }
     end
 
     def resolve_review_threads(agent_run_id, thread_ids:)

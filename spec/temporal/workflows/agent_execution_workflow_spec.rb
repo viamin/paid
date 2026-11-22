@@ -1417,6 +1417,32 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
             rationales: { "thread_1" => "The current head repairs the validation path." } }, timeout: 60)
     end
 
+    # Stubs the real SDK boundary (Temporalio::Workflow.execute_activity) instead of
+    # run_activity, so run_activity's actual deep_symbolize_keys normalization runs on the
+    # assessment result: the rationales Hash's String keys become Symbols while the
+    # thread_ids Array's String elements are untouched. A validator that looked up
+    # rationales by the original String thread_id would find nil for every genuine
+    # assessment and never reach the public resolution call.
+    # @spec FOCUSED-RUN-010
+    it "resolves a repaired finding once BaseWorkflow#run_activity symbolizes the rationale map's keys" do
+      allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::AssessFollowupReviewThreadsActivity"
+          { "authorized" => true, "head_sha" => "current-head", "thread_ids" => [ "thread_1" ],
+            "rationales" => { "thread_1" => "The current head repairs the validation path." } }
+        when "Activities::ResolveReviewThreadsActivity"
+          {}
+        end
+      end
+
+      workflow.send(:resolve_followup_review_threads_with_evidence, 42, [ "thread_1" ])
+
+      expect(Temporalio::Workflow).to have_received(:execute_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42, thread_ids: [ "thread_1" ], expected_head_sha: "current-head",
+            rationales: { "thread_1" => "The current head repairs the validation path." } }, any_args)
+    end
+
     it "does not resolve review threads after pushing commits when the prompt captured none" do
       stub_existing_pr_followup_without_review_threads
 
