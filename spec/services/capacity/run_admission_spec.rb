@@ -157,6 +157,31 @@ RSpec.describe Capacity::RunAdmission do
     end
 
     # @spec CONTAINER-RUNTIME-050
+    it "keeps a direct backing-store probe timeout unavailable" do
+      backend = instance_double(
+        Containers::Backends::LocalDocker,
+        all_host_identifiers: [ "local" ],
+        remote?: false
+      )
+      allow(backend).to receive(:backing_storage_observation).and_raise(Timeout::Error)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        mode: UserSetting::RUN_CONCURRENCY_MODE_MANUAL,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result).to include(
+        allowed: true,
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_unavailable"
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-050
     [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
       it "keeps #{available_bytes.inspect} injected backing-store evidence unavailable" do
         malformed = docker_snapshot.merge(
