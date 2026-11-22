@@ -252,7 +252,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       expect(job.fetch("timeout-minutes")).to eq(360)
       expect(install_step.fetch("run")).to include(
         "for attempt in 1 2 3 4 5",
-        "30m",
+        "20m",
         "yarn install --frozen-lockfile && bin/yarn-postinstall"
       )
     end
