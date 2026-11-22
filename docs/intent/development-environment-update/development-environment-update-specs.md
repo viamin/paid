@@ -51,12 +51,13 @@
   update stops Overmind, the updater SHALL acquire and retain an exclusive
   activity-admission barrier for each ready Temporal worker within a bounded
   poll budget, and SHALL hold both barriers through the stop request. Each
-  Temporal worker SHALL reserve an activity execution slot under shared
-  ownership of its worker's barrier before polling for a task and retain that
-  ownership through SDK slot release, so a role that reaches idle while another
-  role drains cannot admit new work before the stop boundary and no assigned
-  task waits behind the barrier until its heartbeat deadline. Worker metadata SHALL expose only
-  the active count and existing trusted boot identity, never activity input,
+  Temporal worker SHALL check shared ownership of its worker's barrier before
+  polling for a task and a used slot SHALL retain that ownership through SDK
+  slot release. An unused SDK poll reservation SHALL NOT retain admission
+  ownership, so a role that reaches idle while another role drains cannot admit
+  new work before the stop boundary and no assigned task waits behind the
+  barrier until its heartbeat deadline. Worker metadata SHALL expose only the
+  active count and existing trusted boot identity, never activity input,
   credential payloads, secret-bearing process arguments, or environment. If a
   worker remains active or its count is unknown within the budget, the updater
   SHALL fail before requesting a stop and SHALL report deferred adoption; it

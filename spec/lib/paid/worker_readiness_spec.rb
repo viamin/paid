@@ -146,6 +146,20 @@ RSpec.describe Paid::WorkerReadiness do
 
   describe ".activity_slot_supplier" do
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "does not let an unused SDK poll reservation block an idle-worker drain" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      supplier = described_class.activity_slot_supplier(slots: 1, env:)
+      permit = supplier.try_reserve_slot(nil)
+
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |barrier|
+        expect(barrier.flock(File::LOCK_EX | File::LOCK_NB)).to eq(0)
+      end
+
+      supplier.release_slot(slot_context(permit))
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
     it "keeps an activity task unadmitted while the updater owns the admission barrier" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -161,6 +175,7 @@ RSpec.describe Paid::WorkerReadiness do
 
         supplier.mark_slot_used(slot_context(permit))
         expect(JSON.parse(File.read(file_path))).to include("active_activities" => 1)
+        expect(barrier.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
 
         supplier.release_slot(slot_context(permit))
         expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)

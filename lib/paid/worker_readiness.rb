@@ -96,8 +96,8 @@ module Paid
     end
 
     # The updater takes this lock exclusively before stopping workers. The
-    # Temporal activity slot supplier holds shared ownership before polling and
-    # through task release, making admission closure an atomic boundary.
+    # Temporal activity slot supplier checks shared ownership before polling,
+    # while a used slot retains shared ownership through task release.
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
     def admission_lock_path(env = ENV)
       "#{file_path(env)}.admission.lock"
@@ -175,8 +175,8 @@ module Paid
 
     # This is a Temporal custom slot supplier rather than an activity wrapper:
     # the latter runs only after Temporal has already assigned the task and
-    # starts its heartbeat deadline. A permit owns both a bounded SDK slot and
-    # a shared admission lock until the SDK releases it.
+    # starts its heartbeat deadline. Unused SDK poll reservations do not retain
+    # admission ownership; used permits retain it through task release.
     class ActivitySlotSupplier < Temporalio::Worker::Tuner::SlotSupplier::Custom
       Permit = Struct.new(:lock, :used)
 
@@ -197,16 +197,18 @@ module Paid
       end
 
       def mark_slot_used(context)
-        return if context.permit.used
+        permit = context.permit
+        return if permit.used
 
-        context.permit.used = true
+        permit.lock = acquire_admission_lock
+        permit.used = true
         WorkerReadiness.activity_started!(@env)
       end
 
       def release_slot(context)
         permit = context.permit
         WorkerReadiness.activity_finished!(@env) if permit.used
-        permit.lock.close
+        permit.lock&.close
         return_slot
       end
 
@@ -226,15 +228,25 @@ module Paid
       def acquire_permit(nonblocking:)
         return unless claim_slot(nonblocking:)
 
-        lock = File.open(WorkerReadiness.admission_lock_path(env), File::RDWR | File::CREAT, 0o644)
-        return Permit.new(lock, false) if lock.flock(File::LOCK_SH | File::LOCK_NB)
+        lock = acquire_admission_lock(nonblocking: true)
+        return Permit.new(nil, false) if lock
 
-        lock.close
         return_slot
         nil
       rescue SystemCallError
-        lock&.close
         return_slot
+        nil
+      ensure
+        lock&.close
+      end
+
+      def acquire_admission_lock(nonblocking: false)
+        lock = File.open(WorkerReadiness.admission_lock_path(env), File::RDWR | File::CREAT, 0o644)
+        operation = File::LOCK_SH
+        operation |= File::LOCK_NB if nonblocking
+        return lock if lock.flock(operation)
+
+        lock.close
         nil
       end
 
