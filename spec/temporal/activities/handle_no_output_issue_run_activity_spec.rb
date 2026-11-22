@@ -376,6 +376,27 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(Llm::AssessNoOutputDisposition).to have_received(:call).once
         expect(client).to have_received(:add_comment).once
       end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "rejects malformed persisted fields and replaces them with a fresh assessment" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          reconciliation: { "no_output_disposition" => {
+            "disposition" => "recommend_close", "rationale" => false, "next_action" => 42
+          } })
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "needs_input", "rationale" => "A human decision is missing.",
+            "next_action" => "Choose the supported implementation option." }
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+        expect(Llm::AssessNoOutputDisposition).to have_received(:call).once
+        expect(agent_run.reload.reconciliation.dig("no_output_disposition", "next_action"))
+          .to eq("Choose the supported implementation option.")
+      end
     end
 
     context "when the agent declares a no-code-required completion" do

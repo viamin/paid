@@ -15,7 +15,7 @@ floor. Keep local `bin/rspec` and separate system/performance checks available.
 
 ## Execution
 
-Partition all non-system, non-performance spec files into four deterministic,
+Partition all non-system, non-performance spec files into five deterministic,
 disjoint groups. Assign largest source files first to the least-loaded group,
 using file bytes as a cheap structural estimate, not a correctness judgment or
 promise of equal runtime. Each CI job has its own PostgreSQL/Qdrant services,
@@ -100,8 +100,8 @@ that would corrupt boot/coverage probe output while profiling the parent suite.
 JSON timings make each shard's examples and durations inspectable. The existing
 opt-in test-prof workflow must allow a full suite to finish within its timeout;
 profiling does not relax normal CI requirements. Compare before/after focused
-examples and actual CI wall time. Four jobs reduce latency at the cost of extra
-setup runner minutes; they do not claim a fourfold reduction in total CPU work.
+examples and actual CI wall time. Five jobs reduce latency at the cost of extra
+setup runner minutes; they do not claim a fivefold reduction in total CPU work.
 
 ## Open decisions
 

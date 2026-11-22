@@ -15,7 +15,10 @@ RSpec.describe Llm::AssessNoOutputDisposition do
   end
   let(:response) do
     text = payload
-    Object.new.tap { |value| value.define_singleton_method(:output) { text } }
+    Object.new.tap do |value|
+      value.define_singleton_method(:output) { text }
+      value.define_singleton_method(:success?) { true }
+    end
   end
 
   before do
@@ -32,13 +35,46 @@ RSpec.describe Llm::AssessNoOutputDisposition do
       "next_action" => "Approve the remaining Full LID implementation scope."
     )
     expect(Llm::Request).to have_received(:call).with(
-      hash_including(agent_run:, timeout: described_class::TIMEOUT, prompt: a_string_including("Return only a JSON object"))
+      hash_including(agent_run:, timeout: described_class::TIMEOUT, prompt: a_string_including("Return only a JSON object"),
+        response_validator: kind_of(Method))
     )
   end
 
   # @spec NO-OUTPUT-ISSUE-010
   it "rejects a missing exact next action" do
     allow(response).to receive(:output).and_return({ disposition: "needs_input", rationale: "Work remains." }.to_json)
+
+    expect { described_class.call(agent_run:, diagnostic_output: "proposal") }
+      .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "invalid_disposition") }
+  end
+
+  # @spec NO-OUTPUT-ISSUE-010
+  it "rejects a non-object JSON response with a typed disposition failure" do
+    allow(response).to receive(:output).and_return("[]")
+
+    expect { described_class.call(agent_run:, diagnostic_output: "proposal") }
+      .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "invalid_disposition") }
+  end
+
+  # @spec NO-OUTPUT-ISSUE-010
+  it "rejects a response without output with a typed disposition failure" do
+    allow(Llm::Request).to receive(:call).and_return(Object.new)
+
+    expect { described_class.call(agent_run:, diagnostic_output: "proposal") }
+      .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "invalid_disposition") }
+  end
+
+  # @spec NO-OUTPUT-ISSUE-010
+  it "rejects unsuccessful responses even when their output looks valid" do
+    allow(response).to receive(:success?).and_return(false)
+
+    expect { described_class.call(agent_run:, diagnostic_output: "proposal") }
+      .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "unsuccessful_response") }
+  end
+
+  # @spec NO-OUTPUT-ISSUE-010
+  it "rejects non-string rationale and next-action values" do
+    allow(response).to receive(:output).and_return({ disposition: "needs_input", rationale: false, next_action: 42 }.to_json)
 
     expect { described_class.call(agent_run:, diagnostic_output: "proposal") }
       .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "invalid_disposition") }

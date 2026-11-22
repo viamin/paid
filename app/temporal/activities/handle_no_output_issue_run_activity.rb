@@ -210,8 +210,7 @@ module Activities
     end
 
     def valid_no_output_disposition?(assessment)
-      assessment.is_a?(Hash) && assessment["disposition"].in?(%w[recommend_close needs_input]) &&
-        assessment["rationale"].to_s.strip.present? && assessment["next_action"].to_s.strip.present?
+      Llm::AssessNoOutputDisposition.valid_disposition?(assessment)
     end
 
     def fallback_no_output_disposition(agent_run)

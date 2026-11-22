@@ -27,6 +27,12 @@ module Llm
 
     def self.call(...) = new(...).call
 
+    def self.valid_disposition?(result)
+      result.is_a?(Hash) && result.keys.sort == %w[disposition next_action rationale] &&
+        VALID_DISPOSITIONS.include?(result["disposition"]) &&
+        %w[rationale next_action].all? { |key| result[key].is_a?(String) && result[key].strip.present? }
+    end
+
     def initialize(agent_run:, diagnostic_output:, timeout: TIMEOUT)
       @agent_run = agent_run
       @diagnostic_output = diagnostic_output.to_s.truncate(20_000)
@@ -34,8 +40,12 @@ module Llm
     end
 
     def call # @spec NO-OUTPUT-ISSUE-010 NO-OUTPUT-ISSUE-011
-      result = parse(response.output)
-      raise failure("invalid_disposition") unless valid?(result)
+      assessment_response = response
+      raise failure("unsuccessful_response") unless successful?(assessment_response)
+      raise failure("invalid_disposition") unless assessment_response.respond_to?(:output)
+
+      result = parse(assessment_response.output)
+      raise failure("invalid_disposition") unless self.class.valid_disposition?(result)
 
       result
     rescue DispositionFailure
@@ -57,17 +67,32 @@ module Llm
     attr_reader :agent_run, :diagnostic_output, :timeout
 
     def response
-      Llm::Request.call(prompt: prompt, timeout: timeout, agent_run: agent_run)
+      Request.call(
+        prompt: prompt,
+        timeout: timeout,
+        agent_run: agent_run,
+        response_validator: method(:valid_response?)
+      )
     end
 
     def parse(output)
-      JSON.parse(output.to_s).deep_stringify_keys
+      result = JSON.parse(output.to_s)
+      raise failure("invalid_disposition") unless result.is_a?(Hash)
+
+      result.deep_stringify_keys
     end
 
-    def valid?(result)
-      result.is_a?(Hash) && result.keys.sort == %w[disposition next_action rationale] &&
-        VALID_DISPOSITIONS.include?(result["disposition"]) &&
-        result["rationale"].to_s.strip.present? && result["next_action"].to_s.strip.present?
+    def valid_response?(candidate)
+      candidate.respond_to?(:output) && successful?(candidate) &&
+        self.class.valid_disposition?(parse(candidate.output))
+    rescue DispositionFailure, JSON::ParserError
+      false
+    end
+
+    # Older supported response objects predate success?, and Llm::Request
+    # intentionally treats those as transport-successful for compatibility.
+    def successful?(candidate)
+      !candidate.respond_to?(:success?) || candidate.success?
     end
 
     def failure(category)
