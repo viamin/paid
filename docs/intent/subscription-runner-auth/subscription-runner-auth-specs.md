@@ -69,7 +69,8 @@
 
 - [x] **SUBSCRIPTION-RUNNER-AUTH-006** — When a managed rotating credential's
   access token is expired but its canonical, unrevoked native auth state has
-  refresh material and the provider-owned exchange is supported, provisioning
+  refresh material (including Codex's selected native account identity) and the
+  provider-owned exchange is supported, provisioning
   and isolated text execution SHALL keep it eligible for one serialized refresh
   attempt before rejecting it. A revoked credential, missing refresh material,
   unsupported exchange, or unsuccessful exchange SHALL not materialize the
@@ -89,6 +90,21 @@
   *Code:* `Runners::ManagedCredentialLifecycle`, `Knowledge::RunnerSelector`,
   `Knowledge::RunnerReadiness`, `Llm::Request`,
   `Api::StandaloneTextCredentialsController`, `Containers::Provision`.
+
+- [ ] **SUBSCRIPTION-RUNNER-AUTH-007** — When recovering a selected canonical
+  Codex credential, Paid SHALL pass its private mode `0600` native store, expected
+  generation and account identity, and a finite 45-second deadline through the
+  supported public harness contract under the existing row lease. It SHALL
+  validate the returned native credentials and metadata against the resulting
+  store, selected subscription identity and fresh expiry before canonical
+  persistence, SHALL preserve a newer/revoked canonical record, and SHALL remove
+  private native state on success, failure and cancellation. Host auth SHALL NOT
+  be imported; OpenCode and OMP SHALL retain their distinct existing contracts.
+  Implementation and operating release adoption remain tracked separately by
+  #5280, #5262 and #5208.
+  *Tests:* `spec/services/runners/managed_credential_lifecycle_codex_recovery_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`.
+  *Code:* `Runners::ManagedCredentialLifecycle`, `Runners::RefreshCodexCredential`.
 
 - [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu
   (desktop and mobile) SHALL expose a single provider-neutral "Runner

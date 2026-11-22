@@ -293,13 +293,13 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
         codex_refresh_exchange_supported?: true
       )
       refreshed = JSON.parse(valid_codex_auth)
-      refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
-      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token).and_return(refreshed)
+      refreshed["tokens"]["access_token"] = fresh_codex_access_token(account_id: refreshed.fetch("tokens").fetch("account_id"))
+      stub_codex_harness_exchange(refreshed)
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
       parsed = JSON.parse(credential.reload.token)
-      expect(parsed["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
+      expect(parsed["tokens"]["access_token"]).to eq(refreshed.fetch("tokens").fetch("access_token"))
     end
 
     it "does not brick the credential when the refresh response is not a Codex auth" do
@@ -310,8 +310,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       )
       credential.update!(revoked_at: 1.hour.ago)
       original_token = credential.token
-      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
-        .and_return({ "error" => "invalid_grant", "error_description" => "bad refresh token" })
+      stub_codex_harness_exchange({ "error" => "invalid_grant", "error_description" => "bad refresh token" })
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
@@ -331,7 +330,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       original_token = credential.token
       refresh_only = JSON.parse(valid_codex_auth)
       refresh_only["tokens"].delete("access_token")
-      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token).and_return(refresh_only)
+      stub_codex_harness_exchange(refresh_only)
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 

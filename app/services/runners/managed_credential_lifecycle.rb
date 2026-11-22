@@ -74,7 +74,7 @@ module Runners
         return :fresh unless near_expiry?(credential, runner_key: runner_key)
         return :fresh if credential.active? && !refreshable?(credential, runner_key: runner_key)
         return :unsupported_refresh unless rotating?(runner_key) && refresh_supported?(runner_key)
-        return :missing_refresh_material unless parsed_secret(credential, runner_key: runner_key)&.refreshable?
+        return :missing_refresh_material unless refreshable?(credential, runner_key: runner_key)
 
         :refreshable
       end
@@ -131,8 +131,14 @@ module Runners
       # harness errors) on failure; callers that need a non-raising outcome use
       # refresh_if_near_expiry! instead.
       def exchange_refresh_token!(credential, runner_key:)
+        if runner_key.to_s == "codex"
+          return RefreshCodexCredential.call(credential: credential) do |native|
+            apply_codex_refresh_result!(credential, native)
+          end
+        end
+
         payload = case runner_key.to_s
-        when "codex", "opencode"
+        when "opencode"
           AgentHarness::Authentication.exchange_refresh_token(runner_key.to_sym).to_h
         when "omp"
           exchange_omp_refresh_token(credential)
@@ -141,6 +147,8 @@ module Runners
         end
         apply_refresh_result!(credential, runner_key: runner_key, payload: payload)
         true
+      rescue RefreshCodexCredential::Error => e
+        raise InvalidRefreshResponse.new(e.message, reason: e.reason)
       end
 
       # Reads the CLI's native auth state from a container and persists any
@@ -239,8 +247,12 @@ module Runners
       end
 
       def refreshable?(credential, runner_key:)
-        rotating?(runner_key) && refresh_supported?(runner_key) &&
-          parsed_secret(credential, runner_key: runner_key)&.refreshable?
+        return false unless rotating?(runner_key) && refresh_supported?(runner_key)
+
+        parsed = parsed_secret(credential, runner_key: runner_key)
+        return false unless parsed&.refreshable?
+
+        runner_key.to_s != "codex" || (parsed.account_id.is_a?(String) && parsed.account_id.present?)
       end
 
       def exchange_omp_refresh_token(credential)

@@ -92,6 +92,21 @@ Host-forwarded rotation remains intentionally separate: it is not imported
 into a managed record unless an existing authorized identity/writeback boundary
 already establishes equivalence.
 
+Codex recovery adapts the published harness's explicit native-store contract.
+While holding the canonical row lease, Paid writes only the selected managed
+record into a private temporary `auth.json` with mode `0600`. The public harness
+metadata selects its generation and account; recovery receives that explicit
+path, generation, account and a 45-second deadline. Paid validates the returned
+credentials/metadata envelope against the resulting private store, subscription
+billing, the selected identity and fresh usable native credentials before the
+existing canonical persistence action. A changed canonical generation or revoked
+record cannot be overwritten. Temporary native state is removed on success and
+failure, including cancellation. Provider transport and token interpretation stay
+in the harness and existing credential interface; no host auth is imported.
+OpenCode and OMP retain their separate existing exchange contracts. Release
+adoption and actual selected-credential operating acceptance remain separate
+gates from this adapter (#5280, #5262 and #5208).
+
 ## Exceptions Preserved
 
 - **Codex remote placement is still gated off.** The managed materializer is
