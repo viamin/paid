@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "open3"
+require "shellwords"
 
 class RetryWithProcessGroup < Pathname
 end
@@ -44,6 +45,32 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     expect(stdout).to eq("")
     expect(stderr).to eq("")
     expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
+  end
+
+  # @spec TEST-SUITE-023
+  it "stops a watchdog whose process group is not ready when setup succeeds" do
+    delayed_setsid_directory = Dir.mktmpdir("retry-with-process-group-setsid")
+    delayed_setsid = File.join(delayed_setsid_directory, "setsid")
+    File.write(delayed_setsid, <<~BASH)
+      #!/usr/bin/env bash
+      if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
+        sleep 0.2
+      fi
+      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
+    BASH
+    FileUtils.chmod("u+x", delayed_setsid)
+    environment = fast_supervision.merge(
+      "DEPENDENCY_SETUP_TIMEOUT" => "1s",
+      "PATH" => "#{delayed_setsid_directory}:#{ENV.fetch("PATH")}"
+    )
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    _stdout, _stderr, status = Open3.capture3(environment, script_path, "bash", "-c", "true")
+
+    expect(status).to be_success
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 0.8
+  ensure
+    FileUtils.remove_entry(delayed_setsid_directory) if delayed_setsid_directory
   end
 
   # @spec TEST-SUITE-023

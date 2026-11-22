@@ -41,8 +41,9 @@ at most five times, bounding each attempt to twenty minutes with increasing
 delays. Each attempt runs in an isolated process group so timeout termination
 also stops its package-manager descendants and reaps its owned session leader
 before the next retry. Its watchdog runs in a separate owned session containing
-both the timer and grace delay; every success, failure, timeout, and cancellation
-terminates and waits for that session before the wrapper returns. The supervisor
+both the timer and grace delay, acknowledges that session before cleanup can
+target its process group, and terminates and waits for that session on every
+success, failure, timeout, and cancellation before the wrapper returns. The supervisor
 sends TERM to only that owned group, follows with KILL after a finite grace
 period for TERM-resistant descendants, and reports a timeout as a failed setup
 attempt. This absorbs transient registry

@@ -10,28 +10,35 @@ backoff_seconds="${DEPENDENCY_SETUP_BACKOFF_SECONDS:-10}"
 active_group_leader=""
 active_timeout_marker=""
 active_watchdog=""
+active_watchdog_ready=""
 
 terminate_group() {
   local group_leader="$1"
 
+  # The direct signal covers a process between fork and setsid; once setsid
+  # succeeds, the group signal covers every owned descendant.
+  kill -TERM -- "$group_leader" 2>/dev/null || true
   kill -TERM -- "-$group_leader" 2>/dev/null || true
-  sleep "$termination_grace"
-  kill -KILL -- "-$group_leader" 2>/dev/null || true
+  wait "$group_leader" 2>/dev/null || true
+  if kill -0 -- "-$group_leader" 2>/dev/null; then
+    sleep "$termination_grace"
+    kill -KILL -- "-$group_leader" 2>/dev/null || true
+  fi
 }
 
 cleanup_active_attempt() {
   if [[ -n "$active_watchdog" ]]; then
-    kill -TERM -- "-$active_watchdog" 2>/dev/null || true
-    wait "$active_watchdog" || true
+    terminate_group "$active_watchdog"
   fi
   if [[ -n "$active_group_leader" ]] && kill -0 -- "-$active_group_leader" 2>/dev/null; then
     terminate_group "$active_group_leader"
-    wait "$active_group_leader" || true
   fi
   rm -f "$active_timeout_marker"
+  rm -f "$active_watchdog_ready"
   active_group_leader=""
   active_timeout_marker=""
   active_watchdog=""
+  active_watchdog_ready=""
 }
 
 on_exit() {
@@ -45,10 +52,13 @@ on_exit() {
 trap 'on_exit' EXIT
 
 run_attempt() {
-  local timeout_marker group_leader watchdog status
+  local timeout_marker watchdog_ready group_leader watchdog status
   timeout_marker="$(mktemp)"
   rm -f "$timeout_marker"
   active_timeout_marker="$timeout_marker"
+  watchdog_ready="$(mktemp)"
+  rm -f "$watchdog_ready"
+  active_watchdog_ready="$watchdog_ready"
   setsid "$@" &
   group_leader=$!
   active_group_leader="$group_leader"
@@ -56,14 +66,26 @@ run_attempt() {
   # Keep the watchdog's timer and grace delay in its own session so stopping
   # the watchdog also closes inherited output descriptors before we return.
   setsid bash -c '
+    : > "$5"
     sleep "$1"
     : > "$2"
     kill -TERM -- "-$3" 2>/dev/null || true
     sleep "$4"
     kill -KILL -- "-$3" 2>/dev/null || true
-  ' -- "$attempt_timeout" "$timeout_marker" "$group_leader" "$termination_grace" &
+  ' -- "$attempt_timeout" "$timeout_marker" "$group_leader" "$termination_grace" "$watchdog_ready" &
   watchdog=$!
   active_watchdog="$watchdog"
+
+  # A delayed setsid leaves no process group at -$watchdog. Wait for the
+  # watchdog to acknowledge session ownership before cleanup can signal it.
+  while [[ ! -e "$watchdog_ready" ]]; do
+    if ! kill -0 "$watchdog" 2>/dev/null; then
+      wait "$watchdog" || true
+      cleanup_active_attempt
+      return 1
+    fi
+    sleep 0.01
+  done
 
   set +e
   wait "$group_leader"
@@ -73,28 +95,32 @@ run_attempt() {
   if [[ -e "$timeout_marker" ]]; then
     wait "$watchdog" || true
     rm -f "$timeout_marker"
+    rm -f "$watchdog_ready"
     active_group_leader=""
     active_timeout_marker=""
     active_watchdog=""
+    active_watchdog_ready=""
     return 124
   fi
 
-  kill -TERM -- "-$watchdog" 2>/dev/null || true
-  wait "$watchdog" || true
+  terminate_group "$watchdog"
   if kill -0 -- "-$group_leader" 2>/dev/null; then
     terminate_group "$group_leader"
-    wait "$group_leader" || true
     rm -f "$timeout_marker"
+    rm -f "$watchdog_ready"
     active_group_leader=""
     active_timeout_marker=""
     active_watchdog=""
+    active_watchdog_ready=""
     return 1
   fi
 
   rm -f "$timeout_marker"
+  rm -f "$watchdog_ready"
   active_group_leader=""
   active_timeout_marker=""
   active_watchdog=""
+  active_watchdog_ready=""
   return "$status"
 }
 
