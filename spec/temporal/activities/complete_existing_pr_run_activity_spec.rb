@@ -186,6 +186,196 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
     end
 
+    describe "conflict-repair completion envelope" do # @spec AUTO-MERGE-011
+      before do
+        agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
+        allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "Gemfile" ])
+      end
+
+      it "bounds the assessment request by the deadline remaining after the publication reserve" do
+        allow(activity).to receive(:remaining_activity_seconds).and_return(20.0)
+        allow(Llm::Request).to receive(:call).and_return(approved_request_response)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(Llm::Request).to have_received(:call)
+          .with(prompt: kind_of(String), agent_run: kind_of(AgentRun),
+            timeout: 20.0 - described_class::PUBLICATION_RESERVE_SECONDS)
+      end
+
+      it "records an unavailable assessment without a request when no assessment budget remains" do
+        allow(activity).to receive_messages(
+          remaining_activity_seconds: described_class::PUBLICATION_RESERVE_SECONDS.to_f,
+          publication_budget_seconds: 0.0
+        )
+        expect(AgentHarness.conductor).not_to receive(:execute_direct)
+        expect(github_client).not_to receive(:compare_summary)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+          end
+
+        assessment = agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")
+        expect(assessment).to include(
+          "status" => "unavailable",
+          "head_sha" => agent_run.result_commit_sha,
+          "integration_base_sha" => pr_data.base.sha
+        )
+      end
+
+      it "raises the typed review stop when the assessment request times out" do
+        allow(AgentHarness.conductor).to receive(:execute_direct)
+          .and_raise(AgentHarness::TimeoutError, "LLM request timeout exhausted")
+        allow(activity).to receive(:publication_budget_seconds).and_return(0.0)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+          end
+
+        expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+      end
+
+      it "persists the exact pushed commit before publication and keeps the stop when publication fails" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ],
+          explanation: "Gemfile is unrelated tooling")
+        allow(github_client).to receive(:update_pull_request)
+          .and_raise(GithubClient::ApiError.new("slow", status: 504))
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_raise(
+          GithubClient::ApiError.new("slow", status: 504)
+        )
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+            expect(error.message).to include("Gemfile is unrelated tooling")
+          end
+
+        assessment = agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")
+        expect(assessment).to include("status" => "rejected", "head_sha" => agent_run.result_commit_sha)
+      end
+
+      it "still raises the typed stop when rejection publication exceeds its reserve" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+        allow(activity).to receive(:publication_budget_seconds).and_return(0.05)
+        allow(github_client).to receive(:update_pull_request) { sleep 0.3 }
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return([])
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+          end
+
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "skips rejection publication when no publication budget remains" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+        allow(activity).to receive(:publication_budget_seconds).and_return(0.0)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error do |error|
+            expect(error).to be_a(Temporalio::Error::ApplicationError)
+            expect(error.type).to eq("ConflictRepairScopeRejected")
+          end
+
+        expect(github_client).not_to have_received(:update_pull_request)
+        expect(github_client).not_to have_received(:add_comment)
+        expect(agent_run.reload).to be_running
+      end
+
+      it "reuses the persisted assessment on a retried attempt without re-assessing or duplicating the comment" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ],
+          explanation: "Gemfile is unrelated tooling")
+        comments = []
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return(comments)
+        allow(github_client).to receive(:add_comment) do |_repo, _number, body|
+          comments << OpenStruct.new(body: body)
+        end
+
+        2.times do
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+        end
+
+        expect(AgentHarness.conductor).to have_received(:execute_direct).once
+        expect(github_client).to have_received(:compare_summary).twice
+        expect(comments.count { |comment| comment.body.include?("Automatic conflict repair") }).to eq(1)
+        assessment = agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")
+        expect(assessment).to include("status" => "rejected", "head_sha" => agent_run.result_commit_sha)
+      end
+
+      it "assesses freshly when the pushed head differs from the persisted assessment" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return([])
+        allow(activity).to receive(:publication_budget_seconds).and_return(0.0)
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+        agent_run.update!(result_commit_sha: "fff000fff456789012345678901234567890abcd")
+        allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "app/new.rb" ])
+        allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "app/new.rb" ])
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentHarness.conductor).to have_received(:execute_direct).twice
+        expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "head_sha"))
+          .to eq("fff000fff456789012345678901234567890abcd")
+      end
+
+      it "does not republish or re-assess once the run reached a terminal state" do
+        allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+
+        activity.execute(agent_run_id: agent_run.id)
+        expect(agent_run.reload.status).to eq("completed")
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentHarness.conductor).to have_received(:execute_direct).once
+        expect(github_client).to have_received(:pull_request).once
+      end
+
+      it "records sanitized per-component elapsed diagnostics on the phase" do
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+        allow(activity).to receive(:publication_budget_seconds).and_return(0.0)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+        phase = agent_run.agent_run_phases.find_by(phase_key: "complete_existing_pr_run")
+        expect(phase.metadata).to include(
+          "scope_assessment_status" => "rejected",
+          "assessment_budget_seconds" => kind_of(Numeric),
+          "assessment_elapsed_ms" => kind_of(Numeric),
+          "publication_elapsed_ms" => kind_of(Numeric)
+        )
+        expect(phase.metadata.keys).not_to include("prompt")
+      end
+
+      it "bounds the update-summary request by the remaining deadline" do
+        enable_summary_comments
+        allow_conflict_repair_comparisons(
+          base_files: [ "docs/base.md" ],
+          result_files: [ "docs/base.md", "app/models/provider.rb" ]
+        )
+        allow(activity).to receive(:remaining_activity_seconds)
+          .and_return(described_class::PUBLICATION_RESERVE_SECONDS + 9.0)
+        allow(Llm::Request).to receive(:call)
+          .and_return(approved_request_response(repair_paths: [ "app/models/provider.rb" ]))
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(Llm::Request).to have_received(:call)
+          .with(prompt: kind_of(String), agent_run: kind_of(AgentRun),
+            timeout: 9.0).twice
+      end
+    end
+
     # @spec QUIET-MODE-007
     it "skips the summary comment when the project has quiet mode enabled" do
       project.update!(quiet_mode: true)
@@ -539,6 +729,23 @@ allow(GithubClient).to receive(:new).and_return(github_client)
           repair_authored_paths: repair_paths
         }.to_json
       )
+    )
+  end
+
+  def approved_request_response(base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+    instance_double(
+      AgentHarness::Response,
+      success?: true,
+      output: {
+        approved: true,
+        explanation: "Repair is in scope",
+        base_imported_paths: base_paths,
+        repair_authored_paths: repair_paths
+      }.to_json,
+      tokens: true,
+      input_tokens: 100,
+      output_tokens: 20,
+      model: "claude-sonnet-4-6"
     )
   end
 

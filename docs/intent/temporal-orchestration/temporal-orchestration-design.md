@@ -113,6 +113,23 @@ is logged while normal cleanup ownership and the expensive container, service,
 MCP and worktree activities remain on their existing agent route; it does not
 claim cleanup completed or abandon the live owner.
 
+Existing-PR completion stays a single agent-queue activity with its existing
+finite deadline and retry policy (#5310). The activity derives its internal
+budgets from the Temporal start-to-close deadline it is actually running
+under, rather than stacking independent fixed timeouts: the conflict-repair
+scope assessment request receives only the deadline remaining after a
+deliberate publication reserve, and rejection publication runs only inside
+what remains after a final stop reserve. An activity retry reuses the
+persisted assessment bound to the exact pre-run, integration-base, and pushed
+head SHAs instead of issuing another harness request, so retries add no spend.
+The assessment and its durable persistence precede any PR publication, and the
+typed `ConflictRepairScopeRejected` review stop is raised even when PR-body
+refresh or comment publication is slow, exhausted, or unavailable; the
+workflow then publishes that exact failure type through the existing
+failure-marking and diagnostic-retention paths. No workflow-history structure
+changes, so in-flight runs replay unchanged, and no completion-path work
+moves to the bounded poll/control queue.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness

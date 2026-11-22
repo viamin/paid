@@ -6,9 +6,10 @@ module ConflictRepairs
   # Makes the semantic boundary decision after the agent has produced a repair.
   # Git comparisons provide the evidence, but only the harness may judge whether
   # an author-side edit belongs to the already-approved PR task.
-  # @spec AUTO-MERGE-010
+  # @spec AUTO-MERGE-010 AUTO-MERGE-011
   class AssessScope
     TIMEOUT = 45
+    MINIMUM_REQUEST_SECONDS = 1
     MAX_COMPARE_FILES = 300
     Result = Data.define(:status, :explanation, :base_imported_paths, :repair_authored_paths) do
       def approved? = status == "approved"
@@ -50,16 +51,18 @@ module ConflictRepairs
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, base_comparison:, result_comparison:)
+    def initialize(agent_run:, base_comparison:, result_comparison:, timeout: TIMEOUT)
       @agent_run = agent_run
       @base_comparison = base_comparison
       @result_comparison = result_comparison
+      @timeout = timeout
     end
 
     def call
       return unavailable("Repair comparison may be truncated") if comparisons_may_be_truncated?
+      return unavailable("Scope assessment exceeded the enclosing activity deadline") if @timeout.to_f < MINIMUM_REQUEST_SECONDS
 
-      response = Llm::Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
+      response = Llm::Request.call(prompt: prompt, agent_run: @agent_run, timeout: @timeout)
       return unavailable("Scope assessment did not complete") unless response.success?
 
       result_from(response.output) || unavailable("Scope assessment returned an invalid response")

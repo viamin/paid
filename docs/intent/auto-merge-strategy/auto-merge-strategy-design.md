@@ -102,6 +102,24 @@ an approval across substantive conflict-resolution content and does not change t
 the existing fail-closed first-parent freshness classifier remains the sole
 authority for whether current-head review is required.
 
+The completion envelope around that assessment is bounded (#5310): the
+existing-PR completion activity derives one finite deadline from its Temporal
+start-to-close budget, gives the harness assessment request only what remains
+after a deliberate publication reserve, and reuses the already-persisted
+assessment — bound to the exact pre-run, integration-base, and pushed head
+SHAs — on any activity retry rather than spending another request. The
+assessment plus its durable persistence always precede PR publication; a
+malformed, unavailable, or rejected decision persists the exact pushed commit
+and bound scope status and then raises the typed non-retryable
+`ConflictRepairScopeRejected` review stop. Publication on that stop path runs
+only inside the remaining reserve, deduplicates its comment per repair range,
+and is abandoned with a sanitized warning when the reserve is exhausted, so a
+slow or unavailable GitHub publication can neither consume the activity's
+remaining attempts nor replace the actionable typed classification with a
+generic timeout. The activity records sanitized per-component elapsed
+diagnostics on its phase record (assessment and publication timings, bound
+scope status) without persisting prompts or raw provider output.
+
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the
 project to permit dependency auto-merge, a supported executor author, green

@@ -203,3 +203,31 @@
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-011** — When an automatic merge-conflict repair run
+  reaches existing-PR completion, the completion activity SHALL bound the
+  semantic scope assessment and its required durable bookkeeping within one
+  finite enclosing activity deadline. The assessment request SHALL receive
+  only the enclosing budget remaining after a deliberate publication
+  reserve, and a retry of that activity SHALL reuse the persisted assessment
+  bound to the exact recorded pre-run, integration-base, and pushed head
+  SHAs instead of re-assessing, so retries add no LLM spend. When no
+  assessment budget remains after the reserve, the activity SHALL record an
+  unavailable assessment without issuing a request. A malformed, unavailable,
+  or rejected assessment SHALL persist the exact pushed head SHA and bound
+  scope status before any PR publication and SHALL remain the durable typed
+  review stop (`ConflictRepairScopeRejected`) even when PR-body refresh or
+  comment publication is slow, exhausted, or unavailable; ancillary
+  publication SHALL run only inside the remaining reserve, SHALL be
+  abandoned (with a sanitized warning) when the reserve is exhausted, and
+  SHALL NOT consume the activity's remaining attempts or replace the typed
+  stop with a generic timeout. The stop-path publication SHALL post at most
+  one rejection comment per repair range, and the activity SHALL record
+  sanitized per-component elapsed diagnostics (assessment, publication) on
+  the run's phase record without persisting prompts or raw provider output.
+  No new retry allowance, spend, worker slot, task-queue authority, or
+  native mapping is granted by this envelope (#5310).
+  *Code:* `app/services/conflict_repairs/assess_scope.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`.
+  *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.

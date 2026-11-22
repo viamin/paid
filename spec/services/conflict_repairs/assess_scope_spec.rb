@@ -89,6 +89,31 @@ RSpec.describe ConflictRepairs::AssessScope do
     expect(result).to have_attributes(status: "unavailable", explanation: "Scope assessment was unavailable")
   end
 
+  it "bounds the harness request by the supplied enclosing deadline" do # @spec AUTO-MERGE-011
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: { approved: true, explanation: "ok", base_imported_paths: [ "docs/base.md" ],
+                repair_authored_paths: [ "app/models/provider.rb" ] }.to_json)
+    allow(Llm::Request).to receive(:call).and_return(response)
+
+    result = described_class.call(agent_run:, base_comparison:, result_comparison:, timeout: 12)
+
+    expect(Llm::Request).to have_received(:call)
+      .with(prompt: kind_of(String), agent_run: agent_run, timeout: 12)
+    expect(result).to have_attributes(status: "approved")
+  end
+
+  it "fails closed without a harness request when the enclosing budget is exhausted" do # @spec AUTO-MERGE-011
+    expect(AgentHarness.conductor).not_to receive(:execute_direct)
+    expect(Llm::Request).not_to receive(:call)
+
+    result = described_class.call(agent_run:, base_comparison:, result_comparison:, timeout: 0)
+
+    expect(result).to have_attributes(
+      status: "unavailable",
+      explanation: "Scope assessment exceeded the enclosing activity deadline"
+    )
+  end
+
   private
 
   def comparison(*paths)
