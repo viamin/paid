@@ -649,12 +649,14 @@ class ProcessRunQueueJob < ApplicationJob
   # governing bounded authorization failed its recheck and the run must not
   # start; nil/permitted results (not delegated work, or still current)
   # proceed normally.
+  # @spec BOUNDED-PHASE-AUTHORIZATION-006
   def delegated_boundary_blocked?(agent_run)
     result = Automation::DelegatedActionAdmission.call(
       project: agent_run.project,
       issue: agent_run.issue,
       pull_request_number: agent_run.source_pull_request_number,
       goal: agent_run.goal,
+      action_evidence: agent_run.external_metadata.fetch("action_evidence", {}),
       boundary: :dequeue,
       trigger: agent_run.trigger_type
     )

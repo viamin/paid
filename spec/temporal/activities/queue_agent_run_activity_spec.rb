@@ -819,6 +819,38 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(Notification.count).to eq(0)
       end
 
+      it "passes proposed repair evidence into the bounded admission recheck" do # @spec BOUNDED-PHASE-AUTHORIZATION-006
+        evidence = { cycle_evidence: [ "failed_check" ], proposed_repair: "Repair the failed check" }
+        blocked_recheck = instance_double(Automation::DelegatedWorkBoundary::Result,
+          blocked?: true, boundary: :queue, reasons: [ :scope_correspondence ])
+        allow(Automation::DelegatedActionAdmission).to receive(:call).and_return(blocked_recheck)
+
+        result = activity.execute(
+          project_id: delegated_project.id,
+          source_pull_request_number: 42,
+          goal: "layered_verification_repair",
+          action_evidence: evidence
+        )
+
+        expect(result).to include(queued: false, skipped: true, reason: "delegated_boundary_blocked")
+        expect(Automation::DelegatedActionAdmission).to have_received(:call).with(
+          hash_including(goal: "layered_verification_repair", action_evidence: evidence.stringify_keys)
+        )
+      end
+
+      it "persists action evidence for the dequeue recheck" do # @spec BOUNDED-PHASE-AUTHORIZATION-006
+        evidence = { cycle_evidence: [ "failed_check" ], proposed_repair: "Repair the failed check" }
+
+        result = activity.execute(
+          project_id: delegated_project.id,
+          source_pull_request_number: 42,
+          goal: "review",
+          action_evidence: evidence
+        )
+
+        expect(AgentRun.find(result[:agent_run_id]).external_metadata["action_evidence"]).to eq(evidence.stringify_keys)
+      end
+
       it "reports the boundary the caller names, so follow-up retries are attributed" do # @spec PROJECT-DELEGATION-004
         record_current_assessment
         authorization = authorize_delegated_review

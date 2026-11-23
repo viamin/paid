@@ -21,8 +21,11 @@ if defined?(RailsPerformance)
 
   RailsPerformance.setup do |config|
     config.redis = redis_client
-    config.duration = 4.hours
-    config.ignored_paths = [ "/rails/performance" ]
+    config.duration = 7.days
+    config.slow_requests_time_window = 7.days
+    config.slow_requests_limit = 500
+    config.recent_requests_limit = 1000
+    config.ignored_paths = [ "/rails/performance", "/pghero" ]
     config.enabled = performance_enabled
   end
 end

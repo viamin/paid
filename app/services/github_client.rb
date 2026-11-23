@@ -421,9 +421,15 @@ class GithubClient
   # @param options [Hash] Additional options passed to Octokit
   # @return [Array<Sawyer::Resource>] List of issues
   def issues(repo, labels: nil, state: "open", **options)
-    opts = { state: state, **options }
-    opts[:labels] = Array(labels).join(",") if labels
-    handle_errors { client.issues(repo, opts) }
+    handle_errors { client.issues(repo, issue_options(labels:, state:, options:)) }
+  end
+
+  # Lists every issue matching the requested filters.
+  #
+  # @return [Array<Sawyer::Resource>] List of issues across all pages
+  def all_issues(repo, labels: nil, state: "open", **options)
+    opts = issue_options(labels:, state:, options:)
+    handle_errors { with_auto_paginate { client.issues(repo, opts) } }
   end
 
   # Lists files changed in a pull request.
@@ -1978,6 +1984,10 @@ class GithubClient
     yield
   ensure
     client.auto_paginate = original
+  end
+
+  def issue_options(labels:, state:, options:)
+    options.merge(state: state).tap { |opts| opts[:labels] = Array(labels).join(",") if labels }
   end
 
   def graphql_request(query, **variables)
