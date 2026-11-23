@@ -50,8 +50,9 @@ module Development
 
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         collection = collector.call
-        rows = StateStore.new(now: @now).record(collection.findings)
-        StateStore.new(now: @now).reset_unobserved(rows)
+        state_store = StateStore.new(project: @project, now: @now)
+        rows = state_store.record(collection.findings)
+        state_store.reset_unobserved(rows)
         actionable = collection.findings.select do |finding|
           !finding.persistence_required || rows[finding.key].consecutive_observations >= Policy::PERSISTENCE_ROUNDS
         end

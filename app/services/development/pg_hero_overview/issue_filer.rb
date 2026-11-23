@@ -110,7 +110,7 @@ module Development
         issue = @client.create_issue(@project.full_name,
           title: title_for(finding), body: body_for(finding), labels: issue_labels)
         row ||= PgHeroOverviewFinding.create!(
-          database: finding.database, finding_key: finding.key, finding_type: finding.type.to_s,
+          project: @project, database: finding.database, finding_key: finding.key, finding_type: finding.type.to_s,
           first_seen_at: @now.call, last_seen_at: @now.call, consecutive_observations: 1)
         row.update!(github_issue_number: issue.number, resolved_at: nil, issue_last_updated_at: @now.call)
         log(:created, finding: finding, issue_number: issue.number)
@@ -139,7 +139,7 @@ module Development
       # closed — a timed-out catalog read must not look like a resolution.
       def close_disappeared(observed_keys:, collected_categories:)
         closed = 0
-        PgHeroOverviewFinding.open_issues.find_each do |row|
+        findings_scope.open_issues.find_each do |row|
           next if observed_keys.include?(row.finding_key)
           next unless collected_categories.include?(Policy.category_for(row.finding_type.to_sym))
 
@@ -163,7 +163,7 @@ module Development
           database_id, key = identity.split("/", 2)
           next if key.blank? || rows.key?(key)
 
-          row = PgHeroOverviewFinding.find_or_create_by!(database: database_id, finding_key: key) do |new_row|
+          row = findings_scope.find_or_create_by!(database: database_id, finding_key: key) do |new_row|
             new_row.finding_type = key.split("/").first
             new_row.first_seen_at = @now.call
             new_row.last_seen_at = @now.call
@@ -177,6 +177,10 @@ module Development
 
       def issue_labels
         [ LABEL, @project.generated_label_name, @project.automation_label_name ].compact.uniq
+      end
+
+      def findings_scope
+        PgHeroOverviewFinding.where(project: @project)
       end
 
       def title_for(finding)

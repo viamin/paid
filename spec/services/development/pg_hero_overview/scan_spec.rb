@@ -13,11 +13,11 @@ RSpec.describe Development::PgHeroOverview::Scan do
   end
   let(:now) { Time.utc(2026, 11, 21, 12) }
 
-  def scanner(findings: [], coverage: nil, collector: nil)
+  def scanner(findings: [], coverage: nil, collector: nil, target_project: project, target_client: client)
     resolved_collector = collector || -> do
       Development::PgHeroOverview::Collect::Result.new(findings: findings, coverage: coverage || complete_coverage)
     end
-    described_class.new(project: project, client: client, environment: "development",
+    described_class.new(project: target_project, client: target_client, environment: "development",
       database: database, collector: resolved_collector,
       dashboard_base_url: "http://localhost:3000", now: -> { now })
   end
@@ -86,6 +86,29 @@ RSpec.describe Development::PgHeroOverview::Scan do
     row.reload
     expect(row.consecutive_observations).to eq(2)
     expect(row.last_seen_at.to_i).to eq(now.to_i)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-028
+  it "keeps finding state and issue lifecycles isolated to each self repository" do
+    other_project = create(:project, account: create(:account), owner: "other", repo: "paid")
+    other_client = instance_double(GithubClient)
+    allow(other_client).to receive(:create_issue) do |repo, title:, body:, labels:|
+      Struct.new(:number, :body, :state).new(88, body, "open")
+    end
+    allow(other_client).to receive(:update_issue) { |repo, number, **| Struct.new(:number).new(number) }
+    allow(other_client).to receive_messages(issues: [], add_comment: nil)
+
+    scanner(findings: [ structural_finding ]).call
+    scanner(findings: [ structural_finding ], target_project: other_project, target_client: other_client).call
+
+    expect(PgHeroOverviewFinding.where(finding_key: "invalid_index/public/idx_broken").pluck(:project_id, :github_issue_number))
+      .to contain_exactly([ project.id, 77 ], [ other_project.id, 88 ])
+
+    scanner(findings: []).call
+
+    expect(client).to have_received(:update_issue).with("viamin/paid", 77, state: "closed")
+    expect(other_client).not_to have_received(:update_issue)
+    expect(PgHeroOverviewFinding.find_by!(project: other_project, finding_key: "invalid_index/public/idx_broken").resolved_at).to be_nil
   end
 
   # @spec RAILS-CONTROL-PLANE-028

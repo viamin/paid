@@ -243,12 +243,13 @@ an informational exclusion with a recorded reason.
 ### Issue lifecycle
 
 Findings are deduplicated by the stable identities above. Each actionable
-finding owns at most one GitHub issue labeled `pghero-overview`; the issue
+finding owns at most one GitHub issue labeled `pghero-overview` in each
+tenant self repository; the issue
 body embeds a hidden marker with the finding identity so issues can be
 adopted even if local state is lost. A persisted `pghero_overview_findings`
-row (system infrastructure in the primary database, not tenant data) tracks
-first/last observation, consecutive observations, and the linked issue
-number. On subsequent scans the existing issue body is refreshed when the
+row (system infrastructure in the primary database, not tenant data) scopes
+first/last observation, consecutive observations, and the linked issue number
+to the target project. On subsequent scans the existing issue body is refreshed when the
 evidence changed; when the finding disappears the issue is closed with a
 comment recording when it was last observed; if the finding recurs after
 closure the issue is reopened. A per-run cap defers new-issue creation

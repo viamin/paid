@@ -9,7 +9,8 @@ module Development
     #
     # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-028
     class StateStore
-      def initialize(now: -> { Time.current })
+      def initialize(project:, now: -> { Time.current })
+        @project = project
         @now = now
       end
 
@@ -19,7 +20,7 @@ module Development
       # observations are not really consecutive.
       def record(findings)
         findings.to_h do |finding|
-          row = PgHeroOverviewFinding.find_or_create_by!(database: finding.database, finding_key: finding.key) do |new_row|
+          row = findings_scope.find_or_create_by!(database: finding.database, finding_key: finding.key) do |new_row|
             new_row.finding_type = finding.type.to_s
             new_row.first_seen_at = @now.call
             new_row.last_seen_at = @now.call
@@ -38,13 +39,17 @@ module Development
       # later single observation cannot masquerade as persistence. Tracked
       # issue linkage is kept: it is what makes reopen-on-recurrence work.
       def reset_unobserved(observed_rows)
-        PgHeroOverviewFinding.where.not(id: observed_rows.values.map(&:id))
+        findings_scope.where.not(id: observed_rows.values.map(&:id))
           .where("consecutive_observations > 0")
           .in_batches.update_all(consecutive_observations: 0)
         nil
       end
 
       private
+
+      def findings_scope
+        PgHeroOverviewFinding.where(project: @project)
+      end
 
       def stale?(row)
         row.last_seen_at.present? && row.last_seen_at < PgHeroOverviewFinding::STALE_AFTER.ago

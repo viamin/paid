@@ -263,8 +263,9 @@ failures when no tmux socket responds.
   finding issues.
 
 - [x] **RAILS-CONTROL-PLANE-027** — When the development PgHero overview
-  scan files a finding, it SHALL key the finding by a stable identity
-  (database, finding type, and relation/index identity or query hash) and
+  scan files a finding, it SHALL key the finding by the target project's self
+  repository and a stable identity (database, finding type, and relation/index
+  identity or query hash) and
   maintain at most one GitHub issue per identity in the tenant's self
   repository: a new finding creates one issue whose body carries the finding
   type, observed values against thresholds, observation time, database, a

@@ -25,7 +25,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
 
   def row_for(finding, **attributes)
     PgHeroOverviewFinding.create!(
-      database: finding.database, finding_key: finding.key, finding_type: finding.type.to_s,
+      project: project, database: finding.database, finding_key: finding.key, finding_type: finding.type.to_s,
       first_seen_at: 2.days.ago, last_seen_at: 1.hour.ago, consecutive_observations: 3, **attributes
     )
   end
@@ -86,7 +86,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
 
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: {}, collected_categories: Set.new(%i[indexes]))
 
-    row = PgHeroOverviewFinding.find_by!(database: "primary", finding_key: f.key)
+    row = PgHeroOverviewFinding.find_by!(project: project, database: "primary", finding_key: f.key)
     expect(row.github_issue_number).to eq(51)
     expect(row.resolved_at).to be_nil
   end
@@ -179,7 +179,8 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
         collected_categories: Set.new(%i[indexes]))
     }.to raise_error(GithubClient::Error)
     expect(client).not_to have_received(:create_issue)
-    expect(PgHeroOverviewFinding.exists?(github_issue_number: nil, finding_key: "invalid_index/public/idx_broken")).to be(false)
+    expect(PgHeroOverviewFinding.exists?(project: project, github_issue_number: nil,
+      finding_key: "invalid_index/public/idx_broken")).to be(false)
   end
 
   # @spec RAILS-CONTROL-PLANE-027
@@ -190,7 +191,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: {}, collected_categories: Set.new(%i[indexes]))
 
     expect(client).not_to have_received(:create_issue)
-    adopted = PgHeroOverviewFinding.find_by!(database: "primary", finding_key: f.key)
+    adopted = PgHeroOverviewFinding.find_by!(project: project, database: "primary", finding_key: f.key)
     expect(adopted.github_issue_number).to eq(31)
   end
 
