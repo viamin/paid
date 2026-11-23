@@ -56,6 +56,8 @@ RSpec.describe OperationalSupervisor::Analyze do
   it "fails closed without incident or audit mutation for malformed, unknown, or unauthorized output" do # @spec OPERATIONAL-SUPERVISOR-006
     invalid_outputs = [
       [ "not json", "invalid_json" ],
+      [ "null", "invalid_response" ],
+      [ "[]", "invalid_response" ],
       [ response_fixture(project.id).sub("inspect_queue_capacity", "invent_a_mitigation"), "invalid_response" ],
       [ response_fixture(project.id).sub(project.id.to_s, (project.id + 999).to_s), "invalid_response" ],
       [ file_fixture("operational_supervisor/forbidden_analysis_response.json").read.sub("101", project.id.to_s), "invalid_response" ]

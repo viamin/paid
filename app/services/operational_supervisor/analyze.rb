@@ -92,7 +92,10 @@ module OperationalSupervisor
     end
 
     def parse_findings(output)
-      payload = JSON.parse(output.to_s).deep_stringify_keys
+      payload = JSON.parse(output.to_s)
+      raise InvalidResponse, "supervisor analysis must return findings" unless payload.is_a?(Hash)
+
+      payload = payload.deep_stringify_keys
       raise InvalidResponse, "supervisor analysis must return findings" unless exact_hash?(payload, "findings")
       raise InvalidResponse, "supervisor analysis findings must be an array" unless payload["findings"].is_a?(Array)
       raise InvalidResponse, "supervisor analysis returned too many findings" if payload["findings"].size > snapshot.included_project_ids.size
