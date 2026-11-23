@@ -224,8 +224,12 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
 
   # @spec AUTO-PICK-QUEUE-019
   it "reports a missing live declaration distinctly from an ambiguous one" do
-    _user, _cycle, run = cycle_run
-    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #999" })
+    _user, cycle, run = cycle_run
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    # A number guaranteed to differ from the target's, so the body declares no
+    # match regardless of where FactoryBot's github_number sequence has reached.
+    unmatched_number = target.github_number + 1
+    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- ##{unmatched_number}" })
     allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
