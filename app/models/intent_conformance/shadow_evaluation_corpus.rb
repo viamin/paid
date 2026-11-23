@@ -41,6 +41,11 @@ module IntentConformance
       cases.find { |corpus_case| corpus_case["id"] == case_id }
     end
 
+    def design_document_paths
+      document = YAML.safe_load_file(resolved_path, aliases: true) || {}
+      document.is_a?(Hash) ? Array(document["design_document_paths"]) : []
+    end
+
     # Manifest-level reviewer/rubric identity for provenance (model, prompt
     # version, prompt digest). Falls back to empty strings for manifests
     # without a reviewer block.
