@@ -124,6 +124,7 @@ module Automation
             head_sha: read_sub_field(pr, :head, :sha).to_s,
             head_ref: read_sub_field(pr, :head, :ref).to_s,
             base_ref: read_sub_field(pr, :base, :ref).to_s,
+            base_sha: read_sub_field(pr, :base, :sha)&.to_s,
             author_login: normalize_login(read_sub_field(pr, :user, :login)),
             labels: extract_labels(read_field(pr, :labels)),
             created_at: parse_time(read_field(pr, :created_at)),

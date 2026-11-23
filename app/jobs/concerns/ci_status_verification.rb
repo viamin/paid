@@ -152,6 +152,10 @@ module CiStatusVerification
     pr_data.respond_to?(:head) ? pr_data.head.sha : pr_data.dig(:head, :sha)
   end
 
+  def pr_base_sha(pr_data)
+    pr_data.respond_to?(:base) ? pr_data.base&.sha : pr_data.dig(:base, :sha)
+  end
+
   def handle_github_error(error, project, message, raise_on_github_error:)
     raise error if raise_on_github_error
 

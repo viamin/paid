@@ -213,7 +213,7 @@ module Activities
     # @spec AUTO-MERGE-010
     def conflict_repair_scope_allowed?(project, issue, pr_data)
       @conflict_repair_scope_gate = PullRequests::ConflictRepairScopeGate.call(
-        project:, issue:, head_sha: pr_data.head_sha
+        project:, issue:, head_sha: pr_data.head_sha, integration_base_sha: pr_data.base_sha
       )
       @conflict_repair_scope_gate.allowed?
     end

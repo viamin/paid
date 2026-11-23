@@ -182,7 +182,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -230,7 +230,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -385,7 +385,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -420,6 +420,7 @@ RSpec.describe Activities::MergePullRequestActivity do
             "conflict_repair_scope_assessment" => {
               "status" => "rejected", "explanation" => "Out of scope",
               "base_sha" => "pre-repair", "head_sha" => "abc",
+              "integration_base_sha" => "base-sha",
               "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
             }
           })
@@ -438,7 +439,9 @@ RSpec.describe Activities::MergePullRequestActivity do
       # @spec AUTO-MERGE-010
       it "rechecks a conflict-scope stop that appears after scan eligibility but before merge" do
         client = allow_source_closure_refresh
-        expect(PullRequests::ConflictRepairScopeGate.call(project: project, issue: issue, head_sha: "abc")).to be_allowed
+        expect(PullRequests::ConflictRepairScopeGate.call(
+          project: project, issue: issue, head_sha: "abc", integration_base_sha: "base-sha"
+        )).to be_allowed
         create(:agent_run, :automatic, :failed,
           project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
           source_pull_request_number: issue.github_number, result_commit_sha: "abc",
@@ -446,6 +449,7 @@ RSpec.describe Activities::MergePullRequestActivity do
             "conflict_repair_scope_assessment" => {
               "status" => "unavailable", "explanation" => "Assessment timed out",
               "base_sha" => "pre-repair", "head_sha" => "abc",
+              "integration_base_sha" => "base-sha",
               "base_imported_paths" => [], "repair_authored_paths" => []
             }
           })

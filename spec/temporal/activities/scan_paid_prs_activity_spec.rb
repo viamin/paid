@@ -5668,6 +5668,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             "conflict_repair_scope_assessment" => {
               "status" => status, "explanation" => "Scope #{status}",
               "base_sha" => "pre-repair", "head_sha" => head_sha,
+              "integration_base_sha" => "base-sha",
               "base_imported_paths" => [], "repair_authored_paths" => []
             }
           })
@@ -12679,7 +12680,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     pr_number: 42
   )
     pr_data = OpenStruct.new(
-      base: OpenStruct.new(ref: base_branch),
+      base: OpenStruct.new(ref: base_branch, sha: "base-sha"),
       head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,

@@ -13,6 +13,16 @@ class ReassessConflictRepairScopeJob < ApplicationJob
     run = AgentRun.find_by(id: agent_run_id)
     return unless run
 
-    ConflictRepairs::ReassessScope.call(agent_run: run, requested_by: User.find_by(id: requested_by_id))
+    requester = User.find_by(id: requested_by_id)
+    authorize_requester!(requester, run)
+    ConflictRepairs::ReassessScope.call(agent_run: run, requested_by: requester)
+  end
+
+  private
+
+  def authorize_requester!(requester, run)
+    return if requester && AgentRunPolicy.new(requester, run).retry?
+
+    raise Pundit::NotAuthorizedError, "requester is no longer authorized to reassess this agent run"
   end
 end

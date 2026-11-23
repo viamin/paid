@@ -28,6 +28,7 @@ require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_at
 require Rails.root.join("db/migrate/20261107200000_create_project_delegation_postures")
 require Rails.root.join("db/migrate/20261116080000_create_staged_closeout_adoption")
 require Rails.root.join("db/migrate/20261117100000_create_project_delegation_intent_checkpoints")
+require Rails.root.join("db/migrate/20261123000000_secure_conflict_repair_scope_evidences")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -73,6 +74,18 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     as_restricted_role do
       described_class.with(account_a) do
         expect(AgentRun.all).to contain_exactly(run_a)
+      end
+    end
+  end
+
+  # @spec AUTO-MERGE-011
+  it "isolates conflict-repair scope evidence by producer account" do
+    evidence_a = described_class.with_system_access { create_conflict_scope_evidence(account_a) }
+    described_class.with_system_access { create_conflict_scope_evidence(account_b) }
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ConflictRepairScopeEvidence.all).to contain_exactly(evidence_a)
       end
     end
   end
@@ -462,6 +475,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
       CreateProjectDelegationIntentCheckpoints.new.up unless intent_checkpoint_tables_exist?
+      SecureConflictRepairScopeEvidences.new.enable_tenant_rls unless conflict_repair_scope_evidences_have_rls?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -514,6 +528,12 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
   def auto_merge_attempts_have_rls?
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'auto_merge_attempts' AND policyname = 'tenant_isolation'"
+    ).to_i.positive?
+  end
+
+  def conflict_repair_scope_evidences_have_rls?
+    ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'conflict_repair_scope_evidences' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
   end
 
@@ -1074,6 +1094,15 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
 
   def sql_value(value)
     value.nil? ? "NULL" : value
+  end
+
+  def create_conflict_scope_evidence(account)
+    project = create(:project, account:)
+    issue = create(:issue, :pull_request, project:)
+    run = create(:agent_run, project:, issue:)
+    ConflictRepairScopeEvidence.create!(agent_run: run, account:, project:, issue:, pre_run_sha: "pre",
+      integration_base_sha: "base", result_sha: "head", provider_head_sha: "head",
+      status: "approved", explanation: "bounded", base_imported_paths: [], repair_authored_paths: [])
   end
 
   def quote(value)

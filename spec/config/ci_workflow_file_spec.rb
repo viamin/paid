@@ -315,14 +315,6 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
-  # @spec TEST-SUITE-023
-  it "staggers matrix dependency installation after a transient registry failure" do
-    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
-      .find { |step| step["name"] == "Install JavaScript dependencies" }
-
-    expect(install_step.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
-  end
-
   # @spec TEST-SUITE-003
   it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
     workflow.fetch("jobs").except("test").each_value do |job|

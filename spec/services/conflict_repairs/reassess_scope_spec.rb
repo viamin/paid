@@ -45,6 +45,51 @@ RSpec.describe ConflictRepairs::ReassessScope do
     expect(result.evidence).to have_attributes(status: "unavailable", provider_head_sha: "new-head")
   end
 
+  it "returns the same unavailable evidence for repeated stale-head requests" do
+    stale_pr = OpenStruct.new(head: OpenStruct.new(sha: "new-head"), base:)
+    allow(client).to receive(:pull_request).and_return(stale_pr)
+
+    first = described_class.call(agent_run: run, requested_by: requester)
+    second = described_class.call(agent_run: run, requested_by: requester)
+
+    expect(second.evidence).to eq(first.evidence)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run, status: "unavailable").count).to eq(1)
+  end
+
+  it "returns the same unavailable evidence across repeated provider failures" do
+    allow(client).to receive(:pull_request).and_raise(GithubClient::Error, "provider unavailable")
+
+    first = described_class.call(agent_run: run, requested_by: requester)
+    second = described_class.call(agent_run: run, requested_by: requester)
+
+    expect(second.evidence).to eq(first.evidence)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run, status: "unavailable").count).to eq(1)
+  end
+
+  it "reassesses current-head unavailable evidence after the provider recovers" do
+    unavailable = ConflictRepairScopeEvidence.create!(agent_run: run, account: project.account, project:, issue:, requested_by: requester,
+      pre_run_sha: "pre-sha", integration_base_sha: "base-sha", result_sha: "result-sha", provider_head_sha: "result-sha",
+      status: "unavailable", explanation: "provider unavailable", base_imported_paths: [], repair_authored_paths: [])
+    allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
+      ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "bounded repair", base_imported_paths: [], repair_authored_paths: []))
+
+    result = described_class.call(agent_run: run, requested_by: requester)
+
+    expect(result.evidence).to have_attributes(status: "approved", integration_base_sha: "base-sha")
+    expect(result.evidence).not_to eq(unavailable)
+  end
+
+  it "publishes unavailable evidence when the provider base changes during assessment" do
+    changed = OpenStruct.new(head:, base: OpenStruct.new(sha: "new-base"))
+    allow(client).to receive(:pull_request).and_return(pr, changed)
+    allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
+      ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "bounded repair", base_imported_paths: [], repair_authored_paths: []))
+
+    result = described_class.call(agent_run: run, requested_by: requester)
+
+    expect(result.evidence).to have_attributes(status: "unavailable", integration_base_sha: "new-base")
+  end
+
   it "preserves a rejected semantic decision" do
     allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
       ConflictRepairs::AssessScope::Result.new(status: "rejected", explanation: "Gemfile is unrelated", base_imported_paths: [], repair_authored_paths: [ "Gemfile" ]))

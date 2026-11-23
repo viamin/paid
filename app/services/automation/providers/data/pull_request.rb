@@ -20,6 +20,7 @@ module Automation
         # - +head_sha+ [String] Commit SHA at the tip of the source branch.
         # - +head_ref+ [String] Source branch ref.
         # - +base_ref+ [String] Target branch ref.
+        # - +base_sha+ [String, nil] Commit SHA at the target branch tip.
         # - +author_login+ [String, nil] Login of the PR author, downcased.
         # - +labels+ [Array<String>] Label names currently applied.
         # - +created_at+ [Time]
@@ -43,6 +44,7 @@ module Automation
           :head_sha,
           :head_ref,
           :base_ref,
+          :base_sha,
           :author_login,
           :labels,
           :created_at,
@@ -59,7 +61,7 @@ module Automation
           # (which predate fork reporting) working without modification.
           def initialize(number:, title:, body:, state:, draft:, merged:, mergeable:,
             head_sha:, head_ref:, base_ref:, author_login:, labels:, created_at:,
-            updated_at:, merged_at:, url:, raw_state:, head_repo_fork: nil)
+            updated_at:, merged_at:, url:, raw_state:, head_repo_fork: nil, base_sha: nil)
             super
           end
         end

@@ -346,7 +346,7 @@ class DependabotAutoMergeJob < ApplicationJob
   def merge_dependabot_pr_with(client, project, pr_data, credential_mode:)
     pr_number = pr_number_from(pr_data)
     head_sha = pr_head_sha(pr_data)
-    return false unless conflict_repair_scope_allowed?(project, pr_number, head_sha, credential_mode)
+    return false unless conflict_repair_scope_allowed?(project, pr_data, credential_mode)
 
     issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
     if issue && PullRequests::TechnicalMergeBlockers.blocked?(issue)
@@ -379,11 +379,14 @@ class DependabotAutoMergeJob < ApplicationJob
     true
   end
 
-  def conflict_repair_scope_allowed?(project, pr_number, head_sha, credential_mode)
+  def conflict_repair_scope_allowed?(project, pr_data, credential_mode)
+    pr_number = pr_number_from(pr_data)
     issue = pull_request_issue(project, pr_number)
     return true unless issue
 
-    gate = PullRequests::ConflictRepairScopeGate.call(project:, issue:, head_sha:)
+    gate = PullRequests::ConflictRepairScopeGate.call(
+      project:, issue:, head_sha: pr_head_sha(pr_data), integration_base_sha: pr_base_sha(pr_data)
+    )
     return true if gate.allowed?
 
     Rails.logger.info(

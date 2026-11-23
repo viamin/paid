@@ -15,6 +15,7 @@ RSpec.describe DependabotAutoMergeJob do
       title: "Bump rails from 7.0.0 to 7.1.0",
       user: OpenStruct.new(login: "dependabot[bot]"),
       head: OpenStruct.new(sha: "def456"),
+      base: OpenStruct.new(sha: "base-sha"),
       merged_at: nil,
       mergeable: true
     )
@@ -85,6 +86,7 @@ RSpec.describe DependabotAutoMergeJob do
           "conflict_repair_scope_assessment" => {
             "status" => "rejected", "explanation" => "Out of scope",
             "base_sha" => "pre-repair", "head_sha" => "def456",
+            "integration_base_sha" => "base-sha",
             "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
           }
         })

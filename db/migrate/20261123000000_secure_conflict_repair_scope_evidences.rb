@@ -20,6 +20,19 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
       %i[agent_run_id pre_run_sha integration_base_sha result_sha provider_head_sha status],
       unique: true, name: "index_conflict_repair_scope_evidence_identity", algorithm: :concurrently
 
+    enable_tenant_rls
+  end
+
+  def down
+    disable_tenant_rls
+    remove_index :conflict_repair_scope_evidences, name: "index_conflict_repair_scope_evidence_identity", algorithm: :concurrently
+    add_index :conflict_repair_scope_evidences,
+      %i[agent_run_id pre_run_sha integration_base_sha result_sha provider_head_sha],
+      unique: true, name: "index_conflict_repair_scope_evidence_binding", algorithm: :concurrently
+    remove_reference :conflict_repair_scope_evidences, :account, foreign_key: true
+  end
+
+  def enable_tenant_rls
     safety_assured do
       execute "ALTER TABLE conflict_repair_scope_evidences ENABLE ROW LEVEL SECURITY"
       execute "ALTER TABLE conflict_repair_scope_evidences FORCE ROW LEVEL SECURITY"
@@ -31,16 +44,11 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
     end
   end
 
-  def down
+  def disable_tenant_rls
     safety_assured do
       execute "DROP POLICY IF EXISTS tenant_isolation ON conflict_repair_scope_evidences"
       execute "ALTER TABLE conflict_repair_scope_evidences NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE conflict_repair_scope_evidences DISABLE ROW LEVEL SECURITY"
     end
-    remove_index :conflict_repair_scope_evidences, name: "index_conflict_repair_scope_evidence_identity", algorithm: :concurrently
-    add_index :conflict_repair_scope_evidences,
-      %i[agent_run_id pre_run_sha integration_base_sha result_sha provider_head_sha],
-      unique: true, name: "index_conflict_repair_scope_evidence_binding", algorithm: :concurrently
-    remove_reference :conflict_repair_scope_evidences, :account, foreign_key: true
   end
 end
