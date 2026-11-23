@@ -42,14 +42,29 @@ services:
       # bin/dev-web defaults to loopback; the port mapping above forwards from
       # the container's non-loopback address, so Puma must listen there too.
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
+      REDIS_URL: "redis://redis:6379/0"
       PAID_ENABLE_DEV_QUERY_STATS: "1"
+      # Prune unused Docker images and build cache with seven-day retention.
+      PAID_DOCKER_DISK_CLEANUP_ENABLED: "${PAID_DOCKER_DISK_CLEANUP_ENABLED:-true}"
       PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
 
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       temporal:
         condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   postgres:
     image: postgres:16.15
