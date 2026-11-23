@@ -129,13 +129,16 @@
   generation), and SHALL validate the case repository, exact base/head or
   approved-design revision, and any declared design artifact through the
   project's repository-access service.
-  It SHALL navigate only to fixed, revision-bound repository URLs, SHALL never
-  render or execute repository content in the labeling request, and SHALL
+  It SHALL load a change overview automatically through an authorized
+  evidence request and keep file diffs collapsed until expanded, rendering
+  repository patches only as escaped text. It SHALL
+  open full evidence only at fixed, revision-bound repository URLs in a new tab,
+  SHALL never execute repository content, and SHALL
   report unavailable evidence without substituting a branch, selection
   rationale, notes, context, stratum, expected label, or reviewer output.
-  A corpus case without declared approved-design artifacts remains unavailable
-  for that evidence and SHALL NOT be treated as independently assessed
-  acceptance.
+  Legacy cases without declared artifacts MAY recover changed intent-document
+  paths at the recorded approved revision, never from the proposed head.
+  Missing baseline evidence SHALL NOT be treated as independently assessed acceptance.
   *Design:* `intent-conformance-rollout-design.md` §Solo-maintainer evaluation
   policy and §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/shadow_evaluation/evidence.rb`,
@@ -143,6 +146,43 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-012** — During human review, the system SHALL
+  explain each verdict in plain language, identify the approved requirement
+  and explanation being requested with examples, and state why they are saved.
+  Selected verdict titles and explanations SHALL remain readable in light
+  and dark themes, with text contrast of at least 4.5:1.
+  Explanations SHALL be optional for all initial verdicts, including when
+  finishing or validating exported reference labels. An uncertain verdict
+  SHALL permit a missing requirement citation; decisive verdicts SHALL require
+  a requirement citation. Finishing
+  SHALL explain that human judgments become locked before AI results are shown,
+  SHALL remain unavailable while cases are unfinished or skipped, and SHALL
+  NOT run the reviewer or enable enforcement.
+  *Code:* `app/views/projects/shadow_evaluations/_labeling.html.erb`,
+  `app/services/intent_conformance/shadow_evaluation/record_label.rb`,
+  `app/models/intent_conformance_shadow_evaluation_label.rb`.
+  *Tests:* `spec/requests/projects/shadow_evaluations_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/record_label_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-013** — Before requesting a human verdict,
+  the review page SHALL present an attributed change summary, accessible
+  baseline requirements, and collapsed file diffs. While fetching this content,
+  a prominent loading panel SHALL announce the loading state, with readable
+  text in both themes and animation respecting reduced-motion preferences.
+  A PR description SHALL be
+  used only when its merge commit or exact base/head pair matches the case;
+  otherwise pinned commit titles SHALL be identified as the overview source.
+  Requirements SHALL be read at the recorded approved revision, with recovered
+  case-specific documents distinguished from a baseline overview. Human and AI
+  evaluation SHALL use the same baseline resolution. A case without accessible
+  baseline evidence SHALL explain the preparation problem, omit the citation
+  form, and preserve a route to the next case without recording a verdict.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/review_context.rb`,
+  `app/views/projects/shadow_evaluations/_review_case.html.erb`.
+  *Tests:* `spec/services/intent_conformance/shadow_evaluation/review_context_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`,
+  `spec/system/shadow_evaluation_review_spec.rb`.
 
 - [x] **INTENT-CONFORMANCE-ROLLOUT-011** — After a frozen evaluation is authorized for execution, the system SHALL enqueue an idempotent background operation onto a served worker queue and return the request promptly. It SHALL expose queued, running, partial, failed, cancelled, and completed state with per-case progress and cost; authorized cancellation and resume SHALL preserve evidence and only retry cases without an evaluated verdict. Bounded job recovery SHALL converge interruption to a retryable terminal state rather than leaving an evaluation running indefinitely. A stored per-tenant queue allocation SHALL NOT leave the reviewer queue unserved, and the per-queue thread allocation SHALL stay within the worker thread budget.
   *Code:* `app/jobs/shadow_evaluation_execution_job.rb`, `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`, `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`, `app/services/worker_settings/good_job_queues.rb`, `config/initializers/good_job.rb`.

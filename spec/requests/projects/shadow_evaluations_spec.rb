@@ -104,22 +104,88 @@ RSpec.describe "Projects::ShadowEvaluations" do
     get project_shadow_evaluation_path(project, evaluation)
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Case A-02")
+    expect(response.body).to include("review_context_#{evaluation.id}_A-02")
     expect(response.body).not_to include("intentionally_drifted")
     expect(response.body).not_to include("stratum")
     expect(response.body).not_to include("Dependency maintenance commit")
-    expect(response.body).to include("Answers stay hidden until you freeze")
+    expect(response.body).to include("AI results stay hidden until you finish your review")
   end
 
-  it "offers a pinned-diff navigation journey without rendering repository content" do
+  it "loads the change overview first without asking for a citation before evidence is ready" do # @spec INTENT-CONFORMANCE-ROLLOUT-013
     evaluation = start_evaluation!
 
     get project_shadow_evaluation_path(project, evaluation)
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Open pinned diff")
-    expect(response.body).to include("Approved design documents are unavailable")
+    page = Nokogiri::HTML(response.body)
+    expect(page.at_css('turbo-frame[src*="review_context"]')).to be_present
+    expect(page.at_css('[name="cited_design_claim"]')).to be_nil
+    expect(response.body).to include("Finish my review", "does not approve individual pull requests")
     expect(response.body).not_to include("selection_rationale")
+  end
+
+  it "renders inline patches as text without exposing answers" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    project.update!(owner: "viamin", repo: "paid")
+    evaluation = start_evaluation!
+    client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:compare).and_return(files: [
+      { filename: "example.rb", patch: "+<script>attack()</script>", additions: 1, deletions: 0 }
+    ])
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "inline_diff")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("&lt;script&gt;attack()&lt;/script&gt;", "example.rb")
+    expect(response.body).not_to include("<script>attack()", "selection_rationale", "expected_label")
+    expect(Nokogiri::HTML(response.body).at_css("turbo-frame")).to be_present
+    expect(Nokogiri::HTML(response.body).css("details[data-file-diff][open]")).to be_empty
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-013
+  it "recovers legacy requirements at the approved revision and keeps patches collapsed" do
+    project.update!(owner: "viamin", repo: "paid")
+    evaluation = start_evaluation!
+    client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:compare).and_return(files: [
+      { filename: "docs/intent/queue/queue-design.md", patch: "+<script>attack()</script>", additions: 1 }
+    ])
+    allow(client).to receive(:file_content).with("viamin/paid", path: "docs/intent/queue/queue-design.md", ref: "abe405ef806fdc32c31aa53d7aa61f026f9681a5")
+      .and_return("# Queue requirements\nExplicit labels control selection.")
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "review_context")
+
+    page = Nokogiri::HTML(response.body)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Queue requirements", "What changed", "What was agreed", "&lt;script&gt;")
+    expect(page.css("details[data-file-diff][open]")).to be_empty
+    expect(page.at_css('select[name="cited_design_claim"]')).to be_present
+    expect(evaluation.corpus.matches_recorded_digest?).to be(true)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-013
+  it "shows an evidence-preparation state instead of an impossible citation form" do
+    project.update!(owner: "viamin", repo: "paid")
+    evaluation = start_evaluation!
+    client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive_messages(compare: { files: [] }, file_content: nil)
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "review_context")
+
+    expect(response.body).to include("Requirements need preparing", "Continue to the next change")
+    expect(Nokogiri::HTML(response.body).at_css('[name="cited_design_claim"]')).to be_nil
+    expect(evaluation.labels).to be_empty
+  end
+
+  it "allows uncertainty without inventing an approved requirement" do # @spec INTENT-CONFORMANCE-ROLLOUT-012
+    evaluation = start_evaluation!
+    label!(evaluation, case_id: "A-01", outcome: "uncertain", claim: "", reason: "No approved requirement is linked.")
+
+    expect(evaluation.labels.find_by!(case_id: "A-01")).to have_attributes(outcome: "uncertain", cited_design_claim: "")
+    label!(evaluation, case_id: "A-02", outcome: "within_scope", claim: "", reason: "Looks correct.")
+    expect(evaluation.labels.find_by(case_id: "A-02")).to be_nil
   end
 
   it "supports durable save/resume and skips without counting skipped cases as completed" do
@@ -129,7 +195,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("1 labeled").and include("1 skipped")
+    expect(response.body).to include("1 of 30 reviewed").and include("1 left for later")
     expect(evaluation.reload.progress).to include(labeled: 1, skipped: 1, total: 30)
 
     freeze!(evaluation)
@@ -157,7 +223,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
     freeze!(evaluation)
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("intentionally_drifted")
+    expect(response.body).to include("Intentionally drifted")
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-011
@@ -188,7 +254,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("Reproducible report")
+    expect(response.body).to include("Comparison report")
     expect(response.body).to include("solo")
   end
 
@@ -293,7 +359,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("corpus manifest has changed")
+    expect(response.body).to include("The review sample has changed")
   end
 
   it "returns to the validated originating Inbox context and ignores arbitrary return URLs" do
@@ -310,9 +376,9 @@ RSpec.describe "Projects::ShadowEvaluations" do
     get new_project_shadow_evaluation_path(project)
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Review conformance decisions")
+    expect(response.body).to include("Review code changes against requirements")
     expect(response.body).to include("Start review")
-    expect(response.body).to include("Starting saves a frozen evidence set for this project. It does not enable enforcement or close work.")
+    expect(response.body).to include("Your decisions help check whether the AI reviewer can reliably spot changes to agreed requirements.")
     expect(response.body).to include("Technical details")
     expect(response.body).not_to include("RDR-067")
     expect(response.body).not_to include("rdr-067-measured-rollout")
@@ -321,7 +387,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
     evaluation = start_evaluation!
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("Review conformance decisions")
+    expect(response.body).to include("Review code changes against requirements")
     expect(response.body).not_to include(evaluation.purpose)
   end
 

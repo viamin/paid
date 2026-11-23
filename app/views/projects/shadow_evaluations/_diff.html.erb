@@ -1,0 +1,26 @@
+<%# @spec INTENT-CONFORMANCE-ROLLOUT-010 %>
+<%= turbo_frame_tag "review_diff_#{evaluation.id}_#{case_id}" do %>
+  <% if result.available? %>
+    <p class="mb-3 text-sm text-gray-600">Lines marked + were added; lines marked − were removed. This preview is limited to 30 files and 200 KB of patches. GitHub may omit large or binary patches; use the full diff to inspect anything missing.</p>
+    <% if result.files.empty? %>
+      <p class="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">No file patches were returned. Open the full diff to check the changes; an empty preview does not establish that nothing changed.</p>
+    <% end %>
+    <div class="space-y-4">
+      <% result.files.each do |file| %>
+        <details class="overflow-hidden rounded-lg border border-gray-200" data-file-diff>
+          <summary class="cursor-pointer break-all bg-gray-50 px-3 py-3 font-mono text-xs font-semibold text-gray-900"><%= file[:filename] %> · +<%= file[:additions].to_i %> / −<%= file[:deletions].to_i %></summary>
+          <% if file[:patch].present? %>
+            <pre class="max-h-96 overflow-auto bg-white p-3 text-xs leading-6 text-gray-800" tabindex="0" aria-label="Changes to <%= file[:filename] %>"><code><% file[:patch].each_line do |line| %><span class="<%= line.start_with?("+") ? "block bg-green-50 text-green-900" : line.start_with?("-") ? "block bg-red-50 text-red-900" : "block" %>"><%= line.chomp %></span><% end %></code></pre>
+          <% else %>
+            <p class="p-3 text-sm text-amber-900">Patch unavailable in this preview. Check this file in the full diff.</p>
+          <% end %>
+          <% if file[:truncated] %>
+            <p class="bg-amber-50 p-3 text-sm text-amber-900">This patch is shortened. Open the full diff to review the remaining lines.</p>
+          <% end %>
+        </details>
+      <% end %>
+    </div>
+  <% else %>
+    <p role="status" class="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">The diff could not be loaded: <%= result.error %>. You can leave this change for later or choose Not enough information and explain what is missing.</p>
+  <% end %>
+<% end %>

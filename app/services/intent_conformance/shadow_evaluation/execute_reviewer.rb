@@ -18,7 +18,6 @@ module IntentConformance
         def success? = success
       end
 
-      MAX_DESIGN_DOCS = 10
       MAX_DESIGN_DOC_LENGTH = 6_000
       MAX_FILES = 40
       MAX_PATCH_LENGTH = 800
@@ -169,10 +168,17 @@ module IntentConformance
         base_sha = corpus_case.fetch("base_sha")
         head_sha = corpus_case.fetch("head_sha")
         revision = corpus_case.fetch("approved_design_revision")
-        docs = design_docs_for(corpus_case, revision)
+        comparison = client&.compare_summary(repository, base_sha, head_sha)
+        return { failure: "no_diff" } unless comparison
+
+        context = ReviewContext.call(corpus_case:, comparison:, client:,
+          default_paths: evaluation.corpus.design_document_paths)
+        docs = context.fetch(:documents).map do |document|
+          { path: document.fetch(:path), content: sanitized_prompt_text(document.fetch(:content), max_length: MAX_DESIGN_DOC_LENGTH) }
+        end
         return { failure: "no_design_documents" } if docs.empty?
 
-        diff_entries = diff_entries_for(base_sha, head_sha)
+        diff_entries = diff_entries_for(base_sha, head_sha, comparison:)
         return { failure: "no_diff" } if diff_entries.nil?
 
         {
@@ -183,29 +189,12 @@ module IntentConformance
           design_docs: docs,
           diff_entries: diff_entries
         }
+      rescue GithubClient::Error
+        { failure: "pinned_evidence_unavailable" }
       end
 
-      def design_docs_for(corpus_case, revision)
-        paths = Array(corpus_case["design_document_paths"]).presence || Array(manifest_design_document_paths)
-        paths.first(MAX_DESIGN_DOCS).filter_map do |path|
-          content = client&.file_content(project.full_name, path: path, ref: revision)
-          next if content.blank?
-
-          { path: path, content: sanitized_prompt_text(content, max_length: MAX_DESIGN_DOC_LENGTH) }
-        rescue GithubClient::Error
-          nil
-        end
-      end
-
-      def manifest_design_document_paths
-        @manifest_design_document_paths ||= begin
-          document = YAML.safe_load_file(@evaluation.corpus.resolved_path, aliases: true) || {}
-          document.is_a?(Hash) ? Array(document["design_document_paths"]) : []
-        end
-      end
-
-      def diff_entries_for(base_sha, head_sha)
-        comparison = client&.compare_summary(project.full_name, base_sha, head_sha)
+      def diff_entries_for(base_sha, head_sha, comparison: nil)
+        comparison ||= client&.compare_summary(project.full_name, base_sha, head_sha)
         return if comparison.nil?
 
         files = Array(comparison[:files]).first(MAX_FILES)

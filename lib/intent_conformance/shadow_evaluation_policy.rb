@@ -100,7 +100,8 @@ module IntentConformance
     end
 
     def adjudication_fields_complete?(entry)
-      return false unless %w[operator verdict cited_design_claim reason recorded_at].all? { |key| entry[key].to_s.strip != "" }
+      return false unless %w[operator verdict recorded_at].all? { |key| entry[key].to_s.strip != "" }
+      return false if entry["verdict"] != "uncertain" && entry["cited_design_claim"].to_s.strip.empty?
 
       LABELS.include?(entry["verdict"])
     end
@@ -157,8 +158,9 @@ module IntentConformance
         label = entries.first
         raise invalid("#{case_id} reference label operator must be the declared maintainer") unless label["operator"] == declaration.maintainer
         raise invalid("#{case_id} has an invalid reference label") unless LABELS.include?(label["verdict"])
-        raise invalid("#{case_id} reference label needs a cited design claim") if label["cited_design_claim"].to_s.strip.empty?
-        raise invalid("#{case_id} reference label needs a reason") if label["reason"].to_s.strip.empty?
+        if label["verdict"] != "uncertain" && label["cited_design_claim"].to_s.strip.empty?
+          raise invalid("#{case_id} reference label needs a cited design claim")
+        end
       end
       true
     end

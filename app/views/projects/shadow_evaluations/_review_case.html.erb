@@ -1,0 +1,68 @@
+<%# @spec INTENT-CONFORMANCE-ROLLOUT-013 %>
+<%= turbo_frame_tag "review_context_#{evaluation.id}_#{case_id}" do %>
+  <% if result.available? && case_view.exists? %>
+    <% current = case_view.blinded_payload %>
+    <% documents = result.context.fetch(:documents) %>
+    <% overview = result.context.fetch(:summary) %>
+    <article class="space-y-6" data-labeling-case="<%= case_id %>">
+      <section class="rounded-xl border border-gray-200 bg-white p-6" data-change-summary>
+        <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">What changed</p>
+        <p class="mt-1 text-xs text-gray-500">Change <%= evaluation.corpus.case_ids.index(case_id).to_i + 1 %> of <%= evaluation.corpus.case_ids.size %> · <%= project.full_name %></p>
+        <h2 class="mt-2 text-xl font-semibold text-gray-900"><%= overview[:title] %></h2>
+        <% if overview[:body].present? %>
+          <div class="prose prose-sm mt-3 max-w-none text-gray-700">
+            <%= render "shared/markdown_text", content: overview[:body].truncate(1_000), tag: :div, block: true, new_tab: true %>
+          </div>
+        <% end %>
+        <p class="mt-4 text-xs text-gray-500">
+          From <%= link_to overview[:source], overview[:url], target: "_blank", rel: "noopener noreferrer", data: { turbo: false }, class: "text-violet-700 underline" %> ·
+          <%= result.context[:file_count] %> files changed.
+          This is the author's description, not an AI review verdict.
+        </p>
+      </section>
+
+      <section class="rounded-xl border border-gray-200 bg-white p-6" aria-labelledby="review-requirements-heading">
+        <h3 id="review-requirements-heading" class="font-semibold text-gray-900">What was agreed</h3>
+        <% if documents.any? %>
+          <p class="mt-1 text-sm text-gray-600">These documents are from the recorded approved version, before this change. Expand a document to read it here.</p>
+          <div class="mt-4 space-y-3">
+            <% documents.each do |document| %>
+              <details class="rounded-lg border border-gray-200" data-approved-document>
+                <summary class="cursor-pointer break-words px-4 py-3 text-sm font-semibold text-gray-900"><%= review_requirement_title(document) %><% if document[:source] == "overview" %> <span class="font-normal text-amber-800">(general baseline)</span><% end %></summary>
+                <div class="space-y-3 border-t border-gray-100 p-4">
+                  <%= link_to "Open approved version in a new tab", document[:url], target: "_blank", rel: "noopener noreferrer", data: { turbo: false }, class: "text-sm text-violet-700 underline" %>
+                  <div class="prose prose-sm max-h-80 max-w-none overflow-auto text-gray-700" tabindex="0" aria-label="Approved requirements: <%= review_requirement_title(document) %>">
+                    <%= render "shared/markdown_text", content: document[:content], tag: :div, block: true, new_tab: true %>
+                  </div>
+                </div>
+              </details>
+            <% end %>
+          </div>
+          <% if documents.all? { |document| document[:source] == "overview" } %>
+            <p class="mt-3 text-sm text-amber-800">Only the general design was found, not a case-specific requirement. Choose Not enough information if it does not establish what this change should do.</p>
+          <% end %>
+        <% else %>
+          <p class="mt-3 rounded-lg bg-amber-50 p-4 text-sm text-amber-900" data-missing-requirements>Requirements need preparing. No baseline document could be read for this change. You do not need to reconstruct the missing evidence or invent a citation; this case needs its evidence fixed before it can be reviewed.</p>
+        <% end %>
+      </section>
+
+      <section class="rounded-xl border border-gray-200 bg-white p-6">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="font-semibold text-gray-900">Code changes</h3>
+          <%= link_to "Open full diff in a new tab", result.url, target: "_blank", rel: "noopener noreferrer", data: { turbo: false }, class: "text-sm text-violet-700 underline" %>
+        </div>
+        <%= render "diff", result:, evaluation:, case_id: %>
+      </section>
+
+      <% if documents.any? %>
+        <%= render "decision", current:, documents:, evaluation:, project:, inbox_context: %>
+      <% end %>
+      <%= button_to documents.any? ? "Leave this change for later" : "Continue to the next change", skip_project_shadow_evaluation_path(project, evaluation, **inbox_context), params: { case_id: }, form: { data: { turbo_frame: "_top" } }, class: "text-sm font-medium text-violet-700 underline" %>
+    </article>
+  <% else %>
+    <div role="status" class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+      The review evidence could not be loaded: <%= result.error %>.
+      Refresh to try again. Your saved decisions have not changed.
+    </div>
+  <% end %>
+<% end %>

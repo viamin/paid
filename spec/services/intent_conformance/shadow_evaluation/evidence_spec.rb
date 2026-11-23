@@ -30,6 +30,30 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
     described_class.call(evaluation:, case_id: "case-1", kind:, path:, client:)
   end
 
+  it "returns only bounded patch fields for inline review" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    allow(client).to receive(:compare).and_return(files: [
+      { filename: "app/example.rb", status: "modified", additions: 1, deletions: 1,
+        patch: "-old\n+<script>alert(1)</script>", notes: "expected outcome" }
+    ])
+
+    result = call(kind: "inline_diff")
+
+    expect(result).to be_available
+    expect(result.files).to eq([ { filename: "app/example.rb", status: "modified", additions: 1,
+      deletions: 1, patch: "-old\n+<script>alert(1)</script>", truncated: false } ])
+  end
+
+  it "marks oversized patches as incomplete rather than presenting a full diff" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    allow(client).to receive(:compare).and_return(files: [
+      { filename: "large.txt", patch: "x" * 210_000 }
+    ])
+
+    result = call(kind: "inline_diff")
+
+    expect(result.files.first[:patch].bytesize).to be <= 200_000
+    expect(result.files.first[:truncated]).to be(true)
+  end
+
   it "validates an exact diff before returning its revision-bound URL" do
     expect(client).to receive(:compare).with("acme/widgets", "a" * 40, "b" * 40).and_return({})
 
