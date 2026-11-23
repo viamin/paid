@@ -7,6 +7,82 @@ require "shellwords"
 class RetryWithProcessGroup < Pathname
 end
 
+class RetryExhaustionFixture
+  SCRIPT = <<~'BASH'
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    attempt=1
+    if [[ -f "$RETRY_ATTEMPTS_PATH" ]]; then
+      attempt="$(( $(wc -l < "$RETRY_ATTEMPTS_PATH") + 1 ))"
+    fi
+    printf '%s\n' "$attempt" >> "$RETRY_ATTEMPTS_PATH"
+    if [[ -s "$RETRY_CHILD_PIDS_PATH" ]]; then
+      previous_child_pid="$(tail -n 1 "$RETRY_CHILD_PIDS_PATH" | cut -d: -f2)"
+      previous_child_state="$(ps -o stat= -p "$previous_child_pid" 2>/dev/null || true)"
+      if [[ "$previous_child_state" != *Z* && -n "$previous_child_state" ]]; then
+        printf 'attempt:%s:overlap:%s\n' "$attempt" "$previous_child_pid" >> "$RETRY_EVENTS_PATH"
+        exit 42
+      fi
+      printf 'attempt:%s:prior-child-gone:%s\n' "$attempt" "$previous_child_pid" >> "$RETRY_EVENTS_PATH"
+    fi
+    printf 'attempt:%s:leader:%s\n' "$attempt" "$$" >> "$RETRY_EVENTS_PATH"
+    trap '' TERM
+    (
+      printf '%s:%s\n' "$attempt" "$BASHPID" >> "$RETRY_CHILD_PIDS_PATH"
+      exec tail -f /dev/null
+    ) &
+    wait "$!"
+  BASH
+
+  def initialize
+    @directory = Dir.mktmpdir("retry-with-process-group-retries")
+    @fixture_path = File.join(directory, "fail-until-exhausted")
+    @attempts_path = File.join(directory, "attempts")
+    @events_path = File.join(directory, "events")
+    @child_pids_path = File.join(directory, "child-pids")
+    File.write(fixture_path, SCRIPT)
+    FileUtils.chmod("u+x", fixture_path)
+  end
+
+  def run(script_path, environment)
+    Open3.capture3(environment.merge(paths), script_path, fixture_path).last
+  end
+
+  def attempts
+    read(attempts_path)
+  end
+
+  def events
+    read(events_path)
+  end
+
+  def child_pids
+    read(child_pids_path)
+  end
+
+  def cleanup
+    FileUtils.remove_entry(directory)
+  end
+
+  private
+
+  attr_reader :attempts_path, :child_pids_path, :directory, :events_path, :fixture_path
+
+  def paths
+    {
+      "DEPENDENCY_SETUP_MAX_ATTEMPTS" => "3",
+      "RETRY_ATTEMPTS_PATH" => attempts_path,
+      "RETRY_EVENTS_PATH" => events_path,
+      "RETRY_CHILD_PIDS_PATH" => child_pids_path
+    }
+  end
+
+  def read(path)
+    File.readlines(path, chomp: true)
+  end
+end
+
 RSpec.describe RetryWithProcessGroup, :no_db do
   let(:script_path) { Rails.root.join("bin/retry-with-process-group").to_s }
   let(:fast_supervision) do
@@ -98,6 +174,29 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
   ensure
     FileUtils.rm_f(child_pid_file)
+  end
+
+  # @spec TEST-SUITE-023
+  it "reaps each timed-out descendant before retrying and exhausts every configured attempt" do
+    fixture = RetryExhaustionFixture.new
+    status = fixture.run(script_path, fast_supervision.merge("DEPENDENCY_SETUP_TERMINATION_GRACE" => "0.5s"))
+
+    expect(status.exitstatus).to eq(1)
+    expect(fixture.attempts).to eq(%w[1 2 3])
+    expect(fixture.events).to match([
+      /attempt:1:leader:\d+/,
+      /attempt:2:prior-child-gone:\d+/,
+      /attempt:2:leader:\d+/,
+      /attempt:3:prior-child-gone:\d+/,
+      /attempt:3:leader:\d+/
+    ])
+    expect(fixture.child_pids).to match([
+      /1:\d+/,
+      /2:\d+/,
+      /3:\d+/
+    ])
+  ensure
+    fixture&.cleanup
   end
 
   # @spec TEST-SUITE-023

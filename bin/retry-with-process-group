@@ -12,6 +12,11 @@ active_timeout_marker=""
 active_watchdog=""
 active_watchdog_ready=""
 
+group_has_live_processes() {
+  ps -eo pgid=,stat= |
+    awk -v group_leader="$1" '$1 == group_leader && $2 !~ /^Z/ { found = 1 } END { exit !found }'
+}
+
 terminate_group() {
   local group_leader="$1"
   local killer
@@ -28,6 +33,12 @@ terminate_group() {
   ) &
   killer=$!
   wait "$group_leader" 2>/dev/null || true
+  # A session leader can exit before its descendants. Do not let the caller
+  # begin another attempt while an owned process remains live. Ignore zombies:
+  # this script cannot reap children adopted by its container init process.
+  while group_has_live_processes "$group_leader"; do
+    sleep 0.01
+  done
   kill "$killer" 2>/dev/null || true
   wait "$killer" 2>/dev/null || true
 }
