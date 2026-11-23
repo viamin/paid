@@ -63,7 +63,8 @@ module Activities
       expected_head_sha = input[:expected_head_sha]
       return true if expected_head_sha.blank? # Recorded pre-#5288 activity command.
 
-      client.pull_request(project.full_name, agent_run.source_pull_request_number).head.sha.to_s == expected_head_sha
+      refs = client.pull_request_ref_oids(project.full_name, agent_run.source_pull_request_number)
+      refs[:head].to_s == expected_head_sha
     end
 
     def stale_head_result(agent_run_id, thread_ids)

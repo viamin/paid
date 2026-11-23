@@ -11,6 +11,13 @@ module Activities
 
     TIMEOUT = 120
     DISPOSITIONS = %w[repaired invalid outdated already_fixed].freeze
+    TRUNCATION_MARKER = "[TRUNCATED TO EVIDENCE BUDGET]"
+    COMMENT_BYTES = 2_000
+    COMMENTS_PER_THREAD_BYTES = 10_000
+    PATCH_BYTES = 4_000
+    THREAD_EVIDENCE_BYTES = 20_000
+    DIFF_EVIDENCE_BYTES = 30_000
+    MAX_PROMPT_BYTES = 55_000
 
     def execute(input)
       agent_run = AgentRun.find(input[:agent_run_id])
@@ -19,9 +26,9 @@ module Activities
 
       project = agent_run.project
       client = project.client
-      pull_request = client.pull_request(project.full_name, agent_run.source_pull_request_number)
-      head_sha = pull_request.head.sha.to_s
-      base_sha = pull_request.base.sha.to_s
+      refs = client.pull_request_ref_oids(project.full_name, agent_run.source_pull_request_number)
+      head_sha = refs[:head].to_s
+      base_sha = refs[:base].to_s
       threads = unresolved_captured_threads(client, project, agent_run, captured_ids)
       return unavailable if head_sha.blank? || base_sha.blank? || threads.empty?
 
@@ -30,7 +37,10 @@ module Activities
       # different head's changes while labeling them as this one.
       evidence = client.detailed_compare_files(project.full_name, base_sha, head_sha)
       prompt_threads = threads.map { |thread| thread_with_trusted_comments(project, thread) }
-      response = Llm::Request.call(prompt: prompt(head_sha, prompt_threads, evidence), agent_run: agent_run, timeout: TIMEOUT)
+      assessment_prompt = prompt(head_sha, bounded_threads(prompt_threads), bounded_evidence(evidence))
+      return unavailable if assessment_prompt.bytesize > MAX_PROMPT_BYTES
+
+      response = Llm::Request.call(prompt: assessment_prompt, agent_run: agent_run, timeout: TIMEOUT)
       return unavailable unless response.success?
 
       thread_versions = threads.to_h { |thread| [ thread[:id].to_s, ReviewThreads::ContentDigest.call(thread) ] }
@@ -83,6 +93,49 @@ module Activities
         Current-head PR diff evidence:
         #{JSON.generate(evidence)}
       PROMPT
+    end
+
+    def bounded_threads(threads)
+      items = threads.map do |thread|
+        comments = Array(thread[:comments]).map { |comment| bounded_comment(comment) }
+        thread.merge(comments: bounded_collection(comments, COMMENTS_PER_THREAD_BYTES))
+      end
+      bounded_collection(items, THREAD_EVIDENCE_BYTES)
+    end
+
+    def bounded_comment(comment)
+      attributes = comment.to_h.deep_symbolize_keys
+      attributes.merge(body: bounded_text(attributes[:body], COMMENT_BYTES))
+    end
+
+    def bounded_evidence(evidence)
+      items = Array(evidence).map do |file|
+        attributes = file.to_h.deep_symbolize_keys
+        attributes.merge(patch: bounded_text(attributes[:patch], PATCH_BYTES))
+      end
+      bounded_collection(items, DIFF_EVIDENCE_BYTES)
+    end
+
+    def bounded_collection(items, byte_budget)
+      selected = []
+      used = 0
+      items.each do |item|
+        item_bytes = JSON.generate(item).bytesize
+        break if used + item_bytes > byte_budget
+
+        selected << item
+        used += item_bytes
+      end
+      { items: selected, truncated: selected.size < items.size,
+        truncation: (TRUNCATION_MARKER if selected.size < items.size) }
+    end
+
+    def bounded_text(value, byte_budget)
+      text = value.to_s
+      return text if text.bytesize <= byte_budget
+
+      content_bytes = byte_budget - TRUNCATION_MARKER.bytesize
+      "#{text.byteslice(0, content_bytes).to_s.scrub}#{TRUNCATION_MARKER}"
     end
 
     def parse(output, head_sha, thread_versions)

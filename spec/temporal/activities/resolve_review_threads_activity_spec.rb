@@ -64,8 +64,8 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
       end
 
       it "leaves findings open when the head advanced after assessment" do
-        allow(github_client).to receive(:pull_request).with(project.full_name, 42)
-          .and_return(double(head: double(sha: "new-head")))
+        allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+          .and_return(base: "base-sha", head: "new-head")
         expect(github_client).not_to receive(:resolve_review_threads_batch)
 
         result = activity.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ], expected_head_sha: "assessed-head")
@@ -79,8 +79,8 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
         changed_thread[:comments] << {
           body: "Also require an authorization check", author: "viamin", created_at: "2026-11-22T03:01:00Z"
         }
-        allow(github_client).to receive(:pull_request).with(project.full_name, 42)
-          .and_return(double(head: double(sha: "assessed-head")))
+        allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+          .and_return(base: "base-sha", head: "assessed-head")
         allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([ changed_thread ])
         expect(github_client).not_to receive(:resolve_review_threads_batch)
 
@@ -95,8 +95,8 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
       end
 
       it "leaves a finding open when assessed thread versions are missing" do
-        allow(github_client).to receive(:pull_request).with(project.full_name, 42)
-          .and_return(double(head: double(sha: "assessed-head")))
+        allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+          .and_return(base: "base-sha", head: "assessed-head")
         expect(github_client).not_to receive(:resolve_review_threads_batch)
 
         result = activity.execute(
@@ -110,8 +110,9 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
 
       # @spec FOCUSED-RUN-011
       it "resolves a finding when its assessed head and thread version are unchanged" do
-        allow(github_client).to receive(:pull_request).with(project.full_name, 42)
-          .and_return(double(head: double(sha: "assessed-head")))
+        expect(github_client).not_to receive(:pull_request)
+        allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+          .and_return(base: "base-sha", head: "assessed-head")
         allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([ assessed_thread ])
         allow(github_client).to receive(:resolve_review_threads_batch).with([ "thread_1" ])
           .and_return(resolved: [ "thread_1" ], failed: [])

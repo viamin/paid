@@ -15,8 +15,8 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:pull_request).with(project.full_name, 42)
-      .and_return(double(head: double(sha: "current-head"), base: double(sha: "base-sha")))
+    allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+      .and_return(base: "base-sha", head: "current-head")
     allow(github_client).to receive(:review_threads).with(project.full_name, 42)
       .and_return([ thread ])
     allow(github_client).to receive(:detailed_compare_files).with(project.full_name, "base-sha", "current-head")
@@ -42,6 +42,37 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
 
     expect(github_client).to have_received(:detailed_compare_files).with(project.full_name, "base-sha", "current-head")
+  end
+
+  # @spec FOCUSED-RUN-011
+  it "reads the assessment head through the uncached ref boundary" do
+    expect(github_client).not_to receive(:pull_request)
+
+    described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+    expect(github_client).to have_received(:pull_request_ref_oids).with(project.full_name, 42)
+  end
+
+  # @spec FOCUSED-RUN-011
+  it "bounds comment, patch, and aggregate evidence with explicit truncation markers" do
+    long_body = "comment evidence " * 2_000
+    long_patch = "+changed line\n" * 5_000
+    many_threads = 30.times.map do |index|
+      { id: "thread_#{index}", is_resolved: false, comments: [ { body: long_body, author: "viamin" } ] }
+    end
+    many_files = 100.times.map { |index| { filename: "app/file_#{index}.rb", patch: long_patch } }
+    allow(github_client).to receive_messages(review_threads: many_threads, detailed_compare_files: many_files)
+    allow(response).to receive(:output).and_return(
+      { head_sha: "current-head", resolutions: [ { thread_id: "thread_0", disposition: "repaired", rationale: "Evidence" } ] }.to_json
+    )
+
+    described_class.new.execute(agent_run_id: agent_run.id, thread_ids: many_threads.map { |thread| thread[:id] })
+
+    expect(Llm::Request).to have_received(:call) do |prompt:, **|
+      expect(prompt.bytesize).to be <= described_class::MAX_PROMPT_BYTES
+      expect(prompt).to include(described_class::TRUNCATION_MARKER)
+      expect(prompt).to include("thread_0")
+    end
   end
 
   it "fails closed for setup-only output" do

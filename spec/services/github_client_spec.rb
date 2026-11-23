@@ -1789,6 +1789,24 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#pull_request_ref_oids" do
+    let(:repo) { "owner/repo" }
+
+    it "reads current base and head refs over uncached GraphQL" do
+      request = stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          status: 200,
+          body: {
+            data: { repository: { pullRequest: { baseRefOid: "base-sha", headRefOid: "head-sha" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect(client.pull_request_ref_oids(repo, 42)).to eq(base: "base-sha", head: "head-sha")
+      expect(request).to have_been_requested.once
+    end
+  end
+
   describe "#pull_request_reviews", :no_db do
     let(:repo) { "owner/repo" }
 

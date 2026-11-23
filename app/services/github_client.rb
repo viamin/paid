@@ -1030,6 +1030,26 @@ class GithubClient
     end
   end
 
+  # Reads immutable pull-request ref identities over GraphQL. Unlike REST GETs,
+  # this POST bypasses the shared HTTP cache and is suitable for freshness gates.
+  # @spec FOCUSED-RUN-011
+  def pull_request_ref_oids(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) { baseRefOid headRefOid }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    raise_graphql_errors(data, context: "reading refs for #{repo}##{number}")
+    pull_request = data.dig("data", "repository", "pullRequest") || {}
+
+    { base: pull_request["baseRefOid"], head: pull_request["headRefOid"] }
+  end
+
   # Resolves a review thread on a pull request via GraphQL.
   #
   # @param thread_node_id [String] The GraphQL node ID of the review thread
