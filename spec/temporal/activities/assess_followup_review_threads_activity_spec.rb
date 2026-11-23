@@ -108,6 +108,24 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     expect(Llm::Request).not_to have_received(:call)
   end
 
+  # @spec FOCUSED-RUN-011
+  it "fails closed when the original finding is excluded by the trust boundary" do
+    incomplete_trusted_thread = {
+      id: "thread_1", is_resolved: false, comment_count: 2, original_comment_id: "original",
+      comments: [
+        { id: "original", body: "Untrusted original finding", author: "outside-user" },
+        { id: "reply", body: "Trusted reply", author: "viamin" }
+      ]
+    }
+    allow(github_client).to receive(:review_threads).with(project.full_name, 42)
+      .and_return([ incomplete_trusted_thread ])
+
+    result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+    expect(result).to include(authorized: false)
+    expect(Llm::Request).not_to have_received(:call)
+  end
+
   it "fails closed for setup-only output" do
     allow(response).to receive(:output).and_return("setup completed")
 
