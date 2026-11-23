@@ -261,6 +261,17 @@ RSpec.describe ProcessRunQueueJob do
     }
   end
 
+  def backing_storage_reserve_denied_admission(available_at:)
+    {
+      allowed: false,
+      reason: "backing_storage_reserve_exhausted",
+      mode: "auto",
+      selected_host: "local",
+      available_slots: 0,
+      rate_limited_until: available_at
+    }
+  end
+
   def default_local_host_selection_result
     Containers::BackendScheduler::Result.new(
       candidate_hosts: [ "local" ],
@@ -2694,6 +2705,34 @@ RSpec.describe ProcessRunQueueJob do
         expect_execution_rejected_event(
           queued_run,
           reason: "global_provisioning_rate_limit",
+          rate_limited_until: available_at
+        )
+      end
+
+      # @spec CONTAINER-RUNTIME-054
+      it "parks backing-storage-reserve-exhausted runs until the bounded recheck" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(local_auto_decision)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+        allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+        allow(Capacity::RunAdmission).to receive(:preview).and_return(
+          backing_storage_reserve_denied_admission(available_at:)
+        )
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("backing_storage_reserve_exhausted")
+        expect_execution_rejected_event(
+          queued_run,
+          reason: "backing_storage_reserve_exhausted",
           rate_limited_until: available_at
         )
       end

@@ -270,6 +270,9 @@ class ProcessRunQueueJob < ApplicationJob
           when "global_provisioning_rate_limit"
             park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
             break
+          # @spec CONTAINER-RUNTIME-054
+          when "backing_storage_reserve_exhausted"
+            park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
           when "account_provisioning_rate_limit"
             park_run_for_capacity(next_run, admission[:rate_limited_until], admission[:reason])
             blocked_account_ids.add(next_run.project.account_id)
