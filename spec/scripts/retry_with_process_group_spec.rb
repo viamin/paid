@@ -3,6 +3,7 @@
 require "rails_helper"
 require "open3"
 require "shellwords"
+require "timeout"
 
 class RetryWithProcessGroup < Pathname
 end
@@ -102,7 +103,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     expect(script_source).to include('attempt_timeout="${DEPENDENCY_SETUP_TIMEOUT:-20m}"')
     expect(script_source).to include('termination_grace="${DEPENDENCY_SETUP_TERMINATION_GRACE:-30s}"')
     expect(script_source).to include('backoff_seconds="${DEPENDENCY_SETUP_BACKOFF_SECONDS:-10}"')
-    expect(script_source).to include('sleep "$((attempt * backoff_seconds))"')
+    expect(script_source).to include('wait_for_backoff "$((attempt * backoff_seconds))"')
   end
 
   # @spec TEST-SUITE-023
@@ -132,6 +133,48 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     expect(stdout).to eq("")
     expect(stderr).to eq("")
     expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
+  end
+
+  # @spec TEST-SUITE-023
+  it "reaps the successful cleanup grace timer" do
+    with_recording_sleep("30s") do |environment, pid_reader, pid_writer|
+      _stdout, _stderr, status = Open3.capture3(
+        environment.merge(
+          "DEPENDENCY_SETUP_MAX_ATTEMPTS" => "1",
+          "DEPENDENCY_SETUP_TERMINATION_GRACE" => "30s"
+        ), script_path, "bash", "-c", "true", close_others: false
+      )
+
+      timer_pid = read_timer_pid(pid_reader)
+      expect(status).to be_success
+      expect { Process.kill(0, timer_pid) }.to raise_error(Errno::ESRCH)
+    end
+  end
+
+  # @spec TEST-SUITE-023
+  it "reaps the default first-backoff timer when cancelled" do
+    wrapper_pid = nil
+    with_recording_sleep("10") do |environment, pid_reader, pid_writer|
+      wrapper_pid = spawn_default_backoff_wrapper(environment, pid_writer)
+      timer_pid = read_timer_pid(pid_reader)
+
+      Process.kill("TERM", wrapper_pid)
+      _pid, status = Process.wait2(wrapper_pid)
+
+      expect(status.termsig).to eq(15)
+      expect { Process.kill(0, timer_pid) }.to raise_error(Errno::ESRCH)
+    end
+  ensure
+    begin
+      Process.kill("KILL", wrapper_pid) if wrapper_pid
+    rescue Errno::ESRCH
+      nil
+    end
+    begin
+      Process.wait(wrapper_pid) if wrapper_pid
+    rescue Errno::ECHILD
+      nil
+    end
   end
 
   # @spec TEST-SUITE-023
@@ -261,5 +304,46 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
   ensure
     FileUtils.rm_f(child_pid_file)
+  end
+
+  private
+
+  def with_recording_sleep(duration)
+    directory = Dir.mktmpdir("retry-with-process-group-timer")
+    sleep_path = File.join(directory, "sleep")
+    reader, writer = IO.pipe
+    writer.close_on_exec = false
+    File.write(sleep_path, <<~BASH)
+      #!/usr/bin/env bash
+      if [[ "$1" == "#{duration}" ]]; then
+        printf '%s\\n' "$$" >&"$TIMER_READY_FD"
+      fi
+      exec /usr/bin/sleep "$@"
+    BASH
+    FileUtils.chmod("u+x", sleep_path)
+    environment = fast_supervision.merge(
+      "PATH" => "#{directory}:#{ENV.fetch("PATH")}",
+      "TIMER_READY_FD" => writer.fileno.to_s
+    )
+    yield environment, reader, writer
+  ensure
+    reader&.close
+    writer&.close
+    FileUtils.remove_entry(directory) if directory
+  end
+
+  def read_timer_pid(reader)
+    Integer(Timeout.timeout(2) { reader.gets }.strip)
+  end
+
+  def spawn_default_backoff_wrapper(environment, pid_writer)
+    Process.spawn(
+      environment.merge(
+        "DEPENDENCY_SETUP_MAX_ATTEMPTS" => "5",
+        "DEPENDENCY_SETUP_TIMEOUT" => "10s",
+        "DEPENDENCY_SETUP_TERMINATION_GRACE" => "0.1s",
+        "DEPENDENCY_SETUP_BACKOFF_SECONDS" => "10"
+      ), script_path, "bash", "-c", "exit 7", pid_writer.fileno => pid_writer, close_others: false
+    )
   end
 end

@@ -43,7 +43,10 @@ also stops its package-manager descendants and reaps its owned session leader
 before the next retry. Its watchdog runs in a separate owned session containing
 both the timer and grace delay, acknowledges that session before cleanup can
 target its process group, and terminates and waits for that session on every
-success, failure, timeout, and cancellation before the wrapper returns. The supervisor
+success, failure, timeout, and cancellation before the wrapper returns. Retry
+backoff and termination-escalation timers are likewise owned children: cleanup
+terminates and reaps them before returning, including when the wrapper receives
+TERM or INT. The supervisor
 sends TERM to only that owned group, follows with KILL after a finite grace
 period for TERM-resistant descendants, and reports a timeout as a failed setup
 attempt. This absorbs transient registry
