@@ -139,6 +139,43 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     end
   end
 
+  context "when a supported no-code disposition is followed up again" do
+    before do
+      state = { thread: thread }
+      allow(response).to receive(:output).and_return(no_code_disposition_output)
+      allow(github_client).to receive(:review_threads).with(project.full_name, 42) { [ state[:thread] ] }
+      allow(github_client).to receive(:resolve_review_threads_batch).with([ "thread_1" ]) do
+        state[:thread] = state[:thread].merge(is_resolved: true)
+        { resolved: [ "thread_1" ], failed: [] }
+      end
+    end
+
+    # @spec FOCUSED-RUN-011
+    it "resolves once and leaves no repeated follow-up work" do
+      assessment = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+      resolution = Activities::ResolveReviewThreadsActivity.new.execute(resolution_input(assessment))
+      repeated = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+      expect(resolution).to include(resolved_count: 1, failed_count: 0)
+      expect(repeated).to include(authorized: false)
+      expect(Llm::Request).to have_received(:call).once
+      expect(github_client).to have_received(:resolve_review_threads_batch).once
+    end
+
+    def no_code_disposition_output
+      { head_sha: "current-head", resolutions: [
+        { thread_id: "thread_1", disposition: "invalid",
+          rationale: "The current HTTP evidence disproves the reported pagination failure." }
+      ] }.to_json
+    end
+
+    def resolution_input(assessment)
+      assessment.slice(:rationales, :thread_versions).merge(
+        agent_run_id: agent_run.id, thread_ids: assessment[:thread_ids], expected_head_sha: assessment[:head_sha]
+      )
+    end
+  end
+
   context "when a captured thread gains an untrusted appended reply" do
     let(:thread) do
       {
