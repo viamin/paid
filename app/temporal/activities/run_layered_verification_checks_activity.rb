@@ -6,7 +6,7 @@ require "stringio"
 module Activities
   # Executes deterministic plan-selected checks in the already-provisioned
   # isolated environment, before generic agent-result ingestion.
-  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-022 LAYERED-VERIFY-024
+  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-009 LAYERED-VERIFY-019 LAYERED-VERIFY-022 LAYERED-VERIFY-024
   class RunLayeredVerificationChecksActivity < BaseActivity
     activity_name "RunLayeredVerificationChecks"
     COMMAND_TIMEOUT = 60
@@ -14,13 +14,35 @@ module Activities
 
     def execute(input)
       @agent_run = AgentRun.find(input[:agent_run_id])
-      formal_selections.each { |obligation, plan| run_tlc(obligation, plan) }
+      record_linkage_freshness
+      formal_selections.each { |obligation, plan| run_selected_check(obligation, plan) }
       { agent_run_id: agent_run.id, check_result_count: formal_selections.size }
     end
 
     private
 
     attr_reader :agent_run
+
+    # @spec LAYERED-VERIFY-009
+    def record_linkage_freshness
+      obligations.each do |obligation|
+        discovery = LayeredVerification::UnmappedMaterial.call(
+          obligation:, agent_run:, command_runner: method(:run_command)
+        )
+        next if discovery.material.empty? && discovery.limitations.empty?
+
+        LayeredVerification::LinkageFreshness.call(
+          agent_run:, obligation:, material: discovery.material, limitations: discovery.limitations
+        )
+      end
+    end
+
+    # @spec LAYERED-VERIFY-019
+    def run_selected_check(obligation, plan)
+      return if LayeredVerification::Audits::RecordReuse.call(obligation:, agent_run:, metadata: audit_metadata)
+
+      run_tlc(obligation, plan)
+    end
 
     def formal_selections
       @formal_selections ||= obligations.filter_map do |obligation|

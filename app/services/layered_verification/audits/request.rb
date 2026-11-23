@@ -34,6 +34,17 @@ module LayeredVerification
         raise InvalidTargetRevisionError, "target revision could not be resolved"
       end
 
+      # Whether an already-active run covers the exact project/goal/scope/
+      # revision identity. Admission callers must serialize on the project row
+      # around this check; the check alone cannot close the create window.
+      def self.active_run_for_identity?(project:, goal:, obligation_ids:, target_revision:)
+        scope = project.agent_runs.where(goal:, base_commit_sha: target_revision, status: %w[queued running])
+        wanted_ids = obligation_ids.map(&:to_i).sort
+        scope.find_each.any? do |run|
+          Array(run.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i).sort == wanted_ids
+        end
+      end
+
       def initialize(project:, user:, obligation_ids:, target_revision:, budget:, selections: {})
         @project = project
         @user = user
@@ -48,9 +59,18 @@ module LayeredVerification
         raise EmptyScopeError, "select at least one obligation" if obligations.empty?
         validate_budget!
         validate_target_revision!
-        raise DuplicateAuditError, "an audit for this scope and revision is already active" if duplicate_audit?
+        attributes = run_attributes
+        run = nil
+        AgentRun.transaction do
+          # Serialize admission on the project row so two concurrent approvals
+          # cannot both observe no active audit and both create one; the
+          # resumption path takes the same lock before re-admitting a successor.
+          # Attributes resolve before the lock to keep its hold bounded.
+          project.lock!
+          raise DuplicateAuditError, "an audit for this scope and revision is already active" if duplicate_audit?
 
-        run = AgentRun.create!(run_attributes)
+          run = AgentRun.create!(attributes)
+        end
         ProcessRunQueueJob.perform_later
         run
       end
@@ -95,9 +115,8 @@ module LayeredVerification
       end
 
       def duplicate_audit?
-        project.agent_runs.where(goal: "layered_verification_audit", base_commit_sha: target_revision, status: %w[queued running]).find_each.any? do |run|
-          Array(run.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i).sort == obligations.map(&:id).sort
-        end
+        self.class.active_run_for_identity?(project:, goal: "layered_verification_audit",
+          obligation_ids: obligations.map(&:id), target_revision:)
       end
 
       def validate_target_revision!

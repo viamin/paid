@@ -121,8 +121,12 @@
   referencing it at all, combining mechanical structural diffing with a
   bounded semantic read-through (`agent_harness`) for material a structural
   diff cannot detect (a new clause inside an existing paragraph).
-  *Tests:* `spec/services/layered_verification/linkage_freshness_spec.rb`
-  *Code:* `LayeredVerification::LinkageFreshness` (#4432, #4435)
+  *Tests:* `spec/services/layered_verification/linkage_freshness_spec.rb`,
+  `spec/services/layered_verification/unmapped_material_spec.rb`,
+  `spec/temporal/activities/run_layered_verification_checks_activity_spec.rb`
+  *Code:* `LayeredVerification::LinkageFreshness`,
+  `LayeredVerification::UnmappedMaterial`, executed by
+  `Activities::RunLayeredVerificationChecksActivity` (#4432, #4435)
 
 ## Model-check command integration
 
@@ -375,8 +379,12 @@
   evidence whose overlap cannot be established with confidence SHALL be
   invalidated by conservative fallback, with the limitation disclosed in the
   next audit report.
-  *Tests:* `spec/services/layered_verification/invalidation_spec.rb`
-  *Code:* `LayeredVerification::Invalidation` (#4435)
+  *Tests:* `spec/services/layered_verification/invalidation_spec.rb`,
+  `spec/services/layered_verification/audits/record_reuse_spec.rb`,
+  `spec/temporal/activities/run_layered_verification_checks_activity_spec.rb`
+  *Code:* `LayeredVerification::Invalidation`,
+  `LayeredVerification::Audits::RecordReuse` (admission impact consumed by
+  `Activities::RunLayeredVerificationChecksActivity`) (#4435)
 
 - [x] **LAYERED-VERIFY-020** — An interrupted (cancelled, infrastructure
   failure, or budget-exhausted) `layered_verification_audit` or
@@ -387,8 +395,12 @@
   recorded check result and finding and SHALL report the run's outcome as
   explicitly incomplete, never as a pass. A repair's code mutation SHALL NOT
   be replayed merely because the surrounding audit retried.
-  *Tests:* `spec/services/layered_verification/resumption_spec.rb`
-  *Code:* `LayeredVerification::Resumption` (#4435)
+  *Tests:* `spec/services/layered_verification/resumption_spec.rb`,
+  `spec/services/layered_verification/audits/resume_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`
+  *Code:* `LayeredVerification::Resumption`,
+  `LayeredVerification::Audits::Resume`, entered through
+  `Projects::AgentRunsController#retry` (#4435)
 
 ## Business-review package
 
