@@ -1888,6 +1888,18 @@ RSpec.describe GithubClient do
         expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
           .with(query: hash_including("page" => (max_pages + 1).to_s))).not_to have_been_requested
       end
+
+      # @spec PROMPT-ASSEMBLY-026
+      it "does not report truncation when the configured final page has no successor" do
+        max_pages = GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES
+        stub_review_pages(repo: repo, number: 44, page_count: max_pages)
+
+        expect(Rails.logger).not_to receive(:warn).with(hash_including(
+          message: "github_client.pull_request_reviews_pagination_truncated"
+        ))
+
+        expect(client.pull_request_reviews(repo, 44).map { |review| review[:id] }).to eq((1..max_pages).to_a)
+      end
     end
 
     context "when pull request does not exist" do

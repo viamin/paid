@@ -1090,7 +1090,7 @@ class GithubClient
         client.paginate("/repos/#{repo}/pulls/#{number}/reviews", per_page: 100) do |collected, response|
           pages += 1
           if pages + 1 >= PULL_REQUEST_REVIEWS_MAX_PAGES
-            truncated = true
+            truncated = response.rels[:next].present?
             break collected.concat(Array(response.data))
           end
 
