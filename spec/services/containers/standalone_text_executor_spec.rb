@@ -149,6 +149,21 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-013
+  it "applies the candidate deadline to network setup and upgraded exec creation" do
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
+      clock: ->(_) { 100.0 })
+    stub_text_exec { [ [], [], 0 ] }
+
+    executor.execute([ "codex", "exec", "hello" ])
+
+    expect(NetworkPolicy).to have_received(:ensure_network!).with(
+      network: NetworkPolicy::INFRA_NETWORK_NAME, backend: backend, deadline: 7.0
+    )
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
+      hash_including(deadline: 7.0))
+  end
+
+  # @spec LLM-ROUTING-013
   it "supports the deadline contract when isolated text uses the Swarm backend" do
     swarm_backend = instance_double(Containers::Backends::Swarm, remote?: false)
     allow(Containers).to receive(:backend).and_return(swarm_backend)

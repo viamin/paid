@@ -71,7 +71,7 @@ module Containers
 
       # The command must read a known byte count. This transport keeps stdin
       # open until exec exits; the caller must enforce its execution deadline.
-      def exec_in_container_with_stdin(_container, _command, stdin:, wait:, **, &)
+      def exec_in_container_with_stdin(_container, _command, stdin:, wait:, deadline: nil, **, &)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
@@ -107,11 +107,11 @@ module Containers
         list_containers(filters: { label: [ "#{Previews::TunnelManager::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
       end
 
-      def get_network(_name)
+      def get_network(_name, deadline: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_network(_name, _config)
+      def create_network(_name, _config = nil, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 

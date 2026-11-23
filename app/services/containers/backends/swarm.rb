@@ -158,8 +158,10 @@ module Containers
         concrete_container(container, deadline_at:).exec(command, options, &block)
       end
 
-      def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
-        DockerExecWithStdin.call(container: concrete_container(container), command:, stdin:, wait:, **options, &block)
+      def exec_in_container_with_stdin(container, command, stdin:, wait:, deadline: nil, **options, &block)
+        deadline_at = operation_deadline(deadline)
+        concrete = concrete_container(container, deadline_at:)
+        DockerExecWithStdin.call(container: concrete, command:, stdin:, wait:, **options, &block)
       end
 
       def container_stats(container, **options)
@@ -206,12 +208,13 @@ module Containers
         end
       end
 
-      def get_network(name)
-        Docker::Network.get(name, {}, manager_connection)
+      def get_network(name, deadline: nil)
+        Docker::Network.get(name, {}, manager_connection_for(operation_deadline(deadline)))
       end
 
-      def create_network(name, config)
-        Docker::Network.create(name, swarm_network_config(config), manager_connection)
+      def create_network(name, config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        Docker::Network.create(name, swarm_network_config(config), manager_connection_for(operation_deadline(deadline)))
       end
 
       def pull_image(config)

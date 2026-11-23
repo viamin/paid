@@ -115,7 +115,8 @@ container. Failed provisioning is terminal for that candidate and never falls
 back to host execution. Timing out an assessment must not stop a live run's
 container or make all retries fail.
 Each route candidate receives an absolute monotonic deadline derived from the
-single request deadline and its allocated slice. Provisioning, credential
+single request deadline and its allocated slice. Provisioning, including Docker
+network lookup or creation and upgraded exec creation, credential
 materialization and refresh, command execution, and output handling consume
 that same slice; an executor retains the short cleanup margin before it starts
 a command. Thus slow setup cannot obtain a fresh command timeout and a spent

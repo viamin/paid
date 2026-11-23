@@ -82,8 +82,10 @@ module Containers
         with_deadline(container, deadline) { container.exec(command, **options, &block) }
       end
 
-      def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
-        DockerExecWithStdin.call(container:, command:, stdin:, wait:, **options, &block)
+      def exec_in_container_with_stdin(container, command, stdin:, wait:, deadline: nil, **options, &block)
+        with_deadline(container, deadline) do
+          DockerExecWithStdin.call(container:, command:, stdin:, wait:, **options, &block)
+        end
       end
 
       def container_stats(container, **options)
@@ -98,12 +100,13 @@ module Containers
         Docker::Container.all(options, connection)
       end
 
-      def get_network(name)
-        Docker::Network.get(name, {}, connection)
+      def get_network(name, deadline: nil)
+        Docker::Network.get(name, {}, connection_with_deadline(connection, deadline))
       end
 
-      def create_network(name, config)
-        Docker::Network.create(name, config, connection)
+      def create_network(name, config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        Docker::Network.create(name, config, connection_with_deadline(connection, deadline))
       end
 
       def pull_image(config)

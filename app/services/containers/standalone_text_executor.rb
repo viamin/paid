@@ -308,7 +308,7 @@ module Containers
     end
 
     def provision!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend, **backend_deadline)
       @container = Containers.backend.create_container(container_config, **backend_deadline)
       Containers.backend.start_container(@container, **backend_deadline)
       result = Containers.backend.exec_in_container(@container,
@@ -346,7 +346,7 @@ module Containers
       stderr = +""
       output_exceeded = false
       result = Containers.backend.exec_in_container_with_stdin(@container, command,
-        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }, **backend_deadline) do |stream, chunk|
         output_observer&.call(stream, chunk)
         next if output_exceeded
 
