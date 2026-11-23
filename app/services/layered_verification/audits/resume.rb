@@ -18,7 +18,7 @@ module LayeredVerification
       end
 
       def call
-        runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: agent_run.goal)
+        runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: resumed_goal)
         successor = nil
         AgentRun.transaction do
           # Re-admission takes the same project-row lock as Request#call so a
@@ -45,18 +45,18 @@ module LayeredVerification
       end
 
       def duplicate_audit?
-        Request.active_run_for_identity?(project:, goal: agent_run.goal,
+        Request.active_run_for_identity?(project:, goal: resumed_goal,
           obligation_ids: Array(metadata.fetch("obligation_ids")), target_revision: metadata.fetch("target_revision"))
       end
 
       def run_attributes(runner_id, agent_type)
         {
-          project:, initiating_user: user, runner_id:, agent_type:, goal: agent_run.goal,
-          issue_id: agent_run.issue_id, custom_prompt: agent_run.custom_prompt,
+          project:, initiating_user: user, runner_id:, agent_type:, goal: resumed_goal,
+          issue_id: agent_run.issue_id, custom_prompt: resumed_prompt,
           source_pull_request_number: agent_run.source_pull_request_number,
           status: "queued", trigger_type: "manual", base_commit_sha: metadata.fetch("target_revision"),
           review_depth_snapshot: agent_run.review_depth_snapshot,
-          originating_audit_run_id: agent_run.originating_audit_run_id,
+          originating_audit_run_id: resumed_originating_audit_run_id,
           external_metadata: agent_run.external_metadata.merge("layered_verification" => resumed_metadata)
         }
       end
@@ -70,9 +70,27 @@ module LayeredVerification
             "limitations" => decision.limitations
           },
           "resumption" => {
-            "resumed_from_run_id" => agent_run.id, "resumed_at" => Time.current.iso8601, "requested_by_id" => user.id
-          }
+            "resumed_from_run_id" => agent_run.id, "resumed_at" => Time.current.iso8601, "requested_by_id" => user.id,
+            "interrupted_goal" => agent_run.goal,
+            "originating_audit_run_id" => agent_run.originating_audit_run_id
+          }.compact
         )
+      end
+
+      # A repair may already have mutated canonical artifacts before its
+      # interruption. Resume it through the report-only audit path so only the
+      # remaining verification executes; never copy its mutation prompt.
+      # @spec LAYERED-VERIFY-020
+      def resumed_goal
+        agent_run.layered_verification_repair? ? "layered_verification_audit" : agent_run.goal
+      end
+
+      def resumed_prompt
+        agent_run.custom_prompt unless agent_run.layered_verification_repair?
+      end
+
+      def resumed_originating_audit_run_id
+        agent_run.originating_audit_run_id unless agent_run.layered_verification_repair?
       end
     end
   end

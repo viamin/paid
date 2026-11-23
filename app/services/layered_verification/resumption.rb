@@ -19,6 +19,7 @@ module LayeredVerification
 
     def call
       AuditAccess.authorize!(user:, project: agent_run.project)
+      authorize_repair! if agent_run.layered_verification_repair?
       raise ArgumentError, "only interrupted layered-verification runs can resume" unless interrupted_run?
       raise ArgumentError, "all obligations require current approval before resumption" unless obligations.all? { |obligation| obligation.approval_state == "approved" }
 
@@ -30,6 +31,12 @@ module LayeredVerification
     private
 
     attr_reader :agent_run, :user
+
+    def authorize_repair!
+      return if ProjectPolicy.new(user, agent_run.project).update?
+
+      raise AuditAccess::UnauthorizedError, "not authorized to resume a layered-verification repair"
+    end
 
     # LAYERED-VERIFY-020 scopes resumption to audit *and* repair runs that were
     # interrupted by cancellation, infrastructure failure, or budget exhaustion

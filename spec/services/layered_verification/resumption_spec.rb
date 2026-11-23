@@ -82,6 +82,19 @@ RSpec.describe LayeredVerification::Resumption do
     expect(decision.replay_repair_mutation?).to be(false)
   end
 
+  # @spec LAYERED-VERIFY-020
+  it "rejects a repair resumption when the requester no longer has repair authorization" do
+    owner = create(:user, :owner)
+    member = create(:user, :member, account: owner.account)
+    project = create(:project, account: owner.account)
+    obligation = approved_obligation(project)
+    run = interrupted_run(project:, user: owner, obligation:, goal: "layered_verification_repair", status: "failed")
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+
+    expect { described_class.call(agent_run: run, user: member) }
+      .to raise_error(LayeredVerification::AuditAccess::UnauthorizedError, /repair/)
+  end
+
   it "rejects a non-interrupted (completed) run" do
     user = create(:user, :owner)
     project = create(:project, account: user.account)

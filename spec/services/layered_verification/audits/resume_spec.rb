@@ -37,7 +37,7 @@ RSpec.describe LayeredVerification::Audits::Resume do
   end
 
   # @spec LAYERED-VERIFY-020
-  it "preserves the originating audit link when resuming a repair run" do
+  it "continues a repair as verification-only work without replaying its mutation prompt" do
     user = create(:user, :owner)
     project = create(:project, account: user.account)
     obligation = create(:layered_verification_obligation, project:)
@@ -47,7 +47,14 @@ RSpec.describe LayeredVerification::Audits::Resume do
 
     successor = described_class.call(agent_run: repair, user:, decision: decision)
 
-    expect(successor).to have_attributes(goal: "layered_verification_repair", originating_audit_run: audit)
+    expect(successor).to have_attributes(
+      goal: "layered_verification_audit", custom_prompt: nil, originating_audit_run: nil
+    )
+    expect(successor.external_metadata.dig("layered_verification", "resumption")).to include(
+      "resumed_from_run_id" => repair.id,
+      "interrupted_goal" => "layered_verification_repair",
+      "originating_audit_run_id" => audit.id
+    )
   end
 
   it "refuses to admit a successor while an active audit covers the same scope and revision" do
