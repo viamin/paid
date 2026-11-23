@@ -2,7 +2,7 @@
 
 module LayeredVerification
   module Audits
-    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014 @spec LAYERED-VERIFY-027
     class Request
       class EmptyScopeError < StandardError; end
       class InvalidBudgetError < StandardError; end
@@ -34,14 +34,15 @@ module LayeredVerification
         raise InvalidTargetRevisionError, "target revision could not be resolved"
       end
 
-      # Whether an already-active run covers the exact project/goal/scope/
-      # revision identity. Admission callers must serialize on the project row
+      # Whether an already-active run overlaps the project/goal/scope/revision
+      # identity. Admission callers must serialize on the project row
       # around this check; the check alone cannot close the create window.
       def self.active_run_for_identity?(project:, goal:, obligation_ids:, target_revision:)
         scope = project.agent_runs.where(goal:, base_commit_sha: target_revision, status: %w[queued running])
-        wanted_ids = obligation_ids.map(&:to_i).sort
+        wanted_ids = obligation_ids.map(&:to_i).to_set
         scope.find_each.any? do |run|
-          Array(run.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i).sort == wanted_ids
+          active_ids = Array(run.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i).to_set
+          active_ids.intersect?(wanted_ids)
         end
       end
 
@@ -103,8 +104,12 @@ module LayeredVerification
       end
 
       def dependency_snapshot
-        { "environment" => "isolated_execution_environment", "policy" => "layered-verification-v1",
-          "producer_versions" => { "paid" => ENV.fetch("APP_VERSION", "unversioned") } }
+        @dependency_snapshot ||= begin
+          runtime = Containers::RuntimeImageSelector.select(project:).metadata
+          { "environment" => runtime, "policy" => "layered-verification-v1",
+            "producer_versions" => { "paid" => ENV.fetch("APP_VERSION", "unversioned") },
+            "tool_versions" => { "tlc_runtime_image_digest" => runtime["digest"] } }
+        end
       end
 
       def impact_snapshot

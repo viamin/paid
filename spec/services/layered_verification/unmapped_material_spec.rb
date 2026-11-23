@@ -46,6 +46,28 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
   end
 
   # @spec LAYERED-VERIFY-009
+  it "enumerates bounded target directories as well as the canonical source directory" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    commands = []
+    runner = lambda do |*command|
+      commands << command
+      if command.first == "git"
+        [ "docs/intent/payments/payment-specs.md\napp/models/payment.rb\napp/models/refund.rb\n", 0 ]
+      else
+        [ "", 0 ]
+      end
+    end
+
+    discovery = described_class.call(obligation:, agent_run: run, command_runner: runner,
+      llm: semantic_llm("unmapped" => []))
+
+    expect(commands.first).to eq([ "git", "ls-files", "--", "app/models", "docs/intent/payments" ])
+    expect(discovery.material).to eq([ "app/models/refund.rb" ])
+  end
+
+  # @spec LAYERED-VERIFY-009
   it "merges the bounded semantic read-through for material a structural diff cannot detect" do
     project = create(:project)
     obligation = scoped_obligation(project:)
@@ -91,10 +113,11 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
   end
 
   # @spec LAYERED-VERIFY-009
-  it "discloses a limitation instead of an empty-but-successful discovery when no canonical source path exists" do
+  it "discloses a limitation when no bounded repository path exists" do
     project = create(:project)
     obligation = scoped_obligation(project:)
     obligation.update_column(:canonical_source_path, nil)
+    obligation.correspondence_claims.delete_all
     run = create(:agent_run, goal: "layered_verification_audit")
 
     discovery = described_class.call(obligation:, agent_run: run,

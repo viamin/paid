@@ -38,7 +38,22 @@ module LayeredVerification
 
     def complete_dependency_basis?(revision)
       revision["code"].present? && revision["external_revision"].present? &&
-        revision["dependencies"].is_a?(Hash) && revision.fetch("dependencies").present?
+        concrete_dependencies?(revision["dependencies"])
+    end
+
+    def concrete_dependencies?(basis)
+      return false unless basis.is_a?(Hash)
+
+      environment = basis["environment"]
+      versions = basis["producer_versions"]
+      tools = basis["tool_versions"]
+      environment.is_a?(Hash) && environment["immutable"] == true && environment["digest"].present? &&
+        versions.is_a?(Hash) && concrete_version?(versions["paid"]) &&
+        tools.is_a?(Hash) && tools["tlc_runtime_image_digest"] == environment["digest"]
+    end
+
+    def concrete_version?(version)
+      version.present? && version != "unversioned"
     end
 
     def limitations(invalidated)

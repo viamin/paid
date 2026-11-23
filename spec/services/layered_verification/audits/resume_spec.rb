@@ -13,8 +13,8 @@ RSpec.describe LayeredVerification::Audits::Resume do
       } })
   end
 
-  def decision(reusable: [], invalidated: [], limitations: [])
-    LayeredVerification::Resumption::Decision.new(true, reusable, invalidated, limitations)
+  def decision(reusable: [], invalidated: [], limitations: [], remaining_budget: { "max_minutes" => 3 })
+    LayeredVerification::Resumption::Decision.new(true, reusable, invalidated, limitations, remaining_budget)
   end
 
   # @spec LAYERED-VERIFY-020
@@ -29,7 +29,7 @@ RSpec.describe LayeredVerification::Audits::Resume do
     expect(successor).to have_attributes(project:, goal: "layered_verification_audit", status: "queued", base_commit_sha: "sha-1")
     metadata = successor.external_metadata.fetch("layered_verification")
     expect(metadata.fetch("obligation_ids")).to eq([ obligation.id ])
-    expect(metadata.fetch("budget")).to eq("max_minutes" => 5)
+    expect(metadata.fetch("budget")).to eq("max_minutes" => 3)
     expect(metadata.fetch("plan")).to be_present
     expect(metadata.fetch("impact")).to eq("reused_check_result_ids" => [ 7 ], "invalidated_check_result_ids" => [ 9 ], "limitations" => [])
     expect(metadata.dig("resumption", "resumed_from_run_id")).to eq(audit.id)

@@ -63,6 +63,7 @@ module LayeredVerification
 
       def resumed_metadata
         metadata.merge(
+          "budget" => decision.remaining_budget,
           "impact" => {
             "reused_check_result_ids" => decision.reusable_result_ids,
             "invalidated_check_result_ids" => decision.invalidated_result_ids,

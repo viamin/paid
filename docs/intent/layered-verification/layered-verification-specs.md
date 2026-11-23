@@ -470,7 +470,8 @@
   to the obligations whose declared scope intersects the pull request's
   changed files, never an automatic full audit of every project obligation.
   An audit request — PR-triggered or manual — whose resolved obligation scope
-  and pinned revision match an already-active audit SHALL NOT be admitted,
+  intersects an already-active audit's scope at the same pinned revision SHALL
+  NOT be admitted,
   regardless of trigger source. A PR-triggered audit whose obligation scope
   cannot be resolved from the changed files SHALL surface an actionable
   request (correct the project's trigger configuration or request a bounded

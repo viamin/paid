@@ -85,6 +85,26 @@ RSpec.describe LayeredVerification::Audits::Request do
     }.to raise_error(described_class::DuplicateAuditError, "an audit for this scope and revision is already active")
   end
 
+  # @spec LAYERED-VERIFY-027
+  it "rejects an active audit whose scope overlaps at the same revision" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    first, shared, other = create_list(:layered_verification_obligation, 3, project:)
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+    allow(project.client).to receive(:commit).and_return(OpenStruct.new(sha: "resolved-sha"))
+    create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "queued",
+      base_commit_sha: "resolved-sha",
+      external_metadata: { "layered_verification" => { "obligation_ids" => [ first.id, shared.id ] } })
+
+    expect {
+      described_class.call(project:, user:, obligation_ids: [ shared.id, other.id ], target_revision: "main",
+        budget: { "max_minutes" => 15 },
+        selections: [ shared, other ].to_h { |obligation| [ obligation.id,
+          { "selected_checks" => [ "implementation_conformance" ], "fit" => "Check the implementation mapping",
+            "exclusions" => [ "No formal model is declared" ] } ] })
+    }.to raise_error(described_class::DuplicateAuditError, "an audit for this scope and revision is already active")
+  end
+
   it "admits an audit whose scope differs from the active one, even at the same revision" do
     user = create(:user, :owner)
     project = create(:project, account: user.account)

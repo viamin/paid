@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pathname"
+
 module LayeredVerification
   # Discovers scope material no correspondence claim references: a mechanical
   # structural diff first, then a bounded agent_harness semantic read-through
@@ -25,6 +27,7 @@ module LayeredVerification
       "no canonical source path is recorded for this obligation."
     SEMANTIC_UNAVAILABLE = "Semantic read-through could not execute; linkage freshness was not established."
     NO_ENUMERATED_FILES = "(no scope files could be enumerated mechanically)"
+    UNINSPECTED_SCOPE = "Some declared correspondence references were not repository paths and could not be enumerated mechanically."
 
     def self.call(...) = new(...).call
 
@@ -41,7 +44,7 @@ module LayeredVerification
 
       semantic, limitation = semantic_unmapped(files)
       material = (structural_unmapped(files) + semantic).uniq.sort
-      Discovery.new(material.first(SCOPE_FILE_LIMIT), Array(limitation))
+      Discovery.new(material.first(SCOPE_FILE_LIMIT), [ *scope_limitations, *Array(limitation) ].uniq)
     end
 
     private
@@ -52,9 +55,9 @@ module LayeredVerification
       # A Phase-1 obligation without a canonical source path cannot be
       # mechanically enumerated; disclose that rather than reporting an
       # empty-but-successful discovery.
-      return [ nil, NO_CANONICAL_PATH ] if scope_directory.blank?
+      return [ nil, NO_CANONICAL_PATH ] if scope_directories.empty?
 
-      output, status = command_runner.call("git", "ls-files", "--", scope_directory)
+      output, status = command_runner.call("git", "ls-files", "--", *scope_directories)
       return [ nil, DISCOVERY_FAILURE ] unless status.zero?
 
       [ output.to_s.lines.map(&:strip).reject(&:blank?).first(SCOPE_FILE_LIMIT), nil ]
@@ -103,9 +106,27 @@ module LayeredVerification
       [ [], SEMANTIC_UNAVAILABLE ]
     end
 
-    def scope_directory
-      path = obligation.canonical_source_path.to_s
-      File.dirname(path) unless path.blank?
+    def scope_directories
+      @scope_directories ||= scope_references.filter_map { |reference| repository_directory(reference) }.uniq.sort
+    end
+
+    def scope_references
+      [ obligation.canonical_source_path, *obligation.correspondence_claims.flat_map do |claim|
+        [ claim.source_reference, claim.target_reference ]
+      end ].compact
+    end
+
+    def repository_directory(reference)
+      path = Pathname.new(reference_path(reference))
+      clean = path.cleanpath.to_s
+      return if path.absolute? || clean == "." || clean == ".." || clean.start_with?("../") || !clean.include?("/")
+
+      File.dirname(clean)
+    end
+
+    def scope_limitations
+      inspected = scope_references.count { |reference| repository_directory(reference) }
+      inspected == scope_references.size ? [] : [ UNINSPECTED_SCOPE ]
     end
 
     def prompt(files)

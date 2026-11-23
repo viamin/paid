@@ -2464,8 +2464,9 @@ RSpec.describe "AgentRuns" do
           "dependencies" => { "environment" => "isolated_execution_environment" },
           "plan" => { obligation.id.to_s => { "selected_checks" => %w[formal_verification] } }
         } }
+        now = Time.current
         audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
-          base_commit_sha: "sha-1", external_metadata: metadata)
+          base_commit_sha: "sha-1", external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
         allow(FeatureFlags).to receive(:enabled?).and_call_original
         allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
 
@@ -2473,8 +2474,7 @@ RSpec.describe "AgentRuns" do
           post retry_project_agent_run_path(project, audit)
         }.to change(AgentRun, :count).by(1)
 
-        expect(audit.reload.status).to eq("retried")
-        successor = AgentRun.last
+        successor = AgentRun.last.tap { expect(audit.reload.status).to eq("retried") }
         expect(successor).to have_attributes(goal: "layered_verification_audit", status: "queued", base_commit_sha: "sha-1")
         expect(successor.external_metadata.dig("layered_verification", "resumption", "resumed_from_run_id")).to eq(audit.id)
         expect(successor.external_metadata.dig("layered_verification", "impact")).to include("reused_check_result_ids")

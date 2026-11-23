@@ -9,9 +9,9 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     end
   end
 
-  def stub_discovery(audit:, scope_output: "", semantic_unmapped: [])
+  def stub_discovery(audit:, scope_output: "", semantic_unmapped: [], scope_directories: [ "docs/intent/payments" ])
     allow(audit).to receive(:execute_in_execution_environment).with(
-      [ "git", "ls-files", "--", "docs/intent/payments" ], timeout: 60, stream: false
+      [ "git", "ls-files", "--", *scope_directories ], timeout: 60, stream: false
     ).and_return(Containers::Provision::Result.success(stdout: scope_output, stderr: "", exit_code: 0))
     allow(audit).to receive(:execute_in_execution_environment).with(
       [ "cat", anything ], timeout: 60, stream: false
@@ -109,11 +109,11 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
       assumptions: "Single-currency checkout."
     )
     audit = create(:agent_run, goal: "layered_verification_audit", status: "running", project: obligation.project)
-    audit.update!(external_metadata: { "layered_verification" => {
-      "obligation_ids" => [ obligation.id ], "target_revision" => "code123"
-    } })
+    audit.update!(external_metadata: { "layered_verification" => { "obligation_ids" => [ obligation.id ],
+      "target_revision" => "code123" } })
     stub_discovery(audit:, scope_output: "docs/intent/payments/payment-specs.md\ndocs/intent/payments/unmapped-spec.md\n",
-      semantic_unmapped: [ "docs/intent/payments/payment-specs.md#refund-clause" ])
+      semantic_unmapped: [ "docs/intent/payments/payment-specs.md#refund-clause" ],
+      scope_directories: [ "app/models", "docs/intent/payments" ])
     allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
 
     described_class.new.execute(agent_run_id: audit.id)
