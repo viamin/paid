@@ -130,3 +130,112 @@ through `docs/intent/toolchain-pin-management/`, add real SDK/server controls
 for ordinary, pre-fenced, idle, stale-reservation, eager, running-owner,
 abort/retry, replacement, and legacy cases, and only then replace the legacy
 guard in `bin/dev-update`.
+
+## Local SDK/Core proposal (not an operating dependency)
+
+This is a version-bound local proposal for `temporalio` 1.11.0 and the
+`sdk-core` revision it vendors, `c675c32469af707e1c979a7b808c70b4a0608b82`.
+It is not implemented by that release, is not an API that Paid calls, and
+must not be used to justify a worker stop. Its purpose is to give an SDK
+maintainer a reviewable public contract and identify the exact Core boundary
+that would need an implementation.
+
+### Proposed public Ruby API
+
+```ruby
+result = worker.quiesce_admission
+
+# result.state is :quiesced only after the SDK has settled every pre-fence
+# poll and eager reservation. result.active_owners is a count only.
+worker.resume_admission if replacement_aborted
+worker.shutdown if result.state == :quiesced && result.active_owners.zero?
+```
+
+`quiesce_admission` returns a future/promise rather than running in a tuner
+callback. It resolves to one of:
+
+- `:quiesced`, with a non-negative `active_owners` count, only after the
+  acknowledgement conditions below hold;
+- `:unsupported`, when the installed Core cannot provide the operation;
+- `:unknown`, `:timed_out`, or `:failed`, none of which authorize shutdown.
+
+`resume_admission` is idempotent for every non-shutdown outcome. It reopens
+only the role's admission gate; it neither reissues a task nor creates an
+attempt. `shutdown` remains a terminal lifecycle operation and is invalid
+until the caller has a `:quiesced` result and has made its own owner-drain
+decision. Neither method exposes task payloads, tokens, credentials, or
+customer data.
+
+The result must not be derived from `SlotSupplier::Custom#mark_slot_used`.
+That callback does observe that a reserved slot became used, but it cannot
+atomically close admission or account for reservations that were already
+outstanding when an updater began. The callbacks must continue to return
+immediately.
+
+### Required Core operation
+
+Core needs a per-worker, generation-scoped admission state distinct from its
+terminal shutdown token:
+
+1. Atomically move the worker from `open` to `quiescing` before starting any
+   cancellation or unregister operation. New activity, workflow, sticky, local
+   activity, Nexus, and eager admission attempts observe that gate and do not
+   obtain a new reservation.
+2. Register every pre-fence poll RPC, slot reservation, eager reservation, and
+   task returned from a poll before it crosses the language bridge. A returned
+   task is either delivered as a tracked owner with its original token,
+   attempt, and deadline, or settled without delivery through the service/Core
+   path that preserves its original retry semantics.
+3. Close eager sources at the same fence and unregister the eager slot provider
+   as one settlement participant, not as proof that already-offered eager work
+   is absent.
+4. Resolve `quiesce_admission` only after the pre-fence set is empty or every
+   member has become a tracked owner. Report the owner count without waiting in
+   any language callback. A cancelled poll alone is not acknowledgement that
+   it did not concurrently return a task.
+5. Permit `resume_admission` only while the worker is not terminally shutting
+   down. It discards the old generation after its members are settled, then
+   allows new polls/reservations in a new generation.
+
+The relevant current Core boundary is `Worker::initiate_shutdown` in
+`crates/sdk-core/src/worker/mod.rs`: it cancels the terminal shutdown token,
+unregisters eager workflow start, and invokes activity shutdown. The activity
+manager then closes its eager semaphore in
+`crates/sdk-core/src/worker/activities.rs`. Those operations are irreversible
+shutdown mechanics; they do not retain a resumable admission generation or
+return an acknowledgement for a concurrently returned poll response. A
+prototype therefore belongs in Core's worker, activity-manager, workflow
+stream, and C bridge surfaces, with matching Ruby bridge and public `Worker`
+methods. A Ruby-only wrapper would cross the unsupported private bridge and
+cannot close the race.
+
+### Prototype and lifecycle harness boundary
+
+No local Core/Ruby patch was created from this audit. The inspected 1.11.0
+source has no admission-generation state, settlement counter, or bridge
+operation on which a small Ruby-only patch could build. Implementing only the
+Ruby method would make an unsupported claim; implementing it over
+`_initiate_shutdown` would make abort/resume impossible. The concrete first
+prototype is therefore a Core change with a new FFI operation, followed by a
+public Ruby wrapper and no Paid runtime integration.
+
+The prototype's isolated SDK/server harness must use a disposable Temporal
+test-server namespace and must retain the original task-queue settings,
+attempt limits, and deadlines. It is complete only when it executes all of the
+following against the prototype API:
+
+| Case | Required observation |
+| --- | --- |
+| idle worker | acknowledgement resolves with zero owners; final shutdown succeeds |
+| unused poll reservation | acknowledgement waits until the outstanding poll is cancelled or safely settled, without spending an activity attempt |
+| task-return race | a task returned at the fence becomes a tracked owner with its original attempt/deadline |
+| eager path | an enabled eager activity is either tracked or safely settled before acknowledgement |
+| active max-attempts=1 | quiesce and abort/resume preserve the sole owner's attempt and deadline |
+| abort/resume | resume reopens admission without cancelling an owner or minting a retry |
+| replacement and legacy first adoption | the replacement only stops after acknowledgement; an incapable legacy worker defers |
+
+The current repository's focused updater tests are evidence only for the
+protective legacy guard. They are not this SDK/server harness. The harness is
+blocked on the Core/Ruby operation above; this block records the exact missing
+interface rather than treating a source audit or an unexecutable sketch as a
+passing lifecycle experiment.
