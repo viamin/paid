@@ -83,9 +83,10 @@ separate rollout are complete.
 Structural checks compare project, tenant, work identity, lineage, phase,
 endpoint, lifecycle, policy signature, and deterministic guards. Scope meaning
 is assessed by a dedicated `agent_harness` request that receives the pinned
-intent/acceptance evidence and proposed repair evidence and returns a bounded
-schema: `in_scope`, `out_of_scope`, or `unknown`, with evidence references.
-Unavailable or malformed output is `unknown` and fails closed.
+intent/acceptance evidence and proposed repair evidence at queue and dequeue
+boundaries and returns a bounded schema: `in_scope`, `out_of_scope`, or
+`unknown`, with evidence references. Unavailable or malformed output is
+`unknown` and fails closed.
 
 An intent digest change, acceptance expansion, permission/policy change, new
 risk, or `unknown`/`out_of_scope` correspondence transitions the authorization
@@ -103,11 +104,14 @@ semantic result bypasses deterministic enforcement.
 ## Admission and concurrency
 
 The shared admission service is called when an action is created, dequeued,
-retried, and scheduled as a review/repair follow-up. It locks the authorization
-or uses a conditional state transition that includes its lifecycle version.
-Completion/revocation/reassessment take the same lock. A worker that loses the
-race records a blocked outcome and starts no new action. Running work is not
-force-killed, but its next externally visible or queued action rechecks.
+retried, and scheduled as a review/repair follow-up. It captures the immutable
+repair evidence and performs the remote semantic assessment before locking the
+authorization. It then locks the authorization or uses a conditional state
+transition that includes its lifecycle version and re-derives every
+deterministic boundary fact before admitting work. Completion, revocation, and
+reassessment take the same lock. A worker that loses the race records a blocked
+outcome and starts no new action. Running work is not force-killed, but its next
+externally visible or queued action rechecks.
 
 ## Consent and surface parity
 
@@ -140,7 +144,14 @@ into this record.
    defaults and ordinary continuation grants while surviving terminal
    lifecycle states.
 2. **#4998 (`-005`–`-006`)** adds reassessment resolution and bounded
-   `agent_harness` correspondence, including fail-closed output handling.
+   `agent_harness` correspondence, including fail-closed output handling. The
+   delivered `Automation::AssessBoundedScope` has a 12KB evidence bound and a
+   strict three-state response schema; `Automation::ResolveBoundedReassessment`
+   allows only authorized stop or unchanged-scope resume whose revalidation is
+   derived under the authorization lock from current facts (expiry, intent and
+   acceptance revisions, policy signature, phase policy, lineage) rather than
+   a caller assertion. These transitions share the authorization lock and
+   immutable admission evidence.
 3. **#4999 (`-007`–`-009`)** adds consent-surface parity, fresh-review gates,
    terminal races, completion/reopening, and no implicit release, deployment,
    child-work, or setting-enable authority.

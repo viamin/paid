@@ -775,6 +775,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
     t.datetime "expires_at", null: false
     t.bigint "issue_id", null: false
     t.bigint "project_id", null: false
+    t.jsonb "reassessment_reasons", default: [], null: false
+    t.datetime "reassessment_required_at"
     t.datetime "revoked_at"
     t.bigint "revoked_by_id"
     t.string "status", default: "active", null: false
@@ -784,6 +786,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
     t.index ["issue_id"], name: "index_bounded_delegated_actions_on_issue_id"
     t.index ["project_id", "issue_id", "action"], name: "index_bounded_actions_on_project_issue_action"
     t.index ["project_id"], name: "index_bounded_delegated_actions_on_project_id"
+    t.index ["reassessment_required_at"], name: "index_bounded_delegated_actions_on_reassessment_required_at"
     t.index ["revoked_by_id"], name: "index_bounded_delegated_actions_on_revoked_by_id"
     t.index ["status", "expires_at"], name: "index_bounded_actions_on_status_and_expiry"
   end
