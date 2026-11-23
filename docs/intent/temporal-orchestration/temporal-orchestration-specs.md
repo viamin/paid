@@ -52,15 +52,20 @@
   queues, retries, deadlines, concurrency, or budgets. Missing worker readiness
   metadata SHALL NOT be treated as evidence that no Temporal worker is running:
   the updater SHALL defer unless the supervisor state itself verifies that no
-  Temporal worker will be stopped (the configured Unix control socket is absent,
-  a present socket positively refuses a local connection as stale, or a
-  successful running-Overmind inspection reports no Temporal worker processes).
-  Any other failed inspection SHALL be treated as unknown. The released
+  Temporal worker will be stopped (the configured Unix control socket is absent
+  and no same-workspace orphaned supervisor tmux session the stop path would
+  kill hosts a Temporal worker window, a present socket positively refuses a
+  local connection as stale, or a successful running-Overmind inspection reports
+  no Temporal worker processes). Any other failed inspection SHALL be treated as
+  unknown; when an orphaned session cannot be inspected, the updater SHALL not
+  drain it but SHALL leave the stop path to fail before setup with the session
+  identity rather than force-killing it. The released
   capability SHALL cover both poll and agent roles and every enabled eager path
   (#5326).
-  *Current code:* `bin/dev-update` defers safely for ready legacy workers and
-  for a running Overmind that still reports Temporal workers whose readiness
-  metadata is missing.
+  *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
+  running Overmind that still reports Temporal workers whose readiness metadata
+  is missing, and for a socket-less same-workspace orphaned supervisor session
+  whose tmux windows host a Temporal worker that the stop path would force-kill.
   *Required dependency and rollout:*
   `decisions/task-safe-worker-quiescence.md`.
   *Focused test:* `spec/lib/dev_update_spec.rb`.

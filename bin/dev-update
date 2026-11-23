@@ -602,8 +602,11 @@ worker_reports_revision() {
 }
 
 # Whether the supervisor state verifies that stopping it cannot interrupt a
-# Temporal worker. An absent configured Unix control socket positively proves
-# this updater has no Overmind session to stop. If the socket exists, only a
+# Temporal worker. An absent configured Unix control socket means no running
+# Overmind can be quit gracefully, but stop_overmind still force-kills any
+# same-workspace orphaned Overmind tmux session, so an absent socket is safe
+# only when no such session positively hosts a Temporal worker (see
+# workspace_tmux_hosts_temporal_worker). If the socket exists, only a
 # successful `overmind status` with no Temporal worker process is safe:
 # command failure is an unknown supervisor state, not proof of absence.
 # Readiness metadata missing against any other state is not evidence of safety
@@ -623,10 +626,34 @@ overmind_control_socket_has_no_listener() {
   ' "$OVERMIND_SOCKET"
 }
 
+# Whether a same-workspace orphaned Overmind tmux session that stop_overmind
+# would kill still hosts a Temporal worker. When the control socket is absent,
+# stop_overmind force-kills such sessions (dev_supervisor_stop_workspace_tmux_sessions),
+# and Overmind keeps each worker in a tmux window named after its Procfile
+# process, so a worker_poll/worker_agent window identifies a live Temporal
+# worker. awk is the terminal pipeline stage and consumes all input, so its
+# exit status is deterministic under pipefail (an early-exiting reader could
+# otherwise race the producer into SIGPIPE).
+# @spec TEMPORAL-ORCHESTRATION-018
+workspace_tmux_hosts_temporal_worker() {
+  dev_supervisor_workspace_tmux_window_names |
+    awk '$0 == "worker_poll" || $0 == "worker_agent" { found = 1 } END { exit(found ? 0 : 1) }'
+}
+
 # @spec TEMPORAL-ORCHESTRATION-018
 verified_no_temporal_worker() {
   local status_output
-  [ ! -S "$OVERMIND_SOCKET" ] && return 0
+  if [ ! -S "$OVERMIND_SOCKET" ]; then
+    # A missing socket cannot be quit gracefully; stop_overmind force-kills any
+    # same-workspace orphaned session. Defer only when such a session positively
+    # hosts a Temporal worker. An uninspectable or stop-failing session is not
+    # assumed worker-free here, but it is never killed either: the stop path
+    # fails before setup on it (RAILS-CONTROL-PLANE-019) rather than draining.
+    if workspace_tmux_hosts_temporal_worker; then
+      return 1
+    fi
+    return 0
+  fi
 
   if ! status_output="$(dev_supervisor_overmind_status_output)"; then
     overmind_control_socket_has_no_listener
@@ -659,7 +686,7 @@ wait_for_workers_to_drain() {
     fi
 
     log "ERROR: Temporal worker readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind."
-    log "A worker that failed before marking ready can still own or have reserved work. Resolve the dev environment state, including any failed Overmind status inspection, or install an SDK release implementing TEMPORAL-ORCHESTRATION-018 before rerunning bin/dev-update --full."
+    log "A worker that failed before marking ready can still own or have reserved work, and an orphaned Overmind tmux session the stop path would kill can still host Temporal workers. Resolve the dev environment state, including any orphaned Overmind tmux session or failed status inspection, or install an SDK release implementing TEMPORAL-ORCHESTRATION-018 before rerunning bin/dev-update --full."
     return 1
   fi
 

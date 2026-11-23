@@ -163,9 +163,38 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "stops same-workspace orphaned tmux sessions before setup when the Overmind control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
+  it "defers worker adoption instead of killing a same-workspace orphaned tmux session when the control socket is missing" do # @spec TEMPORAL-ORCHESTRATION-018
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      # A missing control socket cannot be quit gracefully, so stop_overmind
+      # would force-kill the orphaned session, interrupting any worker_poll/
+      # worker_agent Temporal workers it still hosts without a quiescence
+      # acknowledgement. The updater must defer before stopping Overmind.
       script_path = prepare_script_fixture(dir, tmux: :same_workspace)
+      create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(false)
+      calls_log = File.join(dir, "calls.log")
+      expect(File.exist?(calls_log) ? File.read(calls_log) : "").not_to include("tmux kill-session")
+      expect(read_updater_log(dir)).to include("deferring worker adoption before stopping Overmind")
+      expect(read_updater_log(dir)).to include("orphaned Overmind tmux session")
+    end
+  end
+
+  it "stops a worker-free same-workspace orphaned tmux session before setup when the control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      # The orphaned session hosts no worker_poll/worker_agent window, so the
+      # worker-quiescence gate verifies no Temporal worker will be stopped and
+      # the session is cleaned up before setup as RAILS-CONTROL-PLANE-019 requires.
+      script_path = prepare_script_fixture(dir, tmux: :same_workspace_worker_free)
       create_overmind_tmux_socket(dir)
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -1671,6 +1700,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         case "$command" in
           list-panes)
             [ -e "#{dir}/tmux-session-stopped" ] && exit 0
+            window="web"
             case "#{tmux}" in
               socket_disappeared)
                 rm -f "$socket"
@@ -1684,7 +1714,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
                 fi
                 path="$PWD"
                 ;;
-              same_workspace|stop_fails) path="$PWD" ;;
+              same_workspace)
+                # Model a real orphaned dev supervisor: it still hosts a
+                # worker_poll Temporal worker window.
+                path="$PWD"
+                window="worker_poll"
+                ;;
+              same_workspace_worker_free|stop_fails) path="$PWD" ;;
               inspection_fails)
                 echo "error connecting to $socket (Permission denied)" >&2
                 exit 1
@@ -1694,6 +1730,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             esac
             if [[ "$format" == *session_name* ]]; then
               printf 'paid|%s\\n' "$path"
+            elif [[ "$format" == *window_name* ]]; then
+              printf '%s|%s\\n' "$path" "$window"
             else
               printf '%s\\n' "$path"
             fi

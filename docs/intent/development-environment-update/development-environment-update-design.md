@@ -100,13 +100,19 @@ owner, reset an attempt, enlarge a deadline, or alter control queue routing.
 Missing readiness metadata is not itself evidence that no worker is running: a
 worker can fail before it marks ready, or its flag can be removed, while the
 supervisor keeps the process. The deferral therefore also applies when metadata
-is missing and a running Overmind still reports Temporal worker processes; the
-update proceeds without quiescence only when the supervisor state verifies no
-Temporal worker will be stopped (the configured Overmind Unix control socket is
-absent, or a successful status inspection reports no
-`worker_poll`/`worker_agent` processes). When status fails, a present socket
-must also positively reject a local connection as stale; any other failure is
-unknown, not proof that no worker is running.
+is missing and a running Overmind still reports Temporal worker processes. It
+also applies when the control socket is absent but a same-workspace orphaned
+Overmind tmux session that the stop path would force-kill still hosts a
+`worker_poll`/`worker_agent` window — a missing socket cannot be quit
+gracefully, so stopping it would interrupt that worker without acknowledgement.
+The update proceeds without quiescence only when the supervisor state verifies
+no Temporal worker will be stopped (the configured Overmind Unix control socket
+is absent and no such orphaned worker-bearing session exists, or a successful
+status inspection reports no `worker_poll`/`worker_agent` processes). When
+status fails, a present socket must also positively reject a local connection as
+stale; any other failure is unknown, not proof that no worker is running. An
+orphaned session that cannot be inspected is not drained: the stop path fails
+before setup on it (`RAILS-CONTROL-PLANE-019`) rather than force-killing it.
 
 `TEMPORAL-ORCHESTRATION-018` owns the required SDK contract and rollout. Once a
 released SDK implements that contract, the updater may use its acknowledged
@@ -125,7 +131,7 @@ is safe to stop.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
-| Temporal worker quiescence | Defer before stop when a Temporal worker is ready or a running Overmind reports one without readiness metadata; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, and missing metadata cannot prove no worker owns work. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-018`. |
+| Temporal worker quiescence | Defer before stop when a Temporal worker is ready, when a running Overmind reports one without readiness metadata, or when a socket-less orphaned same-workspace session hosts a worker window the stop path would force-kill; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata or an absent control socket as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, missing metadata cannot prove no worker owns work, and an absent control socket does not stop the tmux cleanup from killing an orphaned session's workers. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-018`. |
 
 ## References
 

@@ -393,6 +393,32 @@ dev_supervisor_workspace_tmux_sessions() {
   done < <(dev_supervisor_tmux_sockets)
 }
 
+# Lists the Overmind window names of same-workspace tmux panes so the updater
+# can tell whether an orphaned (socket-less) supervisor session still hosts
+# worker_poll/worker_agent Temporal workers. Overmind names each tmux window
+# after its Procfile process, so the window name identifies the process. A
+# server that cannot be inspected emits no window name and is skipped here:
+# enumeration never force-kills, and an uninspectable orphaned session is
+# failed before setup by the stop path's own guard (RAILS-CONTROL-PLANE-019),
+# not silently assumed to hold workers.
+# @spec TEMPORAL-ORCHESTRATION-018
+dev_supervisor_workspace_tmux_window_names() {
+  local socket panes window_name pane_path
+
+  while IFS= read -r socket; do
+    [ -n "$socket" ] || continue
+    if ! panes="$(LC_ALL=C tmux -S "$socket" list-panes -a -F '#{pane_current_path}|#{window_name}' 2>&1)"; then
+      printf '%s\n' "$panes" >> "$(dev_supervisor_tmux_log)"
+      continue
+    fi
+
+    while IFS='|' read -r pane_path window_name; do
+      [ "$pane_path" = "$APP_ROOT" ] || continue
+      printf '%s\n' "$window_name"
+    done <<< "$panes"
+  done < <(dev_supervisor_tmux_sockets)
+}
+
 # @spec RAILS-CONTROL-PLANE-019
 dev_supervisor_stop_workspace_tmux_sessions() {
   local identities remaining socket session_name
