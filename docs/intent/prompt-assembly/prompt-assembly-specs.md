@@ -134,8 +134,8 @@
   follow-up context rather than blocking prompt preparation solely because the
   bot comments are excluded from prompt instructions. Prompt preparation SHALL
   raise `ReviewFeedbackContextBlocked` only when at least one unresolved
-  human-authored review thread exists and none of its comments are
-  prompt-eligible.
+  human-authored review thread exists and neither its comments nor a current
+  trusted standalone review body are prompt-eligible.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
 - [x] **PROMPT-ASSEMBLY-026** — When a current PR has a nonblank standalone

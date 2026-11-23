@@ -149,11 +149,11 @@ module Prompts
       trusted_review_threads.filter_map { |thread| thread[:id] }
     end
 
-    # @spec PROMPT-ASSEMBLY-018
+    # @spec PROMPT-ASSEMBLY-018, PROMPT-ASSEMBLY-026
     def review_feedback_context_blocked?
       focus == "review_feedback" &&
         human_review_threads_present? &&
-        trusted_review_threads.empty?
+        !review_feedback_present?
     end
 
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,

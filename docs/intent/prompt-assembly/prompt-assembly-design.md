@@ -88,7 +88,9 @@ reviewer can still record that finding in the body of a submitted PR review,
 so PR follow-up assembly treats eligible standalone review bodies as code
 review context alongside unresolved inline threads. The same review-author
 predicate used for threads admits only allowlisted humans and configured review
-bots. Bodies from every other author are excluded with provenance only.
+bots. Bodies from every other author are excluded with provenance only. An
+excluded inline thread does not block a repair prompt when a trusted standalone
+body supplies the actionable review context.
 
 The builder retains the latest submitted review for each eligible author. Only
 nonblank `COMMENTED` and `CHANGES_REQUESTED` bodies from that effective review
