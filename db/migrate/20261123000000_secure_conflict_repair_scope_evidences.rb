@@ -5,14 +5,7 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
 
   def up
     add_reference :conflict_repair_scope_evidences, :account, index: { algorithm: :concurrently }
-    safety_assured do
-      execute <<~SQL
-        UPDATE conflict_repair_scope_evidences evidence
-        SET account_id = projects.account_id
-        FROM projects
-        WHERE projects.id = evidence.project_id
-      SQL
-    end
+    backfill_account_ids
     safety_assured { change_column_null :conflict_repair_scope_evidences, :account_id, false }
 
     remove_index :conflict_repair_scope_evidences, name: "index_conflict_repair_scope_evidence_binding", algorithm: :concurrently
@@ -24,12 +17,33 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
   end
 
   def down
-    disable_tenant_rls
-    remove_index :conflict_repair_scope_evidences, name: "index_conflict_repair_scope_evidence_identity", algorithm: :concurrently
-    add_index :conflict_repair_scope_evidences,
-      %i[agent_run_id pre_run_sha integration_base_sha result_sha provider_head_sha],
-      unique: true, name: "index_conflict_repair_scope_evidence_binding", algorithm: :concurrently
-    remove_reference :conflict_repair_scope_evidences, :account, foreign_key: true
+    raise ActiveRecord::IrreversibleMigration,
+      "Conflict-repair scope evidence records may differ only by status, which the prior unique index cannot represent losslessly."
+  end
+
+  private
+
+  def backfill_account_ids
+    with_tenant_bypass do
+      safety_assured do
+        execute <<~SQL
+          UPDATE conflict_repair_scope_evidences evidence
+          SET account_id = projects.account_id
+          FROM projects
+          WHERE projects.id = evidence.project_id
+        SQL
+      end
+    end
+  end
+
+  def with_tenant_bypass(&)
+    # The backfill joins project rows protected by tenant RLS. Scope the
+    # privileged setting to this data migration so it is restored even when
+    # the migration is invoked directly by a migration spec.
+    ActiveRecord::Base.transaction do
+      safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
+      yield
+    end
   end
 
   def enable_tenant_rls
