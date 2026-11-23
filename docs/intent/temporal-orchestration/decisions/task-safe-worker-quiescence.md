@@ -143,16 +143,20 @@ that would need an implementation.
 ### Proposed public Ruby API
 
 ```ruby
-result = worker.quiesce_admission
+future = worker.quiesce_admission
+result = future.await(timeout: quiescence_deadline)
 
 # result.state is :quiesced only after the SDK has settled every pre-fence
 # poll and eager reservation. result.active_owners is a count only.
 worker.resume_admission if replacement_aborted
+
+# Proposed new API, used only by Paid's update-adoption sequence:
 worker.shutdown if result.state == :quiesced && result.active_owners.zero?
 ```
 
 `quiesce_admission` returns a future/promise rather than running in a tuner
-callback. It resolves to one of:
+callback. Its caller performs a bounded `await` before inspecting `result.state`.
+It resolves to one of:
 
 - `:quiesced`, with a non-negative `active_owners` count, only after the
   acknowledgement conditions below hold;
@@ -161,10 +165,13 @@ callback. It resolves to one of:
 
 `resume_admission` is idempotent for every non-shutdown outcome. It reopens
 only the role's admission gate; it neither reissues a task nor creates an
-attempt. `shutdown` remains a terminal lifecycle operation and is invalid
-until the caller has a `:quiesced` result and has made its own owner-drain
-decision. Neither method exposes task payloads, tokens, credentials, or
-customer data.
+attempt. The `shutdown` call in the example is a proposed new public API, not
+a method provided by Ruby SDK 1.11.0. That release exposes `run`/`run_all`
+with cancellation or shutdown signals; their existing ordinary shutdown
+semantics remain unchanged. The proposed terminal operation is only an
+update-adoption sequence: its caller must first receive `:quiesced` and make
+its own owner-drain decision. Neither proposed method exposes task payloads,
+tokens, credentials, or customer data.
 
 The result must not be derived from `SlotSupplier::Custom#mark_slot_used`.
 That callback does observe that a reserved slot became used, but it cannot
@@ -239,3 +246,25 @@ protective legacy guard. They are not this SDK/server harness. The harness is
 blocked on the Core/Ruby operation above; this block records the exact missing
 interface rather than treating a source audit or an unexecutable sketch as a
 passing lifecycle experiment.
+
+## Local prototype feasibility record
+
+The local proposal was checked against a fresh source checkout of Ruby SDK
+1.11.0 (`61db6dd4b75e3b15731e58f26934b33c17663237`) and its recorded
+`sdk-core` submodule (`c675c32469af707e1c979a7b808c70b4a0608b82`). The
+implementation path is concrete: add the generation state and settlement
+accounting in `crates/sdk-core/src/worker/mod.rs`, wire all activity/workflow
+poll and eager sources through it, expose an asynchronous operation in
+`temporalio/ext/src/worker.rs`, and add the public Ruby future API in
+`temporalio/lib/temporalio/worker.rb`. The existing terminal
+`Worker::initiate_shutdown` cannot be adapted because it cancels the terminal
+token and unregisters eager work before it can support resume.
+
+An initial local build invocation, `cargo test -p temporal-sdk-core --lib
+worker --no-default-features`, could not start because this execution
+environment has no `cargo` executable (`Failed to spawn process: No such file
+or directory (os error 2)`). Therefore no Core/Ruby prototype patch or
+SDK/server harness result is claimed from this environment. Installing or
+changing the SDK toolchain is outside this Paid change. The retained source
+checkout is `/tmp/paid-temporal-sdk-ruby-1.11.0` at the revisions above; it is
+research material only, not a Paid dependency, release, or runtime integration.
