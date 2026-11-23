@@ -807,8 +807,11 @@ business validation are never reported as one state.
    or require a fresh audit. Decide during #4437 (design/bootstrap phase).
 2. Measurable evaluation thresholds and the representative workload RDR-076's
    Open LLD Decisions calls for, sufficient to justify broader defaults.
-   Decide during #4434 (audit milestone evaluation), once real audit runs
-   exist to measure.
+   The first #4434 record is [failed and incomplete](audit-milestone-evaluation-2026-11-21.md):
+   its one live run retained results and findings but has no independent
+   adjudication, cost, or human-effort ledger. Define thresholds only after a
+   separately authorized controlled run records those inputs; keep the
+   default-off guard until then.
 3. Whether `LayeredVerificationCorrespondenceClaim` needs its own supersession
    chain (distinct from the obligation's) when a claim's abstraction boundary
    changes but the obligation itself does not. Decide during #4435 (change
