@@ -261,17 +261,22 @@ poll and eager sources through it, expose an asynchronous operation in
 token and unregisters eager work before it can support resume.
 
 The local checkout was recreated with `git clone --branch v1.11.0 --depth 1
---recurse-submodules`; `HEAD` and the checked-out submodule resolve to the
+--recurse-submodules`; `HEAD` and the checked-out submodule resolved to the
 revisions above. A disposable Rust 1.88.0 toolchain was then installed outside
 the Paid repository, using `RUSTUP_HOME=/workspace/.paid-temporal-rustup` and
 `CARGO_HOME=/workspace/.paid-temporal-cargo`. It could not execute even
 `cargo --version`: the installed `cargo` proxy failed before Cargo started
 with `OrbStack ERROR: Dynamic loader not found: /lib64/ld-linux-x86-64.so.2`.
-The host reports `aarch64`; reinstalling with the
+The host reported `aarch64`; reinstalling with the
 `aarch64-unknown-linux-gnu` default-host option produced the same proxy-loader
 failure. Consequently `cargo test -p temporal-sdk-core --lib worker
 --no-default-features` was not run, and no Core/Ruby prototype patch or
-SDK/server harness result is claimed. The disposable toolchain directories are
-removed after this record; the retained source checkout is
-`/tmp/paid-temporal-sdk-ruby-1.11.0` at the revisions above. It is research
-material only, not a Paid dependency, release, or runtime integration.
+SDK/server harness result is claimed.
+
+The checkout and toolchain were disposable research material and are not a
+retained artifact or a Paid dependency. Issue #5358 owns provision of a
+compatible isolated Rust runner. Once it supplies a verified runner, the
+prototype owner must freshly clone the exact Ruby/Core revisions above there,
+record the image and toolchain evidence, and run the baseline command before
+preparing or claiming a Core/Ruby patch or lifecycle harness. No further local
+toolchain installation or operating SDK pin change is part of this decision.
