@@ -86,23 +86,14 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
   end
 
   # @spec LLM-ROUTING-013
-  it "scopes upgraded stdin exec creation to the supplied deadline" do
+  it "passes the supplied deadline to the upgraded stdin exec sequence" do
     input = StringIO.new("hello")
-    timed_connection = instance_double(Docker::Connection)
-    allow(container).to receive(:connection).and_return(connection)
-    assignments = []
-    allow(container).to receive(:connection=) { |selected| assignments << selected }
-    allow(connection).to receive_messages(url: "tcp://worker-1.internal:2376", options: { read_timeout: 60 })
-    allow(Docker::Connection).to receive(:new)
-      .with("tcp://worker-1.internal:2376", { read_timeout: 60, timeout: 0.1 })
-      .and_return(timed_connection)
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [], [], 0 ])
 
     backend.exec_in_container_with_stdin(container, [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
 
     expect(Containers::DockerExecWithStdin).to have_received(:call)
-      .with(container:, command: [ "cat" ], stdin: input, wait: 5)
-    expect(assignments).to eq([ timed_connection, connection ])
+      .with(container:, command: [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
   end
 
   it "delegates network, image, and volume access through the remote connection" do
@@ -126,7 +117,7 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     timed_connection = instance_double(Docker::Connection)
     allow(connection).to receive_messages(url: "tcp://worker-1.internal:2376", options: { read_timeout: 60 })
     allow(Docker::Connection).to receive(:new)
-      .with("tcp://worker-1.internal:2376", { read_timeout: 60, timeout: 0.1 })
+      .with("tcp://worker-1.internal:2376", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
       .and_return(timed_connection)
     allow(Docker::Network).to receive_messages(get: network, create: network)
 

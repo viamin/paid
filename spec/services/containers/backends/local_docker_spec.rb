@@ -78,7 +78,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     timed_connection = instance_double(Docker::Connection)
     allow(Docker).to receive(:connection).and_return(connection)
     allow(Docker::Connection).to receive(:new)
-      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1 })
+      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
       .and_return(timed_connection)
     allow(Docker::Container).to receive(:create).and_return(container)
 
@@ -108,23 +108,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   end
 
   # @spec LLM-ROUTING-013
-  it "scopes upgraded stdin exec creation to the supplied deadline" do
-    connection = instance_double(Docker::Connection, url: "unix:///var/run/docker.sock", options: { read_timeout: 60 })
-    timed_connection = instance_double(Docker::Connection)
+  it "passes the supplied deadline to the upgraded stdin exec sequence" do
     input = StringIO.new("hello")
-    allow(container).to receive(:connection).and_return(connection)
-    assignments = []
-    allow(container).to receive(:connection=) { |selected| assignments << selected }
-    allow(Docker::Connection).to receive(:new)
-      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1 })
-      .and_return(timed_connection)
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [], [], 0 ])
 
     backend.exec_in_container_with_stdin(container, [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
 
     expect(Containers::DockerExecWithStdin).to have_received(:call)
-      .with(container:, command: [ "cat" ], stdin: input, wait: 5)
-    expect(assignments).to eq([ timed_connection, connection ])
+      .with(container:, command: [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
   end
 
   # @spec LLM-ROUTING-013
@@ -133,7 +124,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     timed_connection = instance_double(Docker::Connection)
     allow(Docker).to receive(:connection).and_return(connection)
     allow(Docker::Connection).to receive(:new)
-      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1 })
+      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
       .and_return(timed_connection)
     allow(Docker::Network).to receive_messages(get: network, create: network)
 

@@ -83,9 +83,8 @@ module Containers
       end
 
       def exec_in_container_with_stdin(container, command, stdin:, wait:, deadline: nil, **options, &block)
-        with_deadline(container, deadline) do
-          DockerExecWithStdin.call(container:, command:, stdin:, wait:, **options, &block)
-        end
+        deadline_options = deadline ? { deadline: deadline } : {}
+        DockerExecWithStdin.call(container:, command:, stdin:, wait:, **deadline_options, **options, &block)
       end
 
       def container_stats(container, **options)
@@ -160,7 +159,7 @@ module Containers
       def connection_with_deadline(selected_connection, deadline)
         return selected_connection unless deadline
 
-        Docker::Connection.new(selected_connection.url, selected_connection.options.merge(timeout: deadline))
+        Docker::Connection.new(selected_connection.url, selected_connection.options.merge(timeout: deadline, retry_limit: 0))
       end
 
       def build_tls_config(tls_config)

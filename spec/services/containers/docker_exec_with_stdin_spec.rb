@@ -41,6 +41,72 @@ RSpec.describe Containers::DockerExecWithStdin, :no_db do
     expect(result).to eq([ [], [], 7 ])
   end
 
+  # @spec LLM-ROUTING-013
+  it "recomputes the transport timeout before starting the upgraded stream" do
+    connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
+    create_connection = instance_double(Docker::Connection)
+    start_connection = instance_double(Docker::Connection)
+    container = instance_double(Docker::Container, id: "container-1", connection: connection)
+    execution = instance_double(Docker::Exec, id: "exec-1", json: { "ExitCode" => 0 })
+    active_connection = connection
+    allow(container).to receive(:connection) { active_connection }
+    allow(container).to receive(:connection=) { |selected| active_connection = selected }
+    allow(Docker::Connection).to receive(:new).and_return(create_connection, start_connection)
+    allow(Docker::Exec).to receive(:create).and_return(execution)
+    allow(create_connection).to receive_messages(url: "tcp://docker:2376", options: { timeout: 60 })
+    allow(start_connection).to receive(:post).with(any_args)
+    allow(described_class).to receive(:monotonic_now).and_return(100.0, 100.0, 103.0)
+
+    described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
+
+    expect(Docker::Exec).to have_received(:create).with(anything, create_connection)
+    expect(start_connection).to have_received(:post).with("/exec/exec-1/start", nil,
+      hash_including(read_timeout: 2.0))
+    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 5.0, retry_limit: 0)
+    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 2.0, retry_limit: 0)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not start an upgraded stream after exec creation exhausts its deadline" do
+    connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
+    create_connection = instance_double(Docker::Connection)
+    container = instance_double(Docker::Container, id: "container-1", connection: connection)
+    execution = instance_double(Docker::Exec, id: "exec-1", json: { "ExitCode" => 0 })
+    allow(container).to receive(:connection=)
+    allow(Docker::Connection).to receive(:new).and_return(create_connection)
+    allow(Docker::Exec).to receive(:create).and_return(execution)
+    allow(described_class).to receive(:monotonic_now).and_return(100.0, 100.0, 105.0)
+
+    expect {
+      described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
+    }.to raise_error(Docker::Error::TimeoutError, /deadline expired/)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "interrupts a silent upgraded stream at the shared deadline" do
+    connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
+    create_connection = instance_double(Docker::Connection)
+    start_connection = instance_double(Docker::Connection)
+    container = instance_double(Docker::Container, id: "container-1", connection: connection)
+    execution = instance_double(Docker::Exec, id: "exec-1", json: { "ExitCode" => 0 })
+    socket = instance_double(IO)
+    active_connection = connection
+    allow(container).to receive(:connection) { active_connection }
+    allow(container).to receive(:connection=) { |selected| active_connection = selected }
+    allow(Docker::Connection).to receive(:new).and_return(create_connection, start_connection)
+    allow(Docker::Exec).to receive(:create).and_return(execution)
+    allow(socket).to receive_messages(write: 5, close: nil)
+    allow(start_connection).to receive(:post) { |_path, _query, options| options.fetch(:hijack_block).call(socket) }
+    allow(IO).to receive(:select).and_return(nil)
+    allow(described_class).to receive(:monotonic_now).and_return(100.0, 100.0, 100.0, 100.0, 105.0)
+
+    expect {
+      described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
+    }.to raise_error(Docker::Error::TimeoutError, /deadline expired/)
+
+    expect(socket).to have_received(:close)
+  end
+
   describe "Docker integration", :runner_smoke do
     around do |example|
       WebMock.disable!
