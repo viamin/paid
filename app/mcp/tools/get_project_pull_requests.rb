@@ -36,6 +36,8 @@ module Tools
           title: pr.title,
           github_state: pr.github_state,
           paid_state: pr.paid_state,
+          human_review_requested: pr.held_for_review?,
+          technical_merge_blocker_count: PullRequests::TechnicalMergeBlockers.entries(pr).size,
           pull_request_url: pr.github_url,
           updated_at: pr.updated_at
         }

@@ -60,6 +60,12 @@ another copy here.
 - Verify changed behavior with focused tests, then run the required suite;
   use `bin/lint` for formatting/lint and `bin/coherence-check.mjs` for LID
   structural checks when LID artifacts change.
+- Follow the [auto-merge hold contract](docs/intent/auto-merge-strategy/auto-merge-strategy-design.md)
+  during implementation and acceptance: `paid-hold-review` requests a concrete
+  human-only decision. Technical failures and integration stops belong in
+  Paid's internal technical merge blockers, with responsible work and a
+  verifiable release condition. Never use human-intervention labels as internal
+  workflow state or clear a stop merely because CI or a review is green.
 
 ### Database safety
 
