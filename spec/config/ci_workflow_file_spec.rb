@@ -45,14 +45,13 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
-  # @spec TEST-SUITE-023
-  it "uses the process-group supervisor to retry dependency installation in shard jobs" do
+  # @spec TEST-SUITE-020
+  it "allows dependency installation twenty minutes per attempt in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
-      run = install_step.fetch("run")
 
-      expect(run).to include("bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile && bin/yarn-postinstall'")
+      expect(install_step.fetch("run")).to include("  20m \\")
     end
   end
 
@@ -299,6 +298,19 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
     expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
+  end
+
+  # @spec TEST-SUITE-023
+  it "retries transient JavaScript setup failures across shard execution paths" do
+    %w[test-shards shard-recovery].each do |job_name|
+      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install JavaScript dependencies" }
+      run = install_step.fetch("run")
+
+      expect(run).to include("for attempt in 1 2 3 4 5")
+      expect(run).to include("20m")
+      expect(run).to include('bash -lc \'yarn install --frozen-lockfile && bin/yarn-postinstall\'')
+    end
   end
 
   # @spec TEST-SUITE-003

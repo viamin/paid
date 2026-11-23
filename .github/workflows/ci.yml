@@ -344,7 +344,24 @@ jobs:
         # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            20m \
+            "JavaScript dependency install timed out or failed" \
+            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -731,7 +748,24 @@ jobs:
         # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            20m \
+            "JavaScript dependency install timed out or failed" \
+            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
