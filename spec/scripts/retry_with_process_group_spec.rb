@@ -204,6 +204,58 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   # @spec TEST-SUITE-023
+  it "cancels an owned startup watchdog before it acknowledges its session" do
+    delayed_setsid_directory = Dir.mktmpdir("retry-with-process-group-startup-watchdog")
+    delayed_setsid = File.join(delayed_setsid_directory, "setsid")
+    watchdog_started_reader, watchdog_started_writer = IO.pipe
+    watchdog_gate_reader, watchdog_gate_writer = IO.pipe
+    watchdog_started_writer.nonblock = false
+    watchdog_gate_reader.nonblock = false
+    watchdog_started_writer.close_on_exec = false
+    watchdog_gate_reader.close_on_exec = false
+    File.write(delayed_setsid, <<~BASH)
+      #!/usr/bin/env bash
+      if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
+        printf '%s\\n' "$$" >&"$WATCHDOG_STARTED_FD"
+        read -r _ <&"$WATCHDOG_GATE_FD"
+      fi
+      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
+    BASH
+    FileUtils.chmod("u+x", delayed_setsid)
+    environment = fast_supervision.merge(
+      "DEPENDENCY_SETUP_TIMEOUT" => "4s",
+      "PATH" => "#{delayed_setsid_directory}:#{ENV.fetch("PATH")}",
+      "WATCHDOG_STARTED_FD" => watchdog_started_writer.fileno.to_s,
+      "WATCHDOG_GATE_FD" => watchdog_gate_reader.fileno.to_s
+    )
+    wrapper_pid = Process.spawn(environment, script_path, "bash", "-c", "exec sleep 60", close_others: false)
+
+    Timeout.timeout(2) { watchdog_started_reader.gets }
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    Process.kill("TERM", wrapper_pid)
+    _pid, status = Process.wait2(wrapper_pid)
+
+    expect(status.termsig).to eq(15)
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
+  ensure
+    watchdog_gate_writer&.close
+    watchdog_started_reader&.close
+    watchdog_started_writer&.close
+    watchdog_gate_reader&.close
+    begin
+      Process.kill("KILL", wrapper_pid) if wrapper_pid
+    rescue Errno::ESRCH
+      nil
+    end
+    begin
+      Process.wait(wrapper_pid) if wrapper_pid
+    rescue Errno::ECHILD
+      nil
+    end
+    FileUtils.remove_entry(delayed_setsid_directory) if delayed_setsid_directory
+  end
+
+  # @spec TEST-SUITE-023
   it "terminates and reaps a cooperative descendant when an attempt times out" do
     child_pid_file = Rails.root.join("tmp/retry-with-process-group-cooperative-child.pid")
     FileUtils.rm_f(child_pid_file)
@@ -260,8 +312,29 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     Process.kill("TERM", wrapper_pid)
     _pid, status = Process.wait2(wrapper_pid)
 
-    expect(status).not_to be_success
+    expect(status.termsig).to eq(15)
     expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
+    expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
+  ensure
+    FileUtils.rm_f(child_pid_file)
+  end
+
+  # @spec TEST-SUITE-023
+  it "preserves INT when cancelling a cooperative descendant" do
+    child_pid_file = Rails.root.join("tmp/retry-with-process-group-cancelled-interrupt-child.pid")
+    FileUtils.rm_f(child_pid_file)
+    long_attempt = fast_supervision.merge("DEPENDENCY_SETUP_TIMEOUT" => "60s")
+
+    wrapper_pid = Process.spawn(
+      long_attempt, script_path, "bash", "-c", "echo $$ > '#{child_pid_file}'; exec sleep 60"
+    )
+    sleep 0.01 until File.exist?(child_pid_file)
+    child_pid = Integer(child_pid_file.read)
+
+    Process.kill("INT", wrapper_pid)
+    _pid, status = Process.wait2(wrapper_pid)
+
+    expect(status.termsig).to eq(2)
     expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
   ensure
     FileUtils.rm_f(child_pid_file)
@@ -283,7 +356,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     Process.kill("TERM", wrapper_pid)
     _pid, status = Process.wait2(wrapper_pid)
 
-    expect(status).not_to be_success
+    expect(status.termsig).to eq(15)
     expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
   ensure
     FileUtils.rm_f(child_pid_file)

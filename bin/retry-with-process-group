@@ -20,6 +20,11 @@ group_has_live_processes() {
     awk -v group_leader="$1" '$1 == group_leader && $2 !~ /^Z/ { found = 1 } END { exit !found }'
 }
 
+process_is_live() {
+  ps -o stat= -p "$1" 2>/dev/null |
+    awk '$1 !~ /^Z/ { found = 1 } END { exit !found }'
+}
+
 terminate_group() {
   local group_leader="$1"
   local killer killer_group_leader killer_ready
@@ -82,6 +87,10 @@ terminate_watchdog() {
   local watchdog="$1"
   local watchdog_group_leader="$2"
 
+  # The process ID is owned as soon as the watchdog is forked, before its
+  # setsid wrapper has acknowledged a group identity. Signal that exact child
+  # first so cancellation cannot wait out the attempt timer during startup.
+  kill -TERM -- "$watchdog" 2>/dev/null || true
   if [[ -n "$watchdog_group_leader" ]]; then
     terminate_group "$watchdog_group_leader"
   fi
@@ -195,6 +204,12 @@ run_attempt() {
   watchdog_group_leader="$(<"$watchdog_ready")"
   active_watchdog_group_leader="$watchdog_group_leader"
 
+  # `wait` defers our TERM trap while the setup process is still live. Poll
+  # the exact owned leader instead so cancellation can enter cleanup promptly;
+  # once the leader has exited, `wait` only reaps its already-terminal status.
+  while process_is_live "$group_leader"; do
+    sleep 0.01
+  done
   set +e
   wait "$group_leader"
   status=$?

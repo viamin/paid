@@ -42,8 +42,12 @@ delays. Each attempt runs in an isolated process group so timeout termination
 also stops its package-manager descendants and reaps its owned session leader
 before the next retry. Its watchdog runs in a separate owned session containing
 both the timer and grace delay, acknowledges that session before cleanup can
-target its process group, and terminates and waits for that session on every
-success, failure, timeout, and cancellation before the wrapper returns. Retry
+target its process group, and retains its exact child PID from fork through
+that acknowledgement so cancellation can terminate and reap startup ownership
+without waiting for an attempt timer. The setup leader is likewise supervised
+without a blocking wait that defers TERM or INT cleanup. The wrapper terminates
+and waits for owned watchdog state on every success, failure, timeout, and
+cancellation before returning. Retry
 backoff and termination-escalation timers are likewise owned children: cleanup
 terminates and reaps them before returning, including when the wrapper receives
 TERM or INT. The supervisor
