@@ -47,7 +47,7 @@ cleanup_active_attempt() {
   active_watchdog_ready=""
 }
 
-# shellcheck disable=SC2317 # invoked indirectly via `trap ... EXIT` below
+# shellcheck disable=SC2317,SC2329 # invoked indirectly via `trap ... EXIT` below (SC2317 through ShellCheck 0.10, SC2329 from 0.11)
 on_exit() {
   local status=$?
 
