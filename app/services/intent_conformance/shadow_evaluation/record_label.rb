@@ -31,8 +31,7 @@ module IntentConformance
         return failure("only the declared solo maintainer may record reference labels") unless @actor&.id == @evaluation.solo_maintainer_id
         return failure("case #{@case_id.inspect} is not part of the frozen corpus") unless @evaluation.corpus.find_case(@case_id)
         return failure("outcome must be one of #{OUTCOMES.join(', ')}") unless skip? || OUTCOMES.include?(@outcome)
-        return failure("a cited design claim is required") if recording_label? && @cited_design_claim.to_s.strip.empty?
-        return failure("a reason is required") if recording_label? && @reason.to_s.strip.empty?
+        return failure("Identify the approved requirement, or choose Not enough information if it is unavailable.") if recording_label? && outcome != "uncertain" && @cited_design_claim.to_s.strip.empty?
 
         persist(build_label(@evaluation.labels.find_or_initialize_by(case_id: @case_id)))
       rescue ActiveRecord::RecordNotUnique

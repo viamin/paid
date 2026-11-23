@@ -468,12 +468,16 @@ Rails.application.configure do
   }
 end
 
-# @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-021
+# @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-021 RAILS-CONTROL-PLANE-026
 if Rails.env.development?
   Rails.application.config.good_job.cron.merge!(
     pghero_query_capture: { cron: "* * * * *", class: "PgHeroCaptureQueryStatsJob" },
     pghero_space_capture: { cron: "17 3 * * *", class: "PgHeroCaptureSpaceStatsJob" },
-    pghero_history_cleanup: { cron: "27 3 * * *", class: "PgHeroCleanHistoryJob" }
+    pghero_history_cleanup: { cron: "27 3 * * *", class: "PgHeroCleanHistoryJob" },
+    # Hourly at a staggered minute, after the per-minute query capture has
+    # refreshed interval samples. #5061
+    pghero_overview_scan: { cron: "23 * * * *", class: "PgHeroOverviewScanJob", queue: "maintenance",
+      description: "Scan the development PgHero Overview and file/update self-repo issues for actionable findings" }
   )
 end
 
