@@ -38,8 +38,17 @@ the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
 at most five times, bounding each attempt to twenty minutes with increasing
-delays. This absorbs transient registry and hosted-runner stalls without
-skipping setup or relaxing the shard's 360-minute job boundary.
+delays. Each attempt runs in an isolated process group so timeout termination
+also stops its package-manager descendants and reaps its owned session leader
+before the next retry. Its watchdog runs in a separate owned session containing
+both the timer and grace delay, acknowledges that session before cleanup can
+target its process group, and terminates and waits for that session on every
+success, failure, timeout, and cancellation before the wrapper returns. The supervisor
+sends TERM to only that owned group, follows with KILL after a finite grace
+period for TERM-resistant descendants, and reports a timeout as a failed setup
+attempt. This absorbs transient registry
+and hosted-runner stalls without skipping setup or relaxing the shard's
+360-minute job boundary.
 
 ## Platform-dropped shard recovery
 
