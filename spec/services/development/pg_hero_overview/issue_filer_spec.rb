@@ -40,7 +40,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
       github_issue(number: 50 + created_bodies.size, body: body)
     end
     allow(client).to receive(:update_issue) { |repo, number, **| github_issue(number: number) }
-    allow(client).to receive_messages(issues: [], add_comment: nil)
+    allow(client).to receive_messages(all_issues: [], add_comment: nil)
   end
 
   # @spec RAILS-CONTROL-PLANE-027
@@ -95,7 +95,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   it "updates an existing tracked issue only when the evidence changed" do
     f = finding
     row = row_for(f, github_issue_number: 7)
-    allow(client).to receive(:issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
 
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
       collected_categories: Set.new(%i[indexes]))
@@ -117,10 +117,13 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
     f = finding
     row = row_for(f, github_issue_number: 7)
 
-    result = filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
+    changed = finding(observed: { table: "public.issues", index: "idx_broken", valid: "f", detail: "new evidence" })
+
+    result = filer.sync(observed_findings: [ changed ], actionable_findings: [ changed ], rows: { changed.key => row },
       collected_categories: Set.new(%i[indexes]))
 
-    expect(client).to have_received(:update_issue).with("viamin/paid", 7, state: "open")
+    expect(client).to have_received(:update_issue).with("viamin/paid", 7,
+      state: "open", body: include("detail: new evidence"))
     expect(client).to have_received(:add_comment).with("viamin/paid", 7, kind_of(String))
     expect(result.reopened).to eq(1)
   end
@@ -130,7 +133,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
     f = finding
     row = row_for(f, github_issue_number: 7)
     row.update!(last_seen_at: Time.utc(2026, 11, 20, 12))
-    allow(client).to receive(:issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
     comments = []
     allow(client).to receive(:add_comment) { |_, _, body| comments << body }
 
@@ -172,7 +175,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
 
   # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-029
   it "aborts before any write when the GitHub lookup fails" do
-    allow(client).to receive(:issues).and_raise(GithubClient::Error.new("lookup failed"))
+    allow(client).to receive(:all_issues).and_raise(GithubClient::Error.new("lookup failed"))
 
     expect {
       filer.sync(observed_findings: [ finding ], actionable_findings: [ finding ], rows: {},
@@ -186,7 +189,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   # @spec RAILS-CONTROL-PLANE-027
   it "adopts an open GitHub issue carrying the finding marker when local state is missing" do
     f = finding
-    allow(client).to receive(:issues) { [ github_issue(number: 31, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 31, body: filer.send(:body_for, f)) ] }
 
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: {}, collected_categories: Set.new(%i[indexes]))
 

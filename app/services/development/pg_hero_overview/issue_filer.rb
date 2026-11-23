@@ -69,7 +69,7 @@ module Development
       end
 
       def sync(observed_findings:, actionable_findings:, rows:, collected_categories:)
-        open_issues = @client.issues(@project.full_name, labels: LABEL, state: "open")
+        open_issues = @client.all_issues(@project.full_name, labels: LABEL, state: "open")
         open_by_number = open_issues.to_h { |issue| [ issue.number.to_i, issue ] }
         adopt_marked_issues(open_issues, rows)
 
@@ -128,7 +128,7 @@ module Development
       end
 
       def reopen_issue(finding, row, issue_number)
-        @client.update_issue(@project.full_name, issue_number, state: "open")
+        @client.update_issue(@project.full_name, issue_number, state: "open", body: body_for(finding))
         @client.add_comment(@project.full_name, issue_number,
           "Finding observed again at #{finding.observed_at.utc.iso8601} — reopening.")
         row.update!(resolved_at: nil, issue_last_updated_at: @now.call)
