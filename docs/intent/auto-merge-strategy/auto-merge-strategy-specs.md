@@ -230,3 +230,18 @@
   *Code:* `app/services/conflict_repairs/reassess_scope.rb`,
   `app/models/conflict_repair_scope_evidence.rb`,
   `app/services/pull_requests/conflict_repair_scope_gate.rb`.
+
+- [x] **AUTO-MERGE-012** — Technical acceptance, integration, and verification
+  stops SHALL be bounded internal PR state, independent of GitHub labels.
+  Each entry SHALL identify its key, observed head, reason, responsible project
+  issue, release condition and recorder. Confirmed project-authorized writes
+  SHALL record or resolve entries with audit history; resolution SHALL name
+  evidence and match the exact entry version. Unresolved or malformed state
+  SHALL block scan-time and final automatic merge paths, including dependency
+  updates and credential fallbacks. PR UI and tools SHALL show technical work
+  and its release condition separately from human approval. Technical state
+  SHALL NOT create a human-approval Inbox item, grant approval, or change labels.
+  Existing human holds SHALL remain enforced until explicitly released.
+  *Code:* `app/services/pull_requests/technical_merge_blockers.rb`.
+  *Test:* `spec/services/pull_requests/technical_merge_blockers_spec.rb`,
+  `spec/mcp/tools/update_technical_merge_blocker_spec.rb`.

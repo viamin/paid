@@ -348,6 +348,14 @@ class DependabotAutoMergeJob < ApplicationJob
     head_sha = pr_head_sha(pr_data)
     return false unless conflict_repair_scope_allowed?(project, pr_number, head_sha, credential_mode)
 
+    issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
+    if issue && PullRequests::TechnicalMergeBlockers.blocked?(issue)
+      record_attempt(project, pr_number, status: "blocked",
+        reason_code: AutoMergeAttempt::REASON_TECHNICAL_MERGE_BLOCKED,
+        message: "Paid has unresolved technical work; no human approval is requested.", credential_mode:)
+      return false
+    end
+
     primary_merge_client(client).merge_pull_request(
       project.full_name, pr_number,
       merge_method: project.merge_method,

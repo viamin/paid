@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2813,6 +2813,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
     t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
     t.string "tdd_review_head_sha", limit: 40, comment: "PR head SHA bound to the latest persisted TDD test-review verdict."
     t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
+    t.jsonb "technical_merge_blockers", default: [], null: false, comment: "Bounded internal technical merge stops; independent of human-intervention labels."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"

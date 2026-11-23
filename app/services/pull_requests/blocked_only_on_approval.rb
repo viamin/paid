@@ -143,6 +143,7 @@ module PullRequests
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_auto_merge?(pr_data),
         hold_for_review: hold_for_review?(pr_data),
+        technical_merge_clear: !TechnicalMergeBlockers.blocked?(@issue),
         intent_conformance_ok: IntentConformance::Signal.ok?(
           project: @project, issue: @issue, head_sha: pr_data.head_sha
         ),

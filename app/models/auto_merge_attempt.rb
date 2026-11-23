@@ -9,6 +9,7 @@ class AutoMergeAttempt < ApplicationRecord
   REASON_EXPECTED_MERGE_FAILURE = "expected_merge_failure"
   REASON_GRANULARITY_MISMATCH = "granularity_mismatch"
   REASON_HOLD_FOR_REVIEW = "hold_for_review"
+  REASON_TECHNICAL_MERGE_BLOCKED = "technical_merge_blocked"
   REASON_INTENT_CONFORMANCE_BLOCKED = "intent_conformance_blocked"
   REASON_MERGE_PERMISSION_COOLDOWN = "merge_permission_cooldown"
   REASON_MISSING_WORKFLOWS_PERMISSION = "missing_workflows_permission"

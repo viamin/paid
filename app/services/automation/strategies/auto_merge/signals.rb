@@ -63,7 +63,8 @@ module Automation
         :skip_auto_merge,
         :hold_for_review,
         :intent_conformance_ok,
-        :conflict_repair_scope_ok
+        :conflict_repair_scope_ok,
+        :technical_merge_clear
       )
         class << self
           # Builds a Signals from keyword arguments, defaulting boolean
@@ -85,7 +86,8 @@ module Automation
               skip_auto_merge: kwargs.fetch(:skip_auto_merge, false),
               hold_for_review: kwargs.fetch(:hold_for_review, false),
               intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true),
-              conflict_repair_scope_ok: kwargs.fetch(:conflict_repair_scope_ok, true)
+              conflict_repair_scope_ok: kwargs.fetch(:conflict_repair_scope_ok, true),
+              technical_merge_clear: kwargs.fetch(:technical_merge_clear, true)
             )
           end
         end
@@ -104,6 +106,7 @@ module Automation
         def hold_for_review? = hold_for_review == true
         def intent_conformance_ok? = intent_conformance_ok == true
         def conflict_repair_scope_ok? = conflict_repair_scope_ok == true
+        def technical_merge_clear? = technical_merge_clear == true
       end
     end
   end

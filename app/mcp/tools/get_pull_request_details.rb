@@ -37,6 +37,8 @@ module Tools
         paid_state: pr.paid_state,
         pr_review_phase: pr.pr_review_phase,
         labels: pr.labels,
+        human_review_requested: pr.held_for_review?,
+        technical_merge_blockers: PullRequests::TechnicalMergeBlockers.entries(pr),
         github_creator_login: pr.github_creator_login,
         github_url: pr.github_url,
         auto_merge: PullRequests::AutoMergeStatus.call(issue: pr, project: project, live_pull_request: live_pull_request),
