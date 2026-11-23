@@ -265,7 +265,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     wrapper_pid = Process.spawn(
       long_attempt_generous_grace, script_path, "bash", "-c", "echo $$ > '#{child_pid_file}'; exec sleep 60"
     )
-    sleep 0.01 until File.exist?(child_pid_file)
+    wait_for_child_pid_file(child_pid_file)
     child_pid = Integer(child_pid_file.read)
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
@@ -288,7 +288,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     wrapper_pid = Process.spawn(
       long_attempt, script_path, "bash", "-c", "echo $$ > '#{child_pid_file}'; exec sleep 60"
     )
-    sleep 0.01 until File.exist?(child_pid_file)
+    wait_for_child_pid_file(child_pid_file)
     child_pid = Integer(child_pid_file.read)
 
     Process.kill("INT", wrapper_pid)
@@ -310,7 +310,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
       long_attempt_fast_grace, script_path, "bash", "-c",
       "trap '' TERM; echo $$ > '#{child_pid_file}'; exec tail -f /dev/null"
     )
-    sleep 0.01 until File.exist?(child_pid_file)
+    wait_for_child_pid_file(child_pid_file)
     child_pid = Integer(child_pid_file.read)
 
     Process.kill("TERM", wrapper_pid)
@@ -367,6 +367,12 @@ RSpec.describe RetryWithProcessGroup, :no_db do
 
   def read_timer_pid(reader)
     Integer(Timeout.timeout(2) { reader.gets }.strip)
+  end
+
+  def wait_for_child_pid_file(path)
+    Timeout.timeout(2, RuntimeError, "Timed out waiting for child PID file: #{path}") do
+      sleep 0.01 until File.exist?(path)
+    end
   end
 
   def with_unacknowledged_watchdog
