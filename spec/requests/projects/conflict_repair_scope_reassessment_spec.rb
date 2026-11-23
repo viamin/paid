@@ -19,4 +19,16 @@ RSpec.describe "Conflict-repair scope reassessment" do
 
     expect(response).to redirect_to(project_agent_run_path(project, run))
   end
+
+  it "rejects a manual producer before queueing reassessment" do # @spec AUTO-MERGE-011
+    run.update!(trigger_type: "manual")
+    sign_in user
+
+    expect {
+      post reassess_conflict_repair_scope_project_agent_run_path(project, run)
+    }.not_to have_enqueued_job(ReassessConflictRepairScopeJob)
+
+    expect(response).to redirect_to(project_agent_run_path(project, run))
+    expect(flash[:alert]).to eq("This run is not an immutable failed automatic conflict-repair artifact.")
+  end
 end

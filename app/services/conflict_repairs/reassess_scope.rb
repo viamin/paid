@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ConflictRepairs
-  # Produces one new, immutable decision from an already-pushed repair artifact.
+  # Produces one new, immutable decision from an automatically-produced repair artifact.
   # It performs no coding and never rewrites the producer's history.
   # @spec AUTO-MERGE-011
   class ReassessScope
@@ -10,6 +10,10 @@ module ConflictRepairs
     end
 
     def self.call(...) = new(...).call
+
+    def self.reassessable_producer?(agent_run)
+      agent_run.automatic? && agent_run.status == "failed" && agent_run.focus == "merge_conflict" && agent_run.result_commit_sha.present?
+    end
 
     def initialize(agent_run:, requested_by: nil)
       @agent_run = agent_run
@@ -41,7 +45,7 @@ module ConflictRepairs
 
     def project = @project ||= agent_run.project.reload
     def issue = @issue ||= agent_run.issue&.reload
-    def eligible? = agent_run.status == "failed" && agent_run.focus == "merge_conflict" && agent_run.result_commit_sha.present? && pre_run_sha.present? && issue.present?
+    def eligible? = self.class.reassessable_producer?(agent_run) && pre_run_sha.present? && issue.present?
     def paused? = project.paused? || project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused? || issue.paused?
     def pre_run_sha = agent_run.external_metadata["pre_run_head_sha"]
 

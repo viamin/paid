@@ -15,6 +15,8 @@ class ReassessConflictRepairScopeJob < ApplicationJob
 
     requester = User.find_by(id: requested_by_id)
     authorize_requester!(requester, run)
+    return unless ConflictRepairs::ReassessScope.reassessable_producer?(run)
+
     ConflictRepairs::ReassessScope.call(agent_run: run, requested_by: requester)
   end
 

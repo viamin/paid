@@ -105,6 +105,14 @@ RSpec.describe ConflictRepairs::ReassessScope do
     expect(described_class.call(agent_run: run, requested_by: requester)).to have_attributes(status: :refused, reason: "producer_is_not_an_immutable_failed_repair")
   end
 
+  it "refuses a manual producer without provider or harness I/O" do
+    run.update!(trigger_type: "manual")
+    expect(client).not_to receive(:pull_request)
+    expect(ConflictRepairs::AssessScope).not_to receive(:call)
+
+    expect(described_class.call(agent_run: run, requested_by: requester)).to have_attributes(status: :refused, reason: "producer_is_not_an_immutable_failed_repair")
+  end
+
   it "refuses a missing or removed requester before provider or semantic I/O" do
     expect(client).not_to receive(:pull_request)
     expect(ConflictRepairs::AssessScope).not_to receive(:call)

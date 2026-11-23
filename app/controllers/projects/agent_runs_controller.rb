@@ -771,8 +771,8 @@ module Projects
     # @spec AUTO-MERGE-011
     def reassess_conflict_repair_scope
       authorize @agent_run, :retry?
-      unless @agent_run.status == "failed" && @agent_run.focus == "merge_conflict" && @agent_run.result_commit_sha.present?
-        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not an immutable failed conflict-repair artifact."
+      unless ConflictRepairs::ReassessScope.reassessable_producer?(@agent_run)
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not an immutable failed automatic conflict-repair artifact."
         return
       end
 

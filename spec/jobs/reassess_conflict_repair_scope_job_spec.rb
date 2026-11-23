@@ -21,4 +21,11 @@ RSpec.describe ReassessConflictRepairScopeJob do
       described_class.perform_now(run.id, requested_by_id: nil)
     }.to raise_error(Pundit::NotAuthorizedError, /no longer authorized/)
   end
+
+  it "does not reassess a manual producer" do
+    run.update!(trigger_type: "manual")
+    expect(ConflictRepairs::ReassessScope).not_to receive(:call)
+
+    described_class.perform_now(run.id, requested_by_id: requester.id)
+  end
 end

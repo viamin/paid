@@ -16,4 +16,12 @@ RSpec.describe Tools::ReassessConflictRepairScope do
     expect(run.reload.status).to eq("failed")
     expect(project.agent_runs.count).to eq(1)
   end
+
+  it "rejects a manual producer before queueing reassessment" do
+    run.update!(trigger_type: "manual")
+
+    expect { described_class.new(user:, session:).call(agent_run_id: run.id, confirmed: true) }
+      .to raise_error(ArgumentError, /automatic conflict-repair artifact/)
+    expect(ReassessConflictRepairScopeJob).not_to have_been_enqueued
+  end
 end

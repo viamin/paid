@@ -9,11 +9,11 @@ module Tools
     def self.write_operation? = true
     def self.mcp_available? = true
     def self.available_to?(user:) = run_agent_available_to?(user:)
-    def self.description = "Reassess an immutable failed conflict-repair artifact without rerunning coding. Requires confirmation."
+    def self.description = "Reassess an immutable failed automatic conflict-repair artifact without rerunning coding. Requires confirmation."
 
     def self.input_schema
       { type: "object", properties: {
-        agent_run_id: { type: "integer", description: "The failed conflict-repair producer run" },
+        agent_run_id: { type: "integer", description: "The failed automatic conflict-repair producer run" },
         confirmed: { type: "boolean", description: "Must be true to queue reassessment" }
       }, required: %w[agent_run_id confirmed] }
     end
@@ -22,8 +22,8 @@ module Tools
       raise ArgumentError, "Confirmation required: set confirmed=true to reassess scope" unless confirmed
 
       run = run_for(agent_run_id).reload
-      unless run.status == "failed" && run.focus == "merge_conflict" && run.result_commit_sha.present?
-        raise ArgumentError, "This run is not an immutable failed conflict-repair artifact"
+      unless ConflictRepairs::ReassessScope.reassessable_producer?(run)
+        raise ArgumentError, "This run is not an immutable failed automatic conflict-repair artifact"
       end
       job = ReassessConflictRepairScopeJob.perform_later(run.id, requested_by_id: user.id)
       raise ArgumentError, "Scope reassessment could not be queued. Please try again." unless job && job.successfully_enqueued?

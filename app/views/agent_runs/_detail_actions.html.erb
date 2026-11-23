@@ -39,7 +39,7 @@
 <% end %>
 
 <% if show_retry %>
-  <% if agent_run.status == "failed" && agent_run.focus == "merge_conflict" && agent_run.result_commit_sha.present? %>
+  <% if ConflictRepairs::ReassessScope.reassessable_producer?(agent_run) %>
     <div class="mt-3 flex justify-end">
       <%= button_to "Reassess conflict-repair scope",
             reassess_conflict_repair_scope_project_agent_run_path(agent_run.project, agent_run), method: :post,
