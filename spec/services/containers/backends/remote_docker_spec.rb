@@ -65,6 +65,15 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_containers(all: true)).to eq([ container ])
   end
 
+  # @spec LLM-ROUTING-013
+  it "does not require a mutable connection when stopping without a deadline" do
+    allow(container).to receive(:stop).with(timeout: 0)
+
+    backend.stop_container(container, timeout: 0)
+
+    expect(container).to have_received(:stop).with(timeout: 0)
+  end
+
   it "routes upgraded stdin exec through the remote container handle" do
     input = StringIO.new("hello")
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])

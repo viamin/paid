@@ -124,6 +124,8 @@ module Containers
       private
 
       def with_deadline(container, deadline)
+        return yield unless deadline
+
         original_connection = container.connection
         container.connection = connection_with_deadline(original_connection, deadline)
         yield

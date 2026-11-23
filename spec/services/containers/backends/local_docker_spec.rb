@@ -87,6 +87,15 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(Docker::Container).to have_received(:create).with({ "Image" => "paid-agent:latest" }, timed_connection)
   end
 
+  # @spec LLM-ROUTING-013
+  it "does not require a mutable connection when stopping without a deadline" do
+    allow(container).to receive(:stop).with(timeout: 0)
+
+    backend.stop_container(container, timeout: 0)
+
+    expect(container).to have_received(:stop).with(timeout: 0)
+  end
+
   it "routes upgraded stdin exec to the selected container" do
     input = StringIO.new("hello")
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
