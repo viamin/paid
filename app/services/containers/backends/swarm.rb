@@ -131,27 +131,31 @@ module Containers
         ServiceHandle.new(backend: self, service: inspect_service(id), task: primary_task_for(id))
       end
 
-      def create_container(config)
+      def create_container(config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        deadline_at = operation_deadline(deadline)
         response = parse_json(
-          manager_connection.post("/services/create", {}, body: MultiJson.dump(service_spec(config)))
+          manager_connection_for(deadline_at).post("/services/create", {}, body: MultiJson.dump(service_spec(config)))
         )
-        get_container(response.fetch("ID"))
+        get_container_with_deadline(response.fetch("ID"), deadline_at)
       end
 
-      def start_container(container)
-        wait_for_runnable_task!(container)
+      def start_container(container, deadline: nil)
+        wait_for_runnable_task!(container, operation_deadline(deadline))
       end
 
-      def stop_container(container, **options)
-        concrete_container(container).stop(**options)
+      def stop_container(container, deadline: nil, **options)
+        deadline_at = operation_deadline(deadline)
+        concrete_container(container, deadline_at:).stop(**options)
       end
 
-      def delete_container(container, **_options)
-        manager_connection.delete("/services/#{service_id(container)}")
+      def delete_container(container, deadline: nil, **_options)
+        manager_connection_for(operation_deadline(deadline)).delete("/services/#{service_id(container)}")
       end
 
-      def exec_in_container(container, command, **options, &block)
-        concrete_container(container).exec(command, options, &block)
+      def exec_in_container(container, command, deadline: nil, **options, &block)
+        deadline_at = operation_deadline(deadline)
+        concrete_container(container, deadline_at:).exec(command, options, &block)
       end
 
       def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
@@ -317,12 +321,12 @@ module Containers
         end
       end
 
-      def inspect_service(id)
-        parse_json(manager_connection.get("/services/#{id}"))
+      def inspect_service(id, connection: manager_connection)
+        parse_json(connection.get("/services/#{id}"))
       end
 
-      def primary_task_for(service_id, tasks: nil)
-        choose_primary_task(tasks || tasks_for(service_id))
+      def primary_task_for(service_id, tasks: nil, connection: manager_connection)
+        choose_primary_task(tasks || tasks_for(service_id, connection:))
       end
 
       def service_info(service, task)
@@ -471,17 +475,17 @@ module Containers
         (amount.to_i * multiplier)
       end
 
-      def concrete_container(container)
-        task = task_for(container)
+      def concrete_container(container, deadline_at: nil)
+        task = task_for(container, deadline_at:)
         raise Docker::Error::NotFoundError, "Swarm service has no active task" unless task
 
-        node = node_for(task)
+        node = node_for(task, deadline_at:)
         raise Docker::Error::NotFoundError, "Swarm task node is unavailable" unless node
 
         container_id = task.dig("Status", "ContainerStatus", "ContainerID")
         raise Docker::Error::NotFoundError, "Swarm task has no runnable container" if container_id.blank?
 
-        Docker::Container.get(container_id, {}, node_connection(node))
+        Docker::Container.get(container_id, {}, node_connection(node, deadline: remaining_time(deadline_at)))
       end
 
       def concrete_container_info(task, node:)
@@ -507,9 +511,10 @@ module Containers
         }.compact
       end
 
-      def task_for(container)
+      def task_for(container, deadline_at: nil)
         if container.respond_to?(:service_id)
-          latest_task = primary_task_for(service_id(container))
+          connection = manager_connection_for(deadline_at)
+          latest_task = primary_task_for(service_id(container), connection:)
           container.update_task!(latest_task) if container.respond_to?(:update_task!)
           return latest_task if latest_task
         end
@@ -517,7 +522,7 @@ module Containers
         container.task if container.respond_to?(:task)
       end
 
-      def node_for(container_or_task)
+      def node_for(container_or_task, deadline_at: nil)
         node_id = if container_or_task.is_a?(Hash)
           container_or_task["NodeID"]
         elsif container_or_task.respond_to?(:task)
@@ -525,7 +530,7 @@ module Containers
         end
         return nil if node_id.blank?
 
-        inspect_node(node_id)
+        inspect_node(node_id, connection: manager_connection_for(deadline_at))
       end
 
       def service_id(container)
@@ -563,8 +568,8 @@ module Containers
         @cached_node_hostnames
       end
 
-      def inspect_node(id)
-        parse_json(manager_connection.get("/nodes/#{id}"))
+      def inspect_node(id, connection: manager_connection)
+        parse_json(connection.get("/nodes/#{id}"))
       end
 
       def node_by_hostname(hostname)
@@ -575,8 +580,9 @@ module Containers
         node&.dig("Description", "Hostname")
       end
 
-      def node_connection(node)
-        Docker::Connection.new(node_url(node), connection_options)
+      def node_connection(node, deadline: nil)
+        options = deadline ? connection_options.merge(timeout: deadline) : connection_options
+        Docker::Connection.new(node_url(node), options)
       end
 
       def node_url(node)
@@ -601,15 +607,15 @@ module Containers
         labels["com.docker.swarm.service.id"].present? || labels["com.docker.swarm.task.id"].present?
       end
 
-      def tasks_for(service_id)
-        tasks_for_services([ service_id ]).fetch(service_id, [])
+      def tasks_for(service_id, connection: manager_connection)
+        tasks_for_services([ service_id ], connection:).fetch(service_id, [])
       end
 
-      def tasks_for_services(service_ids)
+      def tasks_for_services(service_ids, connection: manager_connection)
         return {} if service_ids.empty?
 
         filters = MultiJson.dump(service: service_ids)
-        parse_json(manager_connection.get("/tasks", filters: filters)).group_by { |task| task["ServiceID"] }
+        parse_json(connection.get("/tasks", filters: filters)).group_by { |task| task["ServiceID"] }
       end
 
       def choose_primary_task(tasks)
@@ -635,22 +641,53 @@ module Containers
         task.dig("DesiredState") == "running" || task.dig("Status", "State") == "running"
       end
 
-      def wait_for_runnable_task!(container)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + TASK_READY_TIMEOUT
+      def wait_for_runnable_task!(container, requested_deadline_at = nil)
+        readiness_deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + TASK_READY_TIMEOUT
+        deadline_at = [ requested_deadline_at, readiness_deadline ].compact.min
 
         loop do
-          service = inspect_service(service_id(container))
-          task = primary_task_for(service.fetch("ID"))
+          connection = manager_connection_for(deadline_at)
+          service = inspect_service(service_id(container), connection:)
+          task = primary_task_for(service.fetch("ID"), connection:)
           container.update!(service:, task:)
           return container if runnable_task?(task)
 
-          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline_at
             raise Docker::Error::DockerError,
               "Swarm service #{service.fetch("ID")} did not reach a runnable task within #{TASK_READY_TIMEOUT} seconds"
           end
 
-          sleep(TASK_POLL_INTERVAL)
+          sleep([ TASK_POLL_INTERVAL, remaining_time(deadline_at) ].min)
         end
+      end
+
+      def get_container_with_deadline(id, deadline_at)
+        connection = manager_connection_for(deadline_at)
+        service = inspect_service(id, connection:)
+        task = primary_task_for(id, connection:)
+        ServiceHandle.new(backend: self, service:, task:)
+      end
+
+      def operation_deadline(duration)
+        return unless duration
+
+        Process.clock_gettime(Process::CLOCK_MONOTONIC) + duration
+      end
+
+      def remaining_time(deadline_at)
+        return unless deadline_at
+
+        remaining = deadline_at - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        raise Docker::Error::TimeoutError, "Swarm operation deadline reached" unless remaining.positive?
+
+        remaining
+      end
+
+      def manager_connection_for(deadline_at)
+        timeout = remaining_time(deadline_at)
+        return manager_connection unless timeout
+
+        Docker::Connection.new(manager_connection.url, manager_connection.options.merge(timeout: timeout))
       end
 
       def swarm_network_config(config)

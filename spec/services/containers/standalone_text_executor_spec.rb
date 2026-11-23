@@ -149,6 +149,27 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-013
+  it "supports the deadline contract when isolated text uses the Swarm backend" do
+    swarm_backend = instance_double(Containers::Backends::Swarm, remote?: false)
+    allow(Containers).to receive(:backend).and_return(swarm_backend)
+    allow(swarm_backend).to receive_messages(create_container: container, start_container: true,
+      stop_container: true, delete_container: true,
+      exec_in_container: [ [ agent_owner ], [], 0 ], exec_in_container_with_stdin: [ [], [], 0 ])
+
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
+      clock: ->(_) { 100.0 })
+    executor.execute([ "codex", "exec", "hello" ])
+    executor.close
+
+    expect(swarm_backend).to have_received(:create_container).with(anything, deadline: 7.0)
+    expect(swarm_backend).to have_received(:start_container).with(container, deadline: 7.0)
+    expect(swarm_backend).to have_received(:exec_in_container).with(container, anything,
+      user: "root", deadline: 7.0)
+    expect(swarm_backend).to have_received(:stop_container).with(container, deadline: 7.0, timeout: 0)
+    expect(swarm_backend).to have_received(:delete_container).with(container, deadline: 7.0, force: true)
+  end
+
+  # @spec LLM-ROUTING-013
   it "does not block close past the remaining candidate deadline" do
     now = 100.0
     executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,

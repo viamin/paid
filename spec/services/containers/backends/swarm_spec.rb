@@ -73,7 +73,9 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       "State" => { "Running" => true, "ExitCode" => 0 }
     }
   end
-  let(:concrete_container) { instance_double(Docker::Container, exec: [ [ "ok" ], [], 0 ], json: container_payload) }
+  let(:concrete_container) do
+    instance_double(Docker::Container, exec: [ [ "ok" ], [], 0 ], stop: true, json: container_payload)
+  end
 
   before do
     stub_manager_get("/services/#{service_id}", service_payload)
@@ -264,6 +266,17 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.container_host_for(service)).to eq("worker-1")
   end
 
+  # @spec LLM-ROUTING-013
+  it "applies create deadlines to the Swarm manager transport" do
+    stub_request(:post, "#{manager_url}/services/create")
+      .to_return(status: 200, body: { "ID" => service_id }.to_json)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    expect(backend.create_container(container_config, deadline: 4.0)).to be_a(described_class::ServiceHandle)
+    expect(Docker::Connection).to have_received(:new).with(manager_url,
+      hash_including(timeout: be_between(0, 4.0))).at_least(:once)
+  end
+
   it "waits for a runnable task before returning from start_container" do
     pending_task = task_payload.deep_dup
     pending_task["Status"] = { "State" => "pending", "ContainerStatus" => {} }
@@ -287,6 +300,30 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
 
     expect(backend.exec_in_container(service, [ "pwd" ])).to eq([ [ "ok" ], [], 0 ])
     expect(Docker::Container).to have_received(:get).with(container_id, {}, kind_of(Docker::Connection)).at_least(:once)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "applies exec deadlines to the landed worker transport without forwarding them as Docker options" do
+    service = backend.get_container(service_id)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    backend.exec_in_container(service, [ "pwd" ], deadline: 3.0, user: "agent")
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 3.0)))
+    expect(concrete_container).to have_received(:exec).with([ "pwd" ], user: "agent")
+  end
+
+  # @spec LLM-ROUTING-013
+  it "applies stop deadlines to the landed worker transport without forwarding them as Docker options" do
+    service = backend.get_container(service_id)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    backend.stop_container(service, deadline: 2.0, timeout: 1)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 2.0)))
+    expect(concrete_container).to have_received(:stop).with(timeout: 1)
   end
 
   it "refreshes the routed task before exec when the service is rescheduled" do
