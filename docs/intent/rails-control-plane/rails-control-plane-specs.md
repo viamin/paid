@@ -255,9 +255,13 @@ failures when no tmux socket responds.
   GoodJob SHALL schedule the PgHero overview scan hourly on the maintenance
   queue with concurrency limited to one perform, and a manual rake
   invocation SHALL run the same collector, policy, state, and issue-filing
-  path as the scheduled job.
+  path as the scheduled job. The shared scan path SHALL serialize each target
+  project's collection, GitHub lookup, and issue filing independently of
+  GoodJob so `perform_now` and scheduled executions cannot create duplicate
+  issues for a finding.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
   `spec/jobs/pg_hero_overview_scan_job_spec.rb`,
+  `spec/services/development/pg_hero_overview/scan_spec.rb`,
   `spec/lib/tasks/development_pghero_rake_spec.rb`.
   *Design:* `rails-control-plane-design.md`, Development PgHero Overview
   finding issues.

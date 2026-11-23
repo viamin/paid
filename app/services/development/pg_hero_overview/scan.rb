@@ -44,6 +44,15 @@ module Development
       def call
         return Result.skipped_result unless @environment == "development"
 
+        # GoodJob does not apply its concurrency controls to perform_now.
+        # Hold the owning project's row lock across GitHub lookup and issue
+        # creation so scheduled and manual scans cannot file the same finding.
+        @project.with_lock { scan }
+      end
+
+      private
+
+      def scan
         # The filer needs a working GitHub client; a silent nil here would
         # turn "cannot file" into an apparent all-clear scan.
         raise ArgumentError, "No GitHub client for project #{@project.full_name}" if @client.nil?
@@ -67,8 +76,6 @@ module Development
         log_scan(result, duration_ms: elapsed_ms(started_at))
         result
       end
-
-      private
 
       def collector
         @collector ||= Collect.new(environment: @environment, database: @database, now: @now)

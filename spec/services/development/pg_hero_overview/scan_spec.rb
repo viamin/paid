@@ -68,6 +68,15 @@ RSpec.describe Development::PgHeroOverview::Scan do
     expect(collector_spy).not_to have_received(:call)
   end
 
+  # @spec RAILS-CONTROL-PLANE-026 RAILS-CONTROL-PLANE-027
+  it "serializes GitHub issue filing for a project across scan entry points" do
+    scan = scanner(findings: [ structural_finding ])
+
+    expect(project).to receive(:with_lock).and_yield
+
+    expect(scan.call.created).to eq(1)
+  end
+
   # @spec RAILS-CONTROL-PLANE-027
   it "files a structural finding immediately and refreshes state on the next scan" do
     scanner = scanner(findings: [ structural_finding ])

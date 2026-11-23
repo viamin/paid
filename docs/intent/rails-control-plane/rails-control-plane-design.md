@@ -281,9 +281,12 @@ propagate so GoodJob records the failure.
 
 The scan runs hourly at a staggered minute, only in development, on the
 maintenance queue. GoodJob concurrency control (total limit 1) prevents
-concurrent performs; the state rows are also updated transactionally per
-finding so a retried scan after partial filing resumes from the issues it
-already created instead of duplicating them.
+concurrent scheduled performs. The shared scan entry point additionally holds
+the target project's database row lock across collection, GitHub lookup, and
+issue creation, so manual `perform_now` invocation and scheduled execution
+cannot race to file the same finding. The state rows are also updated
+transactionally per finding so a retried scan after partial filing resumes from
+the issues it already created instead of duplicating them.
 
 ### Decisions and alternatives
 
