@@ -104,6 +104,20 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       .with(container: concrete_container, command: [ "cat" ], stdin: input, wait: 5)
   end
 
+  # @spec LLM-ROUTING-013
+  it "passes only the remaining deadline to upgraded stdin exec after task resolution" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC)
+      .and_return(100.0, 101.0, 102.0, 103.0, 104.0)
+    service = backend.get_container(service_id)
+
+    backend.exec_in_container_with_stdin(service, [ "cat" ], stdin: input, wait: 5, deadline: 10)
+
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container: concrete_container, command: [ "cat" ], stdin: input, wait: 5, deadline: 6.0)
+  end
+
   it "uses overlay DNS rather than remote proxy routing" do
     expect(backend.remote?).to be(false)
   end

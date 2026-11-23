@@ -161,7 +161,8 @@ module Containers
       def exec_in_container_with_stdin(container, command, stdin:, wait:, deadline: nil, **options, &block)
         deadline_at = operation_deadline(deadline)
         concrete = concrete_container(container, deadline_at:)
-        DockerExecWithStdin.call(container: concrete, command:, stdin:, wait:, **options, &block)
+        deadline_options = deadline_at ? { deadline: remaining_time(deadline_at) } : {}
+        DockerExecWithStdin.call(container: concrete, command:, stdin:, wait:, **deadline_options, **options, &block)
       end
 
       def container_stats(container, **options)

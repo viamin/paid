@@ -44,26 +44,22 @@ RSpec.describe Containers::DockerExecWithStdin, :no_db do
   # @spec LLM-ROUTING-013
   it "recomputes the transport timeout before starting the upgraded stream" do
     connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
-    create_connection = instance_double(Docker::Connection)
     start_connection = instance_double(Docker::Connection)
     container = instance_double(Docker::Container, id: "container-1", connection: connection)
     execution = instance_double(Docker::Exec, id: "exec-1", json: { "ExitCode" => 0 })
     active_connection = connection
     allow(container).to receive(:connection) { active_connection }
     allow(container).to receive(:connection=) { |selected| active_connection = selected }
-    allow(Docker::Connection).to receive(:new).and_return(create_connection, start_connection)
+    allow(described_class::DeadlineConnection).to receive(:new).and_return(start_connection)
     allow(Docker::Exec).to receive(:create).and_return(execution)
-    allow(create_connection).to receive_messages(url: "tcp://docker:2376", options: { timeout: 60 })
     allow(start_connection).to receive(:post).with(any_args)
     allow(described_class).to receive(:monotonic_now).and_return(100.0, 100.0, 103.0)
 
     described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
 
-    expect(Docker::Exec).to have_received(:create).with(anything, create_connection)
+    expect(Docker::Exec).to have_received(:create).with(anything, start_connection)
     expect(start_connection).to have_received(:post).with("/exec/exec-1/start", nil,
       hash_including(read_timeout: 2.0))
-    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 5.0, retry_limit: 0)
-    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 2.0, retry_limit: 0)
   end
 
   # @spec LLM-ROUTING-013
@@ -80,6 +76,44 @@ RSpec.describe Containers::DockerExecWithStdin, :no_db do
     expect {
       described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
     }.to raise_error(Docker::Error::TimeoutError, /deadline expired/)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not inspect the exit status after the upgraded stream exhausts its deadline" do
+    connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
+    start_connection = instance_double(Docker::Connection)
+    container = instance_double(Docker::Container, id: "container-1", connection: connection)
+    execution = instance_double(Docker::Exec, id: "exec-1")
+    active_connection = connection
+    allow(container).to receive(:connection) { active_connection }
+    allow(container).to receive(:connection=) { |selected| active_connection = selected }
+    allow(described_class::DeadlineConnection).to receive(:new).and_return(start_connection)
+    allow(Docker::Exec).to receive(:create).and_return(execution)
+    allow(execution).to receive(:json)
+    allow(start_connection).to receive(:post)
+    allow(described_class).to receive(:monotonic_now).and_return(100.0, 100.0, 100.0, 105.0)
+
+    expect {
+      described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5, deadline: 5)
+    }.to raise_error(Docker::Error::TimeoutError, /deadline expired/)
+
+    expect(execution).not_to have_received(:json)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "recomputes the deadline for every HTTP request within exec creation" do
+    connection = instance_double(Docker::Connection, url: "tcp://docker:2376", options: { timeout: 60 })
+    deadline_connection = described_class::DeadlineConnection.new(connection, 105.0)
+    transport = instance_double(Docker::Connection)
+    allow(Docker::Connection).to receive(:new).and_return(transport)
+    allow(transport).to receive(:request)
+    allow(described_class).to receive(:monotonic_now).and_return(101.0, 103.0)
+
+    deadline_connection.request(:get, "/version")
+    deadline_connection.request(:post, "/containers/container-1/exec")
+
+    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 4.0, retry_limit: 0)
+    expect(Docker::Connection).to have_received(:new).with("tcp://docker:2376", timeout: 2.0, retry_limit: 0)
   end
 
   # @spec LLM-ROUTING-013

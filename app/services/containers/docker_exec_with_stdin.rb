@@ -21,7 +21,8 @@ module Containers
           expects: [ 101 ], read_timeout: [ wait, remaining ].compact.min,
           hijack_block: stream_input(stdin, messages, deadline: absolute_deadline, &block))
       end
-      [ messages.stdout_messages, messages.stderr_messages, execution.json["ExitCode"] ]
+      exit_code = with_deadline(container, absolute_deadline) { execution.json["ExitCode"] }
+      [ messages.stdout_messages, messages.stderr_messages, exit_code ]
     end
 
     def self.exec_config(container, command, options)
@@ -43,17 +44,31 @@ module Containers
       raise Docker::Error::TimeoutError, "Docker operation deadline expired" unless remaining.positive?
 
       original_connection = container.connection
-      container.connection = deadline_connection(original_connection, remaining)
+      container.connection = deadline_connection(original_connection, absolute_deadline)
       yield remaining
     ensure
       container.connection = original_connection if original_connection
     end
     private_class_method :with_deadline
 
-    def self.deadline_connection(connection, remaining)
-      Docker::Connection.new(connection.url, connection.options.merge(timeout: remaining, retry_limit: 0))
+    def self.deadline_connection(connection, absolute_deadline)
+      DeadlineConnection.new(connection, absolute_deadline)
     end
     private_class_method :deadline_connection
+
+    class DeadlineConnection < Docker::Connection
+      def initialize(connection, absolute_deadline)
+        super(connection.url, connection.options)
+        @absolute_deadline = absolute_deadline
+      end
+
+      def request(*args, &block)
+        remaining = @absolute_deadline - Containers::DockerExecWithStdin.send(:monotonic_now)
+        raise Docker::Error::TimeoutError, "Docker operation deadline expired" unless remaining.positive?
+
+        Docker::Connection.new(url, options.merge(timeout: remaining, retry_limit: 0)).request(*args, &block)
+      end
+    end
 
     def self.monotonic_now
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
