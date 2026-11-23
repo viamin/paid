@@ -37,7 +37,7 @@ bounded setup retries; reaching the boundary still cancels the shard and fails
 the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
-at most five times, bounding each attempt to forty-five minutes with increasing
+at most five times, bounding each attempt to twenty minutes with increasing
 delays. This absorbs transient registry and hosted-runner stalls without
 skipping setup or relaxing the shard's 360-minute job boundary.
 
