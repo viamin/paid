@@ -22,6 +22,7 @@ module Activities
 
       threads = client.review_threads(project.full_name, agent_run.source_pull_request_number)
       return stale_threads_result(agent_run_id, thread_ids) unless expected_threads_match?(input, threads, thread_ids)
+      return stale_head_result(agent_run_id, thread_ids) unless expected_head_matches?(input, client, project, agent_run)
 
       unresolved = threads.reject { |t| t[:is_resolved] }
       unresolved.select! { |thread| thread_ids.include?(thread[:id]) } if thread_ids.any?

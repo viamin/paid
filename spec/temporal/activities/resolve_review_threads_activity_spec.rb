@@ -74,6 +74,23 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
       end
 
       # @spec FOCUSED-RUN-011
+      it "leaves findings open when the head advances while fetching current threads" do
+        allow(github_client).to receive(:pull_request_ref_oids).with(project.full_name, 42)
+          .and_return({ base: "base-sha", head: "assessed-head" }, { base: "base-sha", head: "new-head" })
+        allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([ assessed_thread ])
+        expect(github_client).not_to receive(:resolve_review_threads_batch)
+
+        result = activity.execute(
+          agent_run_id: agent_run.id,
+          thread_ids: [ "thread_1" ],
+          expected_head_sha: "assessed-head",
+          thread_versions: thread_versions
+        )
+
+        expect(result).to include(stale_head: true, resolved_count: 0)
+      end
+
+      # @spec FOCUSED-RUN-011
       it "leaves a finding open when its thread changed after assessment" do
         changed_thread = assessed_thread.deep_dup
         changed_thread[:comments] << {
