@@ -1034,6 +1034,10 @@ class GithubClient
       raise IncompleteTreeError, "review thread #{thread["id"]} omitted its original comment" if comment_count.positive? && original_comment_id.nil?
 
       comments = [ original_comment, *recent_comments ].compact.uniq { |comment| comment["id"] }
+      if comments.size != comment_count
+        raise IncompleteTreeError, "review thread #{thread["id"]} omitted review comments"
+      end
+
       {
         id: thread["id"],
         is_resolved: thread["isResolved"],

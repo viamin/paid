@@ -1781,16 +1781,11 @@ RSpec.describe GithubClient do
 
     # @spec FOCUSED-RUN-011
     context "when a thread has more comments than the recent-comment window" do
-      it "returns the original finding together with the latest replies" do
+      it "fails closed when the original and recent windows omit middle comments" do
         stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
 
-        result = client.review_threads(repo, 42)
-
-        expect(result.first).to include(comment_count: 51, original_comment_id: "original")
-        expect(result.first[:comments]).to match([
-          hash_including(id: "original", body: "Original finding"),
-          hash_including(id: "reply_2", body: "Latest reply")
-        ])
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /omitted review comments/)
       end
 
       it "fails closed when GitHub omits the original finding" do
@@ -1806,7 +1801,7 @@ RSpec.describe GithubClient do
           body: { data: { repository: { pullRequest: { reviewThreads: { nodes: [
             {
               id: "thread_1", isResolved: false, firstComment: { nodes: first_comments },
-              recentComments: { totalCount: 51, nodes: [ { id: "reply_2", body: "Latest reply" } ] }
+              recentComments: { totalCount: 52, nodes: [ { id: "reply_2", body: "Latest reply" } ] }
             }
           ] } } } } }.to_json,
           headers: { "Content-Type" => "application/json" }
