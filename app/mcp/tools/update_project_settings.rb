@@ -44,6 +44,7 @@ module Tools
       max_draft_review_rounds
       max_pr_followup_runs
       max_pr_auto_continue_tokens
+      pr_escalation_limits_suspended_until
       token_limit_warning_threshold
       poll_interval_seconds
       intent_threshold

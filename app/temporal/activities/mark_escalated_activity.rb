@@ -82,6 +82,10 @@ module Activities
 
     def escalation_still_applies?(project, issue, input:)
       case resolve_escalation_reason(input)
+      when Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT
+        !project.pr_escalation_limits_suspended?
+      when Issue::PR_ESCALATION_REASON_FAILURE_STREAK
+        draft_originated?(issue, issue.pr_review_phase) || !project.pr_escalation_limits_suspended?
       when Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
         progress_state = PullRequests::ProgressState.call(project:, issue:)
         operational_failure_breaker_holds?(issue, progress_state)

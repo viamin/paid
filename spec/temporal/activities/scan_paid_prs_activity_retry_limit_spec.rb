@@ -14,6 +14,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         ProjectDouble,
         owner_reviewer_login: "viamin",
         github_author_login: nil,
+        pr_escalation_limits_suspended?: false,
         max_pr_auto_continue_tokens: 50_000
       )
     end
@@ -737,6 +738,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         account: account,
         github_token: github_token,
         max_draft_review_rounds: 3,
+        pr_escalation_limits_suspended?: false,
         max_pr_auto_continue_tokens: 50_000,
         owner_reviewer_login: "viamin",
         upstream_pr_target?: false,
@@ -907,7 +909,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     let(:activity) { described_class.new }
-    let(:project) { instance_double(TotalFollowupProjectStub, max_pr_followup_runs: 3) }
+    let(:project) { instance_double(TotalFollowupProjectStub, pr_escalation_limits_suspended?: false, max_pr_followup_runs: 3) }
 
     it "returns true when pr_followup_count reaches the limit in ready phase" do
       issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "ready", pr_followup_count: 3)
@@ -934,7 +936,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     it "returns false when the limit is zero (disabled)" do
-      project = instance_double(TotalFollowupProjectStub, max_pr_followup_runs: 0)
+      project = instance_double(TotalFollowupProjectStub, pr_escalation_limits_suspended?: false, max_pr_followup_runs: 0)
       issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "ready", pr_followup_count: 99)
 
       expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(false)
@@ -956,6 +958,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       instance_double(
         LifecycleSignalsProjectStub,
         owner_reviewer_login: "alice",
+        pr_escalation_limits_suspended?: false,
         max_pr_auto_continue_tokens: 50_000
       )
     end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_183350) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3967,6 +3967,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
+    t.datetime "pr_escalation_limits_suspended_until", comment: "Exclusive deadline for suspending automatic PR follow-up and cumulative token limits."
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
@@ -7039,12 +7040,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL

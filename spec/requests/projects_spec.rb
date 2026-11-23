@@ -2436,6 +2436,21 @@ RSpec.describe "Projects" do
         )
       end
 
+      # @spec PR-ESCALATION-030
+      it "sets and clears the PR escalation suspension deadline" do
+        project = create(:project, account: account, github_token: github_token)
+        deadline = 1.week.from_now.utc.change(usec: 0)
+
+        patch project_path(project), params: { project: { pr_escalation_limits_suspended_until: deadline.iso8601 } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.pr_escalation_limits_suspended_until).to eq(deadline)
+
+        patch project_path(project), params: { project: { pr_escalation_limits_suspended_until: "" } }
+
+        expect(project.reload.pr_escalation_limits_suspended_until).to be_nil
+      end
+
       it "updates the project" do
         project = create(:project, account: account, github_token: github_token, name: "Old Name")
         patch project_path(project), params: { project: { name: "New Name" } }

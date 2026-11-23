@@ -34,6 +34,19 @@ RSpec.describe Tools::UpdateProjectSettings do
   end
 
   describe "#call" do
+    # @spec PR-ESCALATION-030
+    it "sets a suspension deadline and audits its actor and field" do
+      deadline = 1.week.from_now.utc.change(usec: 0)
+
+      result = call(settings: { "pr_escalation_limits_suspended_until" => deadline.iso8601 })
+
+      expect(result[:id]).to eq(project.id)
+      expect(project.reload.pr_escalation_limits_suspended_until).to eq(deadline)
+      event = account.account_activity_events.last
+      expect(event.metadata.fetch("changed_fields")).to include("pr_escalation_limits_suspended_until")
+      expect(event.actor_id).to eq(owner.id)
+    end
+
     it "updates permitted attributes and returns them" do
       result = call(settings: { "paused" => true, "auto_pick_enabled" => true })
 
