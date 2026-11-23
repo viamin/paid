@@ -11,8 +11,9 @@ a long poll to consume its original finite attempt while waiting behind an
 application-level fence. It must also preserve any task admitted through an
 enabled eager path. A source-only audit of the official temporalio Ruby SDK
 1.11.0 tagged gem — the latest published release at audit time, with the same
-boundary as the pinned 1.9.0 — confirms that no released public API is a
-task-safe pause-and-drain lifecycle operation.
+boundary as the pinned 1.9.0 — confirms that the inspected public Worker,
+Tuner, and poller interfaces do not provide a task-safe pause-and-drain
+lifecycle operation.
 
 ## Audited upstream capability (source-only)
 
@@ -31,8 +32,11 @@ tagged gem only; no 1.11.0 execution experiment was performed or claimed.
   stops the reservation request), `try_reserve_slot` (must return
   immediately), and `mark_slot_used`/`release_slot`, each documented as
   "should never block, this should return immediately" and invoked on the
-  shared worker reactor thread with raised exceptions ignored. No callback
-  observes a reservation becoming a task, so none can acknowledge quiescence.
+  shared worker reactor thread with raised exceptions ignored. `mark_slot_used`
+  notifies the supplier that a reserved slot is actually used; it does not
+  atomically close admission or acknowledge settlement of earlier outstanding
+  poll reservations and eager responses. Therefore these callbacks cannot
+  acknowledge quiescence.
 - `lib/temporalio/worker/poller_behavior.rb` — new since 1.9.0:
   `PollerBehavior::SimpleMaximum`/`Autoscaling` only bound how many concurrent
   long polls scale; polling still requires an available slot first and the
