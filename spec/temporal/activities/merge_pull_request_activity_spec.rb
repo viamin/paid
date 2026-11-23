@@ -210,6 +210,19 @@ RSpec.describe Activities::MergePullRequestActivity do
           .with(repo: project.full_name, number: 42, method: :squash, expected_head_sha: "abc")
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
+
+      # @spec AUTO-MERGE-012
+      it "rechecks a technical stop recorded after the provider fetch" do
+        allow(provider).to receive(:fetch_pull_request) do
+          issue.update!(technical_merge_blockers: [ { "key" => "sdk", "reason" => "New failure" } ])
+          pr_data
+        end
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
     end
 
     context "when the rollout is off and the project uses dependabot-only auto-merge" do
@@ -264,6 +277,19 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+    end
+
+    # @spec AUTO-MERGE-012
+    context "when Paid records an internal technical stop without a label" do
+      it "does not invoke the merge provider or request human approval" do
+        issue.update!(technical_merge_blockers: [ { "key" => "sdk", "reason" => "SDK control fails" } ])
+        expect(Automation::Providers::Resolver).not_to receive(:repository_for)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id, pr_number: 42)
+
+        expect(result).to include(merged: false, technical_blocked: true)
+        expect(issue.reload.labels).to be_empty
       end
     end
 
@@ -1066,6 +1092,20 @@ RSpec.describe Activities::MergePullRequestActivity do
           .and_raise(Automation::Providers::RepositoryProvider::ProviderError, rejection_message)
         allow(GithubClient).to receive(:new).and_return(client)
         allow(client).to receive(:authenticated_login).and_return("paid-bot")
+      end
+
+      # @spec AUTO-MERGE-012
+      it "does not bypass a newly recorded technical stop with fallback credentials" do
+        allow(provider).to receive(:merge_pull_request) do
+          issue.update!(technical_merge_blockers: [ { "key" => "sdk", "reason" => "New failure" } ])
+          raise Automation::Providers::RepositoryProvider::ProviderError, rejection_message
+        end
+        expect(client).not_to receive(:merge_pull_request)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false)
+        expect(issue.reload.merge_permission_rejected?).to be(false)
       end
 
       context "when the fallback merge succeeds" do
