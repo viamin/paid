@@ -13,16 +13,18 @@ module PullRequests
 
     def self.call(...) = new(...).call
 
-    def initialize(project:, issue:, head_sha:)
+    def initialize(project:, issue:, head_sha:, integration_base_sha: nil)
       @project = project
       @issue = issue
       @head_sha = head_sha
+      @integration_base_sha = integration_base_sha
     end
 
     def call
       run = applicable_run
       return Result.new(allowed: true, reason_code: nil, agent_run_id: nil) unless run
 
+      return blocked(run, "conflict_repair_scope_assessment_incomplete") if effective_integration_base_sha.blank?
       assessment = reassessment_or_original(run)
       return blocked(run, "conflict_repair_scope_assessment_incomplete") unless valid_assessment?(assessment)
       return Result.new(allowed: true, reason_code: nil, agent_run_id: run.id) if assessment["status"] == "approved"
@@ -32,7 +34,7 @@ module PullRequests
 
     private
 
-    attr_reader :project, :issue, :head_sha
+    attr_reader :project, :issue, :head_sha, :integration_base_sha
 
     def applicable_run
       return if head_sha.blank?
@@ -52,6 +54,7 @@ module PullRequests
       assessment.is_a?(Hash) &&
         assessment["head_sha"] == head_sha &&
         assessment["base_sha"].present? &&
+        assessment["integration_base_sha"] == effective_integration_base_sha &&
         assessment["status"].in?(%w[approved rejected unavailable]) &&
         assessment["explanation"].present? &&
         assessment["base_imported_paths"].is_a?(Array) &&
@@ -60,10 +63,18 @@ module PullRequests
 
     # @spec AUTO-MERGE-011
     def reassessment_or_original(run)
-      evidence = ConflictRepairScopeEvidence.current_for(agent_run: run, head_sha: head_sha)
+      evidence = ConflictRepairScopeEvidence.current_for(agent_run: run, head_sha: head_sha, integration_base_sha: effective_integration_base_sha)
       return evidence_to_assessment(evidence) if evidence
 
       run.external_metadata[ASSESSMENT_KEY]
+    end
+
+    def effective_integration_base_sha
+      return integration_base_sha if integration_base_sha.present?
+
+      @effective_integration_base_sha ||= project.client.pull_request(project.full_name, issue.github_number).base.sha
+    rescue GithubClient::Error
+      nil
     end
 
     def evidence_to_assessment(evidence)

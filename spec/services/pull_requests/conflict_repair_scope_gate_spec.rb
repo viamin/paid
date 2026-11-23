@@ -18,6 +18,7 @@ RSpec.describe PullRequests::ConflictRepairScopeGate do
           "explanation" => "Scope #{status}",
           "base_sha" => "pre-repair",
           "head_sha" => head,
+          "integration_base_sha" => "base",
           "base_imported_paths" => [ "app/base.rb" ],
           "repair_authored_paths" => [ "app/repair.rb" ]
         }
@@ -25,34 +26,40 @@ RSpec.describe PullRequests::ConflictRepairScopeGate do
   end
 
   it "allows an ordinary PR with no automatic conflict repair" do
-    expect(described_class.call(project:, issue:, head_sha:)).to be_allowed
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).to be_allowed
   end
 
   it "blocks unavailable, rejected, and incomplete current-head assessments" do
     %w[unavailable rejected].each do |status|
       record_repair(status:)
-      expect(described_class.call(project:, issue:, head_sha:)).not_to be_allowed
+      expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).not_to be_allowed
       AgentRun.delete_all
     end
 
     record_repair(status: "approved", assessment: { "conflict_repair_scope_assessment" => { "status" => "approved" } })
-    expect(described_class.call(project:, issue:, head_sha:)).not_to be_allowed
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).not_to be_allowed
   end
 
   it "allows complete approved evidence and ignores a superseded head" do
     record_repair(status: "approved")
-    expect(described_class.call(project:, issue:, head_sha:)).to be_allowed
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).to be_allowed
 
-    expect(described_class.call(project:, issue:, head_sha: "new-head")).to be_allowed
+    expect(described_class.call(project:, issue:, head_sha: "new-head", integration_base_sha: "base")).to be_allowed
   end
 
   it "consumes separate current-head reassessment evidence without changing the failed producer" do # @spec AUTO-MERGE-011
     run = record_repair(status: "unavailable")
-    ConflictRepairScopeEvidence.create!(agent_run: run, project:, issue:, pre_run_sha: "pre-repair",
+    ConflictRepairScopeEvidence.create!(agent_run: run, account: project.account, project:, issue:, pre_run_sha: "pre-repair",
       integration_base_sha: "base", result_sha: head_sha, provider_head_sha: head_sha, status: "approved",
       explanation: "fresh decision", base_imported_paths: [], repair_authored_paths: [])
 
-    expect(described_class.call(project:, issue:, head_sha:)).to be_allowed
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).to be_allowed
     expect(run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+  end
+
+  it "blocks a prior approval when the current integration base changed" do
+    record_repair(status: "approved")
+
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "new-base")).not_to be_allowed
   end
 end

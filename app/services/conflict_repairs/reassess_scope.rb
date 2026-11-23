@@ -18,6 +18,7 @@ module ConflictRepairs
 
     def call
       return refused("producer_is_not_an_immutable_failed_repair") unless eligible?
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
       return refused("project_or_issue_paused") if paused?
       return refused("source_issue_untrusted") unless issue.trusted?
       return refused("cost_budget_exhausted") unless CostBudgets::Check.call(project, agent_run:)[:allowed]
@@ -25,12 +26,12 @@ module ConflictRepairs
       pr = project.client.pull_request(project.full_name, agent_run.source_pull_request_number)
       return unavailable("Provider head no longer matches the immutable artifact", pr.head.sha) unless pr.head.sha == agent_run.result_commit_sha
 
-      existing = ConflictRepairScopeEvidence.current_for(agent_run:, head_sha: pr.head.sha)
-      return Result.new(:accepted, existing, nil) if existing
+      existing = ConflictRepairScopeEvidence.current_for(agent_run:, head_sha: pr.head.sha, integration_base_sha: pr.base.sha)
+      return Result.new(:accepted, existing, nil) if existing && existing.status != "unavailable"
 
       evidence = assess(pr)
       Result.new(:accepted, evidence, nil)
-    rescue GithubClient::Error => e
+    rescue GithubClient::Error
       Result.new(:accepted, record("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha), nil)
     end
 
@@ -48,10 +49,12 @@ module ConflictRepairs
       base = project.client.compare_summary(project.full_name, pre_run_sha, pr.base.sha)
       result = project.client.compare_summary(project.full_name, pre_run_sha, pr.head.sha)
       decision = AssessScope.call(agent_run:, base_comparison: base, result_comparison: result)
-      # A second provider read closes the provider-head race. Do not publish a
-      # decision for a range that is no longer the provider's current HEAD.
+      # A second provider read closes both range races. Do not publish a
+      # decision for a range that is no longer the provider's current base/HEAD.
       current = project.client.pull_request(project.full_name, agent_run.source_pull_request_number)
-      return record("unavailable", "Provider head changed during scope reassessment", nil, nil, current.head.sha) unless current.head.sha == pr.head.sha
+      unless current.head.sha == pr.head.sha && current.base.sha == pr.base.sha
+        return record("unavailable", "Provider base or head changed during scope reassessment", nil, nil, current.head.sha, current.base.sha)
+      end
 
       record(decision.status, decision.explanation, decision.base_imported_paths, decision.repair_authored_paths, current.head.sha, pr.base.sha)
     end
@@ -61,9 +64,20 @@ module ConflictRepairs
     end
 
     def record(status, explanation, base_paths, repair_paths, provider_head, base_sha = nil)
-      ConflictRepairScopeEvidence.create!(agent_run:, project:, issue:, requested_by:, pre_run_sha:,
+      attributes = { agent_run:, account: project.account, project:, issue:, requested_by:, pre_run_sha:,
         integration_base_sha: base_sha || "unavailable", result_sha: agent_run.result_commit_sha,
-        provider_head_sha: provider_head, status:, explanation:, base_imported_paths: base_paths || [], repair_authored_paths: repair_paths || [])
+        provider_head_sha: provider_head, status:, explanation:, base_imported_paths: base_paths || [], repair_authored_paths: repair_paths || [] }
+      ConflictRepairScopeEvidence.create_or_find_by!(attributes.slice(:agent_run, :pre_run_sha, :integration_base_sha, :result_sha, :provider_head_sha, :status)) do |evidence|
+        evidence.assign_attributes(attributes)
+      end
+    end
+
+    def requesting_actor_authorized?
+      return false unless requested_by
+
+      AgentRunPolicy.new(requested_by.reload, agent_run).retry?
+    rescue ActiveRecord::RecordNotFound
+      false
     end
 
     def refused(reason) = Result.new(:refused, nil, reason)

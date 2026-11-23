@@ -231,6 +231,14 @@
   `app/models/conflict_repair_scope_evidence.rb`,
   `app/services/pull_requests/conflict_repair_scope_gate.rb`.
 
+  Reuse and merge admission SHALL additionally bind the decision to the
+  current integration base. Paid SHALL reauthorize the recorded requesting
+  actor immediately before provider or semantic work; a nil, removed, or
+  no-longer-authorized actor cannot publish evidence. After semantic work it
+  SHALL re-read both base and head before publishing. Unavailable and stale
+  outcomes are immutable, idempotent records, while a later successful bounded
+  request may supersede unavailable evidence for the same artifact range.
+
 - [x] **AUTO-MERGE-012** — Technical acceptance, integration, and verification
   stops SHALL be bounded internal PR state, independent of GitHub labels.
   Each entry SHALL identify its key, observed head, reason, responsible project

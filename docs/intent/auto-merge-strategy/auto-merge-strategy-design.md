@@ -115,11 +115,15 @@ within the PR's existing task and approved intent; a needed change outside that
 scope is reported for human direction. Before accepting the repair, Paid uses
 the agent harness to assess the bounded diff evidence and fails closed when the
 assessment is unavailable, malformed, or identifies out-of-scope author work.
-The stop is bound to the assessed HEAD: scan-time eligibility records it as an
+The stop is bound to the assessed integration base and HEAD: scan-time eligibility records it as an
 auto-merge blocker and the merge activity rechecks it against a freshly fetched
 HEAD before provider merge I/O. An assessment for another HEAD cannot block a
 newer independent result, while a later complete approved assessment for the
-same HEAD is the bounded recovery route. This gate does not change the
+same base and HEAD is the bounded recovery route. Reassessment reauthorizes its
+requesting actor immediately before provider and semantic work, then fences both
+provider revisions before persisting its immutable result. Repeated unavailable
+or stale observations are idempotently retained; a recovered provider may add a
+later approved result without mutating that history. This gate does not change the
 separate review-freshness classifier or its policy exceptions.
 It persists separate base-import and repair-authored paths so the normal update
 comment can make that distinction legible to reviewers. A repair does not carry

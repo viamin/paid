@@ -13,7 +13,7 @@ module Projects
     before_action :set_project
     before_action :set_agent_run, only: [
       :show, :cancel, :retry, :retry_source_closure, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance,
-      :promote_session_summary
+      :promote_session_summary, :reassess_conflict_repair_scope
     ]
 
     def index

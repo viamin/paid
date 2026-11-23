@@ -6,6 +6,7 @@ require "rails_helper"
 # @spec AUTO-MERGE-011
 RSpec.describe ConflictRepairs::ReassessScope do
   let(:project) { create(:project) }
+  let(:requester) { create(:user, :member, account: project.account) }
   let(:issue) { create(:issue, :pull_request, project:, github_number: 42) }
   let(:run) do
     create(:agent_run, :automatic, :failed, project:, issue:, goal: "create_pr", focus: "merge_conflict",
@@ -28,7 +29,7 @@ RSpec.describe ConflictRepairs::ReassessScope do
     allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
       ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "bounded repair", base_imported_paths: [], repair_authored_paths: []))
 
-    result = described_class.call(agent_run: run)
+    result = described_class.call(agent_run: run, requested_by: requester)
 
     expect(result).to be_accepted
     expect(result.evidence).to have_attributes(pre_run_sha: "pre-sha", integration_base_sha: "base-sha", result_sha: "result-sha", provider_head_sha: "result-sha", status: "approved")
@@ -39,7 +40,7 @@ RSpec.describe ConflictRepairs::ReassessScope do
     allow(client).to receive(:pull_request).and_return(OpenStruct.new(head: OpenStruct.new(sha: "new-head"), base:))
     expect(ConflictRepairs::AssessScope).not_to receive(:call)
 
-    result = described_class.call(agent_run: run)
+    result = described_class.call(agent_run: run, requested_by: requester)
 
     expect(result.evidence).to have_attributes(status: "unavailable", provider_head_sha: "new-head")
   end
@@ -48,7 +49,7 @@ RSpec.describe ConflictRepairs::ReassessScope do
     allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
       ConflictRepairs::AssessScope::Result.new(status: "rejected", explanation: "Gemfile is unrelated", base_imported_paths: [], repair_authored_paths: [ "Gemfile" ]))
 
-    expect(described_class.call(agent_run: run).evidence).to have_attributes(status: "rejected", repair_authored_paths: [ "Gemfile" ])
+    expect(described_class.call(agent_run: run, requested_by: requester).evidence).to have_attributes(status: "rejected", repair_authored_paths: [ "Gemfile" ])
   end
 
   it "refuses a non-failed producer without provider or harness I/O" do
@@ -56,6 +57,25 @@ RSpec.describe ConflictRepairs::ReassessScope do
     expect(client).not_to receive(:pull_request)
     expect(ConflictRepairs::AssessScope).not_to receive(:call)
 
-    expect(described_class.call(agent_run: run)).to have_attributes(status: :refused, reason: "producer_is_not_an_immutable_failed_repair")
+    expect(described_class.call(agent_run: run, requested_by: requester)).to have_attributes(status: :refused, reason: "producer_is_not_an_immutable_failed_repair")
+  end
+
+  it "refuses a missing or removed requester before provider or semantic I/O" do
+    expect(client).not_to receive(:pull_request)
+    expect(ConflictRepairs::AssessScope).not_to receive(:call)
+
+    expect(described_class.call(agent_run: run)).to have_attributes(status: :refused, reason: "requesting_actor_not_authorized")
+  end
+
+  it "does not reuse evidence when the integration base changes" do
+    ConflictRepairScopeEvidence.create!(agent_run: run, account: project.account, project:, issue:, requested_by: requester,
+      pre_run_sha: "pre-sha", integration_base_sha: "old-base", result_sha: "result-sha", provider_head_sha: "result-sha",
+      status: "approved", explanation: "old base", base_imported_paths: [], repair_authored_paths: [])
+    allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
+      ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "new base", base_imported_paths: [], repair_authored_paths: []))
+
+    result = described_class.call(agent_run: run, requested_by: requester)
+
+    expect(result.evidence.integration_base_sha).to eq("base-sha")
   end
 end

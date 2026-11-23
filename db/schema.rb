@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1152,6 +1152,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   end
 
   create_table "conflict_repair_scope_evidences", comment: "Immutable, provider-head-bound scope decisions for existing conflict-repair artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
     t.bigint "agent_run_id", null: false
     t.jsonb "base_imported_paths", default: [], null: false
     t.datetime "created_at", null: false
@@ -1166,7 +1167,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
     t.string "result_sha", null: false
     t.string "status", null: false
     t.datetime "updated_at", null: false
-    t.index ["agent_run_id", "pre_run_sha", "integration_base_sha", "result_sha", "provider_head_sha"], name: "index_conflict_repair_scope_evidence_binding", unique: true
+    t.index ["account_id"], name: "index_conflict_repair_scope_evidences_on_account_id"
+    t.index ["agent_run_id", "pre_run_sha", "integration_base_sha", "result_sha", "provider_head_sha", "status"], name: "index_conflict_repair_scope_evidence_identity", unique: true
     t.index ["agent_run_id"], name: "index_conflict_repair_scope_evidences_on_agent_run_id"
     t.index ["issue_id"], name: "index_conflict_repair_scope_evidences_on_issue_id"
     t.index ["project_id"], name: "index_conflict_repair_scope_evidences_on_project_id"
@@ -5393,6 +5395,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   add_foreign_key "configuration_experiment_variants", "configuration_experiments", on_delete: :cascade
   add_foreign_key "configuration_experiments", "accounts", on_delete: :cascade
   add_foreign_key "configuration_experiments", "configuration_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "conflict_repair_scope_evidences", "accounts"
   add_foreign_key "conflict_repair_scope_evidences", "agent_runs"
   add_foreign_key "conflict_repair_scope_evidences", "issues"
   add_foreign_key "conflict_repair_scope_evidences", "projects"
@@ -7362,6 +7365,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   SQL
 
   execute <<~SQL
+    ALTER TABLE "public"."conflict_repair_scope_evidences" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."conflict_repair_scope_evidences" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     ALTER TABLE "public"."container_metrics" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."container_metrics" FORCE ROW LEVEL SECURITY;
   SQL
@@ -8849,6 +8857,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
 
   execute <<~SQL
     CREATE POLICY "tenant_isolation" ON "public"."configuration_experiments"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
+      WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."conflict_repair_scope_evidences"
       AS PERMISSIVE
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
