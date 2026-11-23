@@ -18,7 +18,8 @@
 
 - [x] **TRUSTED-MEASUREMENTS-003** — When a named allowlisted check is run,
   Paid SHALL execute it through project tenant context, persist an idempotent
-  revision-bound result, retain a new row for a newer deployed revision, and
+  revision-bound result by supplying the attempt's single captured deployment
+  revision to the check, retain a new row for a newer deployed revision, and
   record execution failure without fabricating success or retaining a partial
   result as evidence. The operator task SHALL resolve the project and its
   account before establishing tenant context, including from a process with
@@ -81,9 +82,9 @@
   Concurrent process boots for a role SHALL remain independently observable;
   every fresh instance of both roles
   SHALL be complete, timestamp-coherent, refreshed by the live worker's own
-  heartbeat within the freshness window, and equal to the current deployment
-  revision before the result is successful, while stale superseded instances
-  SHALL NOT block adoption. In development, both the persisted
+  heartbeat within the freshness window, and equal to the deployment revision
+  captured for that attempt before the result is successful, while stale
+  superseded instances SHALL NOT block adoption. In development, both the persisted
   deployment identity and worker comparison SHALL retain the checkout-content
   fingerprint; a same-HEAD source change after worker boot SHALL remain unknown.
   The Temporal worker SHALL snapshot that complete identity before Rails loads

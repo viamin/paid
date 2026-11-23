@@ -7,12 +7,8 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
   let(:project) { create(:project) }
   let(:now) { Time.utc(2026, 11, 22, 7, 0, 58) }
 
-  before do
-    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return("revision-1")
-  end
-
-  def collect(at: now)
-    described_class.new(project:, clock: -> { at }).call
+  def collect(at: now, deployment_revision: "revision-1")
+    described_class.new(project:, deployment_revision:, clock: -> { at }).call
   end
 
   # The writer path the worker roles themselves use: bin/temporal_worker
@@ -29,7 +25,6 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
   # exactly as it does in production — no readiness file or in-process
   # readiness double bridges the boundary.
   it "collects adoption evidence the owning worker roles recorded through the shared database" do
-    expect(TrustedMeasurements::DeploymentSignal).to receive(:current).once.and_return("revision-1")
     expect(Process).not_to receive(:kill)
     record_role("poll", pid: 101, ready_at: now - 3.hours, heartbeat_at: now - 20.seconds)
     record_role("agent", pid: 102, ready_at: now - 2.hours, heartbeat_at: now - 45.seconds)
@@ -48,13 +43,12 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
   it "compares a development worker boot identity with the fingerprinted deployment identity" do
     head = "a73812f3c44ce6984fe00854059a17485d8c0617"
     deployment_revision = "development:#{head}:#{'b' * 64}"
-    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return(deployment_revision)
     record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
       revision: head, deployment_revision:)
     record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
       revision: head, deployment_revision:)
 
-    result = described_class.new(project:, clock: -> { now }, environment: "development").call
+    result = described_class.new(project:, deployment_revision:, clock: -> { now }, environment: "development").call
 
     expect(result).to be_passing
     expect(result.deployment_revision).to eq(deployment_revision)
@@ -64,13 +58,12 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     head = "a73812f3c44ce6984fe00854059a17485d8c0617"
     boot_identity = "development:#{head}:#{'a' * 64}"
     current_identity = "development:#{head}:#{'b' * 64}"
-    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return(current_identity)
     record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
       revision: head, deployment_revision: boot_identity)
     record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds,
       revision: head, deployment_revision: boot_identity)
 
-    result = described_class.new(project:, clock: -> { now }, environment: "development").call
+    result = described_class.new(project:, deployment_revision: current_identity, clock: -> { now }, environment: "development").call
 
     expect(result).to have_attributes(failure_reason: "poll_revision_mismatch")
   end

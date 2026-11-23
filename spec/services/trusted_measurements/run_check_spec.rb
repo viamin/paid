@@ -137,7 +137,8 @@ RSpec.describe TrustedMeasurements::RunCheck do
       environment: Rails.env.to_s, deployment_revision: "rev-1", project_scope: "project:#{project.id}:#{project.full_name}",
       workers: { "poll" => { "status" => "missing" } }, failure_reason: "missing_poll_readiness"
     )
-    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(worker_result)
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call)
+      .with(project:, deployment_revision: "rev-1").and_return(worker_result)
     expect(TrustedMeasurements::Escalate).to receive(:call).once.and_call_original
 
     attempt = call(key: "worker_adoption")
@@ -157,18 +158,35 @@ RSpec.describe TrustedMeasurements::RunCheck do
       environment: Rails.env.to_s, deployment_revision: "rev-1", project_scope: "project:#{project.id}:#{project.full_name}",
       workers: {}, failure_reason: nil
     )
-    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(result)
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call)
+      .with(project:, deployment_revision: "rev-1").and_return(result)
 
     first = call(key: "worker_adoption")
     expect(call(key: "worker_adoption").id).to eq(first.id)
 
     ENV["PAID_DEPLOYED_REVISION"] = "rev-2"
     revised_result = result.with(deployment_revision: "rev-2")
-    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(revised_result)
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call)
+      .with(project:, deployment_revision: "rev-2").and_return(revised_result)
     revised = call(key: "worker_adoption", expected_deployed_revision: "rev-2")
 
     expect(revised.id).not_to eq(first.id)
     expect(TrustedMeasurementAttempt.where(check_key: "worker_adoption").count).to eq(2)
+  end
+
+  it "evaluates worker adoption against the revision captured for the attempt" do
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).once.and_return("rev-1")
+    result = TrustedMeasurements::Checks::WorkerAdoption::Result.new(
+      environment: Rails.env.to_s, deployment_revision: "rev-1", project_scope: "project:#{project.id}:#{project.full_name}",
+      workers: {}, failure_reason: nil
+    )
+    expect(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call)
+      .with(project:, deployment_revision: "rev-1").and_return(result)
+
+    attempt = call(key: "worker_adoption")
+
+    expect(attempt).to have_attributes(status: "succeeded", deployed_revision: "rev-1")
+    expect(attempt.result.fetch("deployment_revision")).to eq("rev-1")
   end
 
   it "does not use another project's source issue as worker-adoption authority" do

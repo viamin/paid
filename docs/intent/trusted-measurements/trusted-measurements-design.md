@@ -15,13 +15,17 @@ application code without granting an operator arbitrary database execution.
 ## Design
 
 `TrustedMeasurements::ALLOWLIST` is the sole registry of checks. Each entry
-names a versioned Ruby check that accepts a project, uses tenant-scoped
+names a versioned Ruby check that accepts a project and the runner's captured
+deployment revision, uses tenant-scoped
 ActiveRecord reads, and returns a bounded structured result. The runner never
 accepts SQL, a repository command, or a dynamically selected class.
 
 Each collection request names the exact target revision it expects the deploy
-pipeline to report. A missing signal or a signal for another revision records
-unknown evidence and does not execute the read check. An attempt is uniquely
+pipeline to report. The runner captures that signal once and supplies the same
+revision to the check whose result it persists, so an overlapping deployment
+cannot evaluate one revision under another revision's attempt key. A missing
+signal or a signal for another revision records unknown evidence and does not
+execute the read check. An attempt is uniquely
 identified by project, source issue number, criterion, check key/version, and
 deployed revision. It retains project/account scope,
 execution time, result, and terminal status. Retrying an identical deployment
@@ -61,9 +65,9 @@ For each projected instance it retains only the PID, boot time, raw boot
 revision, boot-time deployment identity, and latest beat. The check requires both
 roles' observations to exist, carry a complete typed identity, be internally
 coherent, carry a heartbeat the live worker itself refreshed within the
-freshness window, and requires every fresh instance to equal the current
-deployment identity. A stale superseded instance no longer blocks adoption,
-but a fresh superseded instance does. Freshness is the
+freshness window, and requires every fresh instance to equal the deployment
+identity captured for the attempt. A stale superseded instance no longer
+blocks adoption, but a fresh superseded instance does. Freshness is the
 heartbeat, not the static boot receipt: a healthy worker keeps beating for its
 whole lifetime, while a dead or interrupted worker stops, so long-lived
 workers stay current and missing adoption fails closed. It returns unknown

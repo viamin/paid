@@ -12,7 +12,7 @@ module TrustedMeasurements
     # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 5
+      VERSION = 6
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -23,17 +23,17 @@ module TrustedMeasurements
       end
 
       def self.version = VERSION
-      def self.call(project:) = new(project:).call
+      def self.call(project:, deployment_revision:) = new(project:, deployment_revision:).call
 
-      def initialize(project:, observations: WorkerReadinessObservation, clock: -> { Time.current }, environment: Rails.env)
+      def initialize(project:, deployment_revision:, observations: WorkerReadinessObservation, clock: -> { Time.current }, environment: Rails.env)
         @project = project
+        @deployment_revision = deployment_revision
         @observations = observations
         @clock = clock
         @environment = environment
       end
 
       def call
-        deployment_revision = DeploymentSignal.current
         observed_at = clock.call
         records = ROLES.to_h { |role| [ role, records_for(role, observed_at) ] }
         Result.new(
@@ -49,7 +49,7 @@ module TrustedMeasurements
 
       private
 
-      attr_reader :clock, :environment, :observations, :project
+      attr_reader :clock, :deployment_revision, :environment, :observations, :project
 
       def records_for(role, observed_at)
         role_records = observations.for_role(role)

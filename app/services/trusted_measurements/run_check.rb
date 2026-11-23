@@ -100,7 +100,7 @@ module TrustedMeasurements
     # two runs) gets picked up without creating a second row for the same
     # revision (@spec TRUSTED-MEASUREMENTS-004).
     def execute!(attempt, check_class)
-      outcome = check_class.call(project: project)
+      outcome = check_class.call(project: project, deployment_revision: attempt.deployed_revision)
       if outcome.respond_to?(:unknown?) && outcome.unknown?
         return persist_unknown!(attempt, outcome.failure_reason, result: outcome.to_h.stringify_keys)
       end
