@@ -57,3 +57,11 @@
   API-key direct-outbound runner has no active catalog rows and no currently
   configured model to preserve, the runner form SHALL render a manual
   model-id text field instead of a permanently disabled, empty select.
+
+- [x] **DIRECT-OUTBOUND-CATALOG-011** — When an API-key direct-outbound
+  runner is saved, catalog-provider validation SHALL accept an exact
+  OpenRouter-synced model row for an OpenRouter key even when its provider is
+  the upstream vendor. Other keys SHALL still require their own provider;
+  manual foreign-vendor rows SHALL NOT receive this exception. Saving SHALL
+  preserve the existing catalog identity and vendor.
+  *Tests:* `spec/models/runner_openrouter_synced_catalog_spec.rb`.

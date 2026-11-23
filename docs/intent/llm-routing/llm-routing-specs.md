@@ -57,3 +57,32 @@
   its disposable container. An uncredentialed subscription SHALL report
   `missing_credential`, be excluded from isolated-text candidates, and never
   trigger host CLI execution or API-key billing substitution.
+
+- [x] **LLM-ROUTING-011** — Before excluding a rotating managed subscription
+  credential from isolated text routing, the system SHALL distinguish an expired
+  but refreshable unrevoked credential from missing or revoked authentication.
+  The former SHALL reach the provider-owned serialized refresh lifecycle at
+  every isolated-text routing and readiness surface; only
+  a fresh result may be materialized. A Test Runner result using host-forwarded
+  authentication SHALL identify that source and SHALL NOT imply standalone
+  managed-audit readiness.
+  A newer expired credential that cannot refresh SHALL NOT shadow an older fresh
+  credential at those surfaces.
+  *Tests:* `spec/services/llm/request_spec.rb`,
+  `spec/requests/api/standalone_text_credentials_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`.
+  *Code:* `Llm::Request`, `Runners::ManagedCredentialLifecycle`,
+  `Api::StandaloneTextCredentialsController`.
+
+- [x] **LLM-ROUTING-012** — For a bounded report-only acceptance request,
+  `Llm::Request` SHALL retain at most five safe route-attempt entries: owned
+  runner identity, resolved provider and model when execution began, ordinal,
+  allocated and elapsed time, execution phase or `unknown`, normalized outcome,
+  and request correlation identifiers. Candidates not executed because policy,
+  availability, credentials, or the total deadline prevented execution SHALL be
+  marked `skipped`. The terminal raised failure SHALL identify the actual
+  producing attempt; permanent authentication/configuration failures retain
+  their existing precedence over transient failures. No entry may contain a
+  prompt, response, credential, URL, HTTP body, or unbounded error text.
+  *Tests:* `spec/services/llm/request_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`.

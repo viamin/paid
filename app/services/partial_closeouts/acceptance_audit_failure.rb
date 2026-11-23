@@ -8,13 +8,15 @@ module PartialCloseouts
   # input coverage — is a substantive assessment, never a retry candidate,
   # and changed evidence is a fresh logical audit through ordinary
   # admission, not a re-run of a stale attempt.
-  # @spec PARTIAL-CLOSEOUT-056 PARTIAL-CLOSEOUT-058 AGENT-RETRY-016
+  # @spec PARTIAL-CLOSEOUT-056 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059 AGENT-RETRY-016
   class AcceptanceAuditFailure
     MAX_DIAGNOSTIC_VALUE_LENGTH = 120
     MAX_DIAGNOSTIC_FIELDS = 10
-    DIAGNOSTIC_KEYS = %w[category provider model request_id attempt_id at].freeze
+    DIAGNOSTIC_KEYS = %w[category provider model configured_primary_provider configured_primary_model request_id attempt_id at].freeze
+    ATTEMPT_TRACE_KEYS = %w[ordinal runner_id runner provider model outcome elapsed_ms allocated_ms phase skip_reason].freeze
     TRANSIENT_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json invalid_assessment].freeze
     AUTHENTICATION_CATEGORIES = %w[authentication_unavailable].freeze
+    CONFIGURATION_CATEGORIES = %w[configuration_error].freeze
     TRANSIENT_MESSAGES = [
       "Partial closeout assessment transport failed.",
       "Partial closeout assessment timed out.",
@@ -44,6 +46,7 @@ module PartialCloseouts
           field.stringify_keys.slice("path", "expected", "actual").compact
             .transform_values { |value| bounded_diagnostic_value(value) }
         end
+        result["attempt_trace"] = safe_attempt_trace(source["attempt_trace"] || source[:attempt_trace]) if (source["attempt_trace"] || source[:attempt_trace]).is_a?(Hash)
         result
       end
 
@@ -73,6 +76,22 @@ module PartialCloseouts
         value.class.name.first(MAX_DIAGNOSTIC_VALUE_LENGTH)
       end
 
+      def safe_attempt_trace(trace)
+        source = trace.stringify_keys
+        attempts = source["attempts"].is_a?(Array) ? source["attempts"].first(5) : []
+        result = {
+          "attempts" => attempts.filter_map do |attempt|
+            next unless attempt.is_a?(Hash)
+
+            attempt.stringify_keys.slice(*ATTEMPT_TRACE_KEYS).compact
+              .transform_values { |value| bounded_diagnostic_value(value) }
+          end
+        }
+        selected_attempt_ordinal = source["selected_attempt_ordinal"]
+        result["selected_attempt_ordinal"] = bounded_diagnostic_value(selected_attempt_ordinal) unless selected_attempt_ordinal.nil?
+        result
+      end
+
       # A "retried" run keeps the failure signature that justified its retry,
       # so the sweep can still distinguish a superseded transient attempt
       # from a deterministic one.
@@ -80,6 +99,7 @@ module PartialCloseouts
         category = agent_run.reconciliation.to_h.dig("acceptance_audit_failure", "category")
         return :transient_transport if category.in?(TRANSIENT_CATEGORIES)
         return :authentication_or_configuration if category.in?(AUTHENTICATION_CATEGORIES)
+        return :authentication_or_configuration if category.in?(CONFIGURATION_CATEGORIES)
         return :transient_transport if transport_interruption?(agent_run)
 
         TRANSIENT_MESSAGES.any? { |message| agent_run.error_message.to_s.start_with?(message) } ? :transient_transport : :non_transient_failure

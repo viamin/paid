@@ -141,6 +141,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     svc = build_service(agent_run: agent_run)
     written = {}
 
+    allow(svc).to receive(:opencode_managed_runner_credential).and_return(credential)
     allow(svc).to receive(:write_container_file) { |path, content| written[path] = content }
     stub_opencode_refresh!(svc, credential)
 
@@ -267,6 +268,26 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     expect(payload.dig("openai", "refresh")).to eq("opencode-rotated-refresh-token")
   end
 
+  # @spec SUBSCRIPTION-RUNNER-AUTH-006
+  it "does not materialize an expired OpenCode credential when refresh fails" do
+    runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(
+      runner_key: "opencode",
+      fixture_name: "codex_auth_expired.json",
+      expires_at: 5.minutes.ago
+    )
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive_messages(
+      opencode_managed_runner_credential: credential,
+      refresh_opencode_managed_credential!: false
+    )
+
+    expect(svc).not_to receive(:write_container_file)
+    expect(svc.send(:materialize_managed_opencode_credentials!)).to be(false)
+  end
+
   it "harvests rotated OpenCode auth.json back into the canonical credential" do
     runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
@@ -388,6 +409,28 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     payload = seed_omp_and_read_payload(agent_run: agent_run, credential: credential)
     expect(payload["access_token"]).to eq("omp-rotated-access-token")
     expect(payload["refresh_token"]).to eq("omp-rotated-refresh-token")
+  end
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-006
+  it "does not import an expired OMP credential when refresh fails" do
+    runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
+    agent_run = create(:agent_run, project: project, runner: runner)
+    credential = create_managed_oauth_credential(
+      runner_key: "omp",
+      fixture_name: "claude_credentials_valid.json",
+      expires_at: 5.minutes.ago
+    )
+    svc = build_service(agent_run: agent_run)
+
+    allow(svc).to receive_messages(
+      omp_managed_runner_credential: credential,
+      refresh_omp_managed_credential!: false
+    )
+    allow(local_backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    expect(svc).not_to receive(:write_container_file)
+    expect(svc.send(:materialize_managed_omp_credentials!)).to be(false)
+    expect(local_backend).not_to have_received(:exec_in_container).with(container, omp_import_command, user: "agent")
   end
 
   it "harvests rotated OMP broker state back into the canonical credential" do

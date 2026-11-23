@@ -10,6 +10,18 @@ RSpec.describe Tools::GetProjectPullRequests do
   let(:project) { create(:project, account: account) }
 
   describe "#call" do
+    # @spec AUTO-MERGE-012
+    it "distinguishes technical work from a simultaneous human review request" do
+      pr = create(:issue, :pull_request, project:,
+        technical_merge_blockers: [ { "key" => "sdk", "reason" => "SDK failure" } ])
+      expect(tool.call(project_id: project.id).sole).to include(
+        human_review_requested: false, technical_merge_blocker_count: 1)
+
+      pr.update!(labels: [ "paid-hold-review" ])
+      expect(tool.call(project_id: project.id).sole).to include(
+        human_review_requested: true, technical_merge_blocker_count: 1)
+    end
+
     it "returns only pull requests" do
       pr = create(:issue, :pull_request, project: project)
       create(:issue, project: project)

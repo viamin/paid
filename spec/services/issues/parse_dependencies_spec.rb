@@ -53,6 +53,16 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(actual)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not persist #4707's comma-attributed external prerequisite for #5236" do
+      issue = create(:issue, project: project, github_number: 5236,
+        body: "This setup/save correction does not prove request-level privacy enforcement: the separate verified configuration-loss gap remains #4707, blocked by viamin/agent-harness#557.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.issue_dependencies).to be_empty
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-009
     it "ignores another issue's prerequisite when its directive is folded in a list item" do
       body = <<~MARKDOWN

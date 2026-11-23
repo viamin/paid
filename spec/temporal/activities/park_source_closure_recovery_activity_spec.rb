@@ -29,6 +29,7 @@ RSpec.describe Activities::ParkSourceClosureRecoveryActivity do
     }.not_to have_enqueued_job(SourceClosureRecoveryJob)
 
     expect(agent_run.reload).to be_waiting_recovery
+    expect(agent_run.reconciliation.dig("source_closure_recovery", "next_retry_at")).to be_nil
   end
 
   # @spec PARTIAL-CLOSEOUT-044

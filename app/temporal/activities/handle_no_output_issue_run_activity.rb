@@ -94,7 +94,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005 NO-OUTPUT-ISSUE-008
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005 NO-OUTPUT-ISSUE-008 NO-OUTPUT-ISSUE-010 NO-OUTPUT-ISSUE-011
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -128,12 +128,16 @@ module Activities
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
         when "needs_input"
-          handle_needs_input(client, agent_run, agent_summary)
+          handle_needs_input(client, agent_run, agent_summary, no_output_next_action(agent_run))
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
+        when "continue"
+          record_no_progress_outcome(agent_run, issue, outcome:)
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
         else
           handle_recommend_close(client, agent_run, agent_summary)
-          record_no_progress_outcome(agent_run, issue)
+          record_no_progress_outcome(agent_run, issue, outcome:)
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
         end
@@ -154,10 +158,10 @@ module Activities
     private
 
     # @spec NO-OUTPUT-ISSUE-009
-    def record_no_progress_outcome(agent_run, issue)
+    def record_no_progress_outcome(agent_run, issue, outcome:)
       agent_run.update!(reconciliation: agent_run.reconciliation.merge(
         "no_progress" => {
-          "outcome" => "recommend_close",
+          "outcome" => outcome,
           "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
           "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
         }
@@ -191,7 +195,59 @@ module Activities
 
       return "no_code_required" if no_code_required_rationale.present?
 
-      "recommend_close"
+      no_output_disposition_for(agent_run, diagnostic_output).fetch("disposition")
+    end
+
+    # A run's prose is untrusted semantic input: output presence can establish
+    # that work was attempted, never that the source issue is resolved. Persist
+    # the typed assessment before acting so retries do not make a second request
+    # or turn an unchanged run into a different decision.
+    def no_output_disposition_for(agent_run, diagnostic_output) # @spec NO-OUTPUT-ISSUE-010 NO-OUTPUT-ISSUE-011
+      persisted = agent_run.reconciliation.to_h["no_output_disposition"]
+      continuation_authorized = continuation_authorized?(agent_run)
+      return persisted if valid_no_output_disposition?(persisted, continuation_authorized:)
+
+      assessment = Llm::AssessNoOutputDisposition.call(
+        agent_run:, diagnostic_output:, continuation_authorized:
+      )
+      agent_run.update!(reconciliation: agent_run.reconciliation.merge("no_output_disposition" => assessment))
+      assessment
+    rescue Llm::AssessNoOutputDisposition::DispositionFailure, AgentHarness::ConfigurationError
+      fallback_no_output_disposition(agent_run)
+    end
+
+    def valid_no_output_disposition?(assessment, continuation_authorized:)
+      Llm::AssessNoOutputDisposition.valid_disposition?(assessment, continuation_authorized:)
+    end
+
+    def continuation_authorized?(agent_run)
+      decision = Automation::EffectivePolicy.call(
+        project: agent_run.project,
+        phase: Automation::Phases::CODING,
+        work_item: agent_run.issue,
+        trigger: :automatic
+      )
+      return false unless decision.permitted?
+      return true if decision.source == :continuation_grant
+
+      Issues::AutoPickProjectGate.call(agent_run.project) &&
+        Automation::FeatureActivation.issue_auto_pick_trigger(
+          project: agent_run.project, issue: agent_run.issue
+        ).present?
+    end
+
+    def fallback_no_output_disposition(agent_run)
+      assessment = {
+        "disposition" => "needs_input",
+        "rationale" => "Paid could not validate whether this no-PR run resolved the issue.",
+        "next_action" => "Review the run output and state the remaining work or closure rationale before re-triggering."
+      }
+      agent_run.update!(reconciliation: agent_run.reconciliation.merge("no_output_disposition" => assessment))
+      assessment
+    end
+
+    def no_output_next_action(agent_run)
+      agent_run.reconciliation.to_h.dig("no_output_disposition", "next_action")
     end
 
     # Parses the agent's declared no-code-required rationale from the
@@ -315,14 +371,15 @@ module Activities
       issue.update!(paid_state: "failed") if issue.paid_state != "failed"
     end
 
-    def handle_needs_input(client, agent_run, agent_summary)
+    def handle_needs_input(client, agent_run, agent_summary, next_action = nil)
       project = agent_run.project
       issue = agent_run.issue
-      issue.update!(paid_state: "needs_input")
+      guidance = next_action.presence || "A trusted collaborator should reply with the details required to continue."
+      issue.update!(paid_state: "needs_input", needs_input_questions: [ guidance ])
       add_needs_input_label(client, project, issue)
       remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
-      post_needs_input_comment(client, agent_run, agent_summary)
+      post_needs_input_comment(client, agent_run, agent_summary, guidance)
     end
 
     # The agent explicitly declared this issue's work complete without a code
@@ -467,7 +524,7 @@ module Activities
       text.each_line.reject { |line| provider_error_redaction_line?(line) }.join.strip
     end
 
-    def post_needs_input_comment(client, agent_run, agent_summary)
+    def post_needs_input_comment(client, agent_run, agent_summary, exact_next_action = nil)
       project = agent_run.project
       automation_label = triggering_label_for(project)
       needs_input_label = project.label_for_stage("needs_input") || PAID_NEEDS_INPUT_LABEL
@@ -492,7 +549,7 @@ module Activities
 
       next_steps = [
         "**Next steps:**",
-        "1. A trusted collaborator should reply to this issue with clarifying details.",
+        "1. #{exact_next_action.presence || "A trusted collaborator should reply to this issue with clarifying details."}",
         "2. Remove the `#{needs_input_label}` label."
       ]
 

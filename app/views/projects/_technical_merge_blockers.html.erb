@@ -1,0 +1,18 @@
+<%# @spec AUTO-MERGE-012 %>
+<% if blockers.any? %>
+  <details class="mt-2 text-sm text-gray-700">
+    <summary class="cursor-pointer font-medium">Technical work pending — Paid or agent action</summary>
+    <ul class="mt-1 space-y-2">
+      <% blockers.each do |blocker| %>
+        <li class="break-words">
+          <p><%= blocker.fetch("reason") %></p>
+          <p>Ready when: <%= blocker.fetch("release_condition") %></p>
+          <% if blocker["owner_issue_number"] %>
+            <p>Responsible work: <%= link_to "##{blocker.fetch("owner_issue_number")}", "https://github.com/#{project.issue_target_repository}/issues/#{blocker.fetch("owner_issue_number")}", class: "text-indigo-600 underline", target: "_blank", rel: "noopener noreferrer" %></p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+    <p class="mt-1">This is technical work, not a request for human approval.</p>
+  </details>
+<% end %>

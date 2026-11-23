@@ -143,6 +143,33 @@ RSpec.describe ChatTurn do
       expect(turn.failure_classification).to eq("validation_error")
       expect(turn.lifecycle_events.pluck(:event_name)).to include("chat_turn.failed")
     end
+
+    # @spec CHAT-TURN-RECOVERY-008
+    it "classifies an empty model response without completing the turn" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+
+      turn.fail!(error: ChatSessions::AgentLoop::EmptyResponseError.new(tokens_input: 12, tokens_output: 0, model: "model"))
+
+      expect(turn).to have_attributes(status: "failed", failure_classification: "empty_response")
+      expect(turn.chat_session.messages.last).to be_chat_turn_failure_notice
+    end
+
+    # @spec CHAT-TURN-RECOVERY-008
+    it "withdraws Retry when the final empty-response recovery attempt fails" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      error = ChatSessions::AgentLoop::EmptyResponseError.new(tokens_input: 0, tokens_output: 0, model: "model")
+      turn.fail!(error: error)
+      notice = turn.chat_session.messages.last
+      turn.update!(status: "streaming", failure_classification: nil,
+        recovery_attempts: described_class::MAX_RECOVERY_ATTEMPTS)
+
+      turn.fail!(error: error)
+
+      expect(turn.chat_session.messages.last).to eq(notice)
+      notice.reload
+      expect(notice.content).to include("attempts are exhausted")
+      expect(notice.metadata).to include("retry_available" => false)
+    end
   end
 
   describe "#claim_recovery!" do
@@ -167,6 +194,39 @@ RSpec.describe ChatTurn do
       turn.update!(status: "completed")
 
       expect(turn.claim_recovery!(triggered_by: "manual")).to be(false)
+    end
+
+    # @spec CHAT-TURN-RECOVERY-008
+    it "allows one manual retry for an empty-response failure" do
+      turn.update!(status: "failed", failure_classification: "empty_response")
+
+      expect(turn.claim_recovery!(triggered_by: "manual")).to be(true)
+      expect(turn).to have_attributes(status: "streaming", failure_classification: nil)
+    end
+
+    it "does not automatically retry an empty-response failure" do
+      turn.update!(status: "failed", failure_classification: "empty_response")
+
+      expect(turn.claim_recovery!(triggered_by: "automatic")).to be(false)
+      expect(turn.reload.status).to eq("failed")
+    end
+
+    it "keeps completed tool results when claiming an empty-response retry" do
+      completed_tool_result = create(:chat_message, chat_session: chat_session, role: "tool",
+        tool_call_id: "completed-call", tool_name: "list_repo_tree", tool_result: { "status" => "ok" })
+      turn.update!(status: "failed", failure_classification: "empty_response")
+
+      expect { turn.claim_recovery!(triggered_by: "manual") }
+        .not_to change { ChatMessage.where(id: completed_tool_result.id).count }
+    end
+
+    it "refreshes rather than duplicates the empty-response notice after a retry fails" do
+      error = ChatSessions::AgentLoop::EmptyResponseError.new(tokens_input: 0, tokens_output: 0, model: "model")
+      turn.fail!(error: error)
+      turn.claim_recovery!(triggered_by: "manual")
+
+      expect { turn.fail!(error: error) }
+        .not_to change { chat_session.messages.where("metadata ->> 'chat_turn_failure_notice' = 'true'").count }
     end
 
     it "abandons an exhausted stalled turn instead of starting another recovery" do

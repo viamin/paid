@@ -96,8 +96,38 @@ land.
 This declaration channel is deliberately narrow: it only recognizes an
 explicit, well-formed marker from the agent's own output. It does not attempt
 to infer issue type from title, labels, or body content (that would be
-exactly the guess-from-absence pattern this design avoids). Runs whose output
-contains no declaration retain today's classification behavior unchanged.
+exactly the guess-from-absence pattern this design avoids).
+
+## Semantic disposition for observable no-PR work
+
+Observable main-agent work is evidence that an agent ran; it is not evidence
+that the source issue is resolved. After typed provider and infrastructure
+failure handling and an explicit no-code-required declaration have been
+considered, `HandleNoOutputIssueRunActivity` requests a bounded,
+schema-validated disposition through the existing `Llm::Request` /
+`agent_harness` route. The assessment receives the issue scope and bounded run
+output and returns one of `recommend_close`, `needs_input`, or `continue`, with
+a rationale and an exact next action. This is semantic judgment, so it must not
+be inferred from output wording, labels, or a regex classifier.
+
+An actionable proposal or remaining implementation plan is `continue` only
+when the canonical effective policy independently proves that coding is already
+authorized and the output identifies no missing human decision. The handler
+keeps the issue eligible for the existing continuation path; the semantic
+assessment cannot create or enlarge that authority. A necessary approval or
+decision is `needs_input`. The handler retains that typed result on the run,
+persists its next action in the standard clarifying-question projection, and
+presents it in the GitHub explanation and existing Inbox/run surfaces. It does
+not create a continuation request, implementation authority, merge authority,
+or budget authority from the agent's assessment; already-authorized
+continuations remain owned by their existing policy and request paths.
+
+Malformed, missing, or unavailable semantic dispositions fail closed to
+`needs_input` with an operator-visible request to review the run and provide
+the required disposition. Only an explicit, validated `recommend_close`
+assessment reaches the existing recommend-close path. The typed assessment is
+persisted and reused on activity replay, preserving comment idempotency and
+preventing an activity callback from creating duplicate semantic requests.
 
 ## Main-agent work evidence
 
@@ -146,13 +176,17 @@ comment failure to self-heal once the human-visible rationale exists.
 ## Repeated no-progress implementation runs
 
 A `recommend_close` result is not proof that an issue is complete and never
-authorizes Paid to close the source issue. It is, however, durable evidence
-that a `create_pr` run made no delivery progress when the run records no pull
-request and no result commit. The handler snapshots the current closeout-evidence
-and issue-intent revisions with that outcome. Auto-pick derives a hold from
-those run facts only after two automatic no-progress runs for the same revision
-pair. The hold applies both while admitting work and while dequeuing it, so
-overlapping poll, sweep, and worker claims cannot start another identical run.
+authorizes Paid to close the source issue. A `continue` result preserves valid
+existing coding authority but is likewise not evidence of delivery progress.
+Either result is durable no-progress evidence when a `create_pr` run records no
+pull request and no result commit. The handler snapshots the current
+closeout-evidence and issue-intent revisions with that outcome. Auto-pick
+derives a hold from those run facts only after two automatic no-progress runs
+for the same revision pair. The hold applies both while admitting work and
+while dequeuing it, so overlapping poll, sweep, and worker claims cannot start
+another identical run. The first authorized continuation remains eligible;
+the finite hold prevents repeated unchanged continuations from becoming an
+unbounded automatic loop.
 
 The hold is released automatically when either revision changes. An authorized
 explicit retry remains outside automatic admission and records a release fact

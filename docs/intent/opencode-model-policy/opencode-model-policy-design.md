@@ -156,9 +156,11 @@ remain unchanged. Stored catalog IDs and API-chat model IDs remain unqualified.
 - Dispatch for `model_policy == "free"` is wired for the supported
   direct-outbound runners. `agent_harness_runner_runtime` resolves the
   free-tier model through `Runners::FreeModelExecutionPlan` and emits
-  OpenRouter provider-routing metadata derived from the project's data
-  classification. Pi and OMP additionally carry their existing
-  auth metadata/env alongside the OpenRouter routing metadata. KiloCode
+  an explicit OpenRouter provider identity and routing derived from the
+  project's data classification. Required ZDR routing uses the SDK privacy
+  payload; non-ZDR CLI routing remains in runner-specific provider options.
+  Pi and OMP additionally carry their existing auth metadata/env alongside
+  the OpenRouter routing metadata. KiloCode
   translates the same routing into its provider-options config shape.
 - Pi and OMP still depend on upstream CLI support to consume that
   OpenRouter provider-routing metadata: Paid can force `--provider

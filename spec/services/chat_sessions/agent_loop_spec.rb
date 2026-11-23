@@ -535,15 +535,17 @@ RSpec.describe ChatSessions::AgentLoop do
         end.new
       end
 
-      it "persists a visible assistant message instead of silently completing" do
+      # @spec CHAT-TURN-RECOVERY-008
+      it "raises a classified failure without persisting an assistant answer" do
         allow(Rails.logger).to receive(:warn)
 
-        result = described_class.new(chat_session: chat_session, llm_client: llm_client).run
+        expect {
+          described_class.new(chat_session: chat_session, llm_client: llm_client).run
+        }.to raise_error(described_class::EmptyResponseError) { |error|
+          expect(error).to have_attributes(tokens_input: 12, tokens_output: 0, model: "glm-5.1")
+        }
 
-        expect(result).to be_a(ChatMessage)
-        expect(result.content).to eq(described_class::EMPTY_RESPONSE_MESSAGE)
-        expect(result).to have_attributes(tokens_input: 12, tokens_output: 0, model: "glm-5.1")
-        expect(chat_session.messages.where(role: "assistant").last).to eq(result)
+        expect(chat_session.messages.where(role: "assistant")).to be_empty
         expect(Rails.logger).to have_received(:warn).with(hash_including(
           message: "chat_agent_loop.empty_response",
           chat_session_id: chat_session.id,

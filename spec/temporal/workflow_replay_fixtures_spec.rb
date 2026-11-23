@@ -51,6 +51,12 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
     expect(publication.start_to_close_timeout.seconds).to eq(30)
     expect(publication.retry_policy.maximum_attempts).to eq(3)
 
+    cleanup_activity_names = history.events.filter_map(&:activity_task_scheduled_event_attributes)
+      .map { |activity| activity.activity_type.name }
+    expect(cleanup_activity_names).to include(
+      "CleanupContainer", "CleanupMcpServers", "CleanupServices", "CleanupWorktree", "EnqueueJanitor"
+    )
+
     result = Temporalio::Worker::WorkflowReplayer.new(
       workflows: [ Workflows::AgentExecutionWorkflow ],
       data_converter: Paid::TemporalDataConverter.new,

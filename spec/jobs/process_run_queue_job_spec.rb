@@ -627,7 +627,7 @@ RSpec.describe ProcessRunQueueJob do
       user = project.created_by
       user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
       queued_run = create(:agent_run, :queued, project: project)
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+      stub_auto_mode_capacity(auto_mode_snapshot)
 
       expect(temporal_client).not_to receive(:start_workflow)
 
@@ -650,7 +650,7 @@ RSpec.describe ProcessRunQueueJob do
       eligible_project = create(:project)
       eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
 
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+      stub_auto_mode_capacity(auto_mode_snapshot)
 
       started_ids = []
       allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
@@ -671,7 +671,7 @@ RSpec.describe ProcessRunQueueJob do
       create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
       eligible_project = create(:project, account: blocked_project.account, created_by: blocked_user)
       eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(available: false, reason: "docker_timeout",
+      stub_auto_mode_capacity(available: false, reason: "docker_timeout",
         snapshot_at: Time.current, confidence: "low")
       started_ids = []
       allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
@@ -688,7 +688,7 @@ RSpec.describe ProcessRunQueueJob do
       user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
       create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
       create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+      stub_auto_mode_capacity(
         available: true,
         effective_agent_budget_bytes: 16 * 1024 * 1024 * 1024,
         snapshot_at: Time.current,
@@ -709,7 +709,7 @@ RSpec.describe ProcessRunQueueJob do
       create(:container_metric, agent_run: running_run, memory_limit_bytes: 6.gigabytes, recorded_at: 1.minute.ago)
       create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
       create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+      stub_auto_mode_capacity(
         available: true,
         effective_agent_budget_bytes: 20.gigabytes,
         snapshot_at: Time.current,
@@ -741,7 +741,7 @@ RSpec.describe ProcessRunQueueJob do
       manual_run  = create(:agent_run, :queued, project: manual_project, created_at: 3.minutes.ago)
       auto_run2   = create(:agent_run, :queued, project: auto_project, created_at: 1.minute.ago)
 
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+      stub_auto_mode_capacity(
         available: true,
         effective_agent_budget_bytes: 2 * Capacity::RunAdmission::DEFAULT_ESTIMATED_MEMORY_BYTES,
         snapshot_at: Time.current,
@@ -1654,6 +1654,22 @@ RSpec.describe ProcessRunQueueJob do
           notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
           expect(notification.metadata).to include("boundary" => "dequeue")
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+        end
+
+        it "passes persisted proposed repair evidence into the dequeue recheck" do # @spec BOUNDED-PHASE-AUTHORIZATION-006
+          project = create(:project, :with_github_installation, auto_pick_enabled: true)
+          audit = create(:agent_run, :completed, project: project, goal: "layered_verification_audit")
+          evidence = { "cycle_evidence" => [ "failed_check" ], "proposed_repair" => "Repair the failed check" }
+          run = create(:agent_run, :queued, :automatic, project: project, goal: "layered_verification_repair",
+            originating_audit_run: audit, external_metadata: { "action_evidence" => evidence })
+          blocked_recheck = instance_double(Automation::DelegatedWorkBoundary::Result,
+            permitted?: false, boundary: :dequeue, reasons: [ :scope_correspondence ])
+          allow(Automation::DelegatedActionAdmission).to receive(:call).and_return(blocked_recheck)
+
+          expect(job.send(:delegated_boundary_blocked?, run)).to be(true)
+          expect(Automation::DelegatedActionAdmission).to have_received(:call).with(
+            hash_including(goal: "layered_verification_repair", action_evidence: evidence)
+          )
         end
 
         it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
@@ -2738,6 +2754,11 @@ RSpec.describe ProcessRunQueueJob do
 
   def stub_policy_decision(decision)
     allow(Capacity::Policy).to receive(:call).and_return(decision)
+  end
+
+  def stub_auto_mode_capacity(snapshot)
+    stub_policy_decision(local_auto_decision)
+    allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(snapshot)
   end
 
   def remote_backend_decision

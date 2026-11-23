@@ -6,6 +6,14 @@
 # never review credentials or other secrets.
 # @spec PROMPT-ASSEMBLY-025, AUTO-MERGE-009
 class PromptAssembly::Sections::EffectiveMergeReviewPosture
+  TECHNICAL_BLOCKER_GUIDANCE = <<~GUIDANCE.freeze
+    Labels request human intervention; do not use them to store technical
+    acceptance, verification, repair or integration state. Record a technical
+    stop through update_technical_merge_blocker, naming the responsible issue
+    and verifiable release condition. Resolve that internal entry only after
+    applicable evidence is verified; this does not approve or merge the PR.
+  GUIDANCE
+
   include PromptAssembly::Sections::Base
 
   private
@@ -13,6 +21,8 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
   def build_section
     <<~POSTURE
       # Effective Merge and Review Posture
+
+      #{TECHNICAL_BLOCKER_GUIDANCE}
 
       This is the current project policy resolved when this run starts.
       - Auto-merge mode: #{auto_merge_mode}

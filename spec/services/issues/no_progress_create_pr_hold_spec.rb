@@ -6,14 +6,14 @@ RSpec.describe Issues::NoProgressCreatePrHold do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project:) }
 
-  def record_no_progress_run
+  def record_no_progress_run(outcome: "recommend_close")
     revisions = {
       "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
       "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
     }
     create(:agent_run, :completed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
       pull_request_number: nil, pull_request_url: nil, result_commit_sha: nil,
-      reconciliation: { "no_progress" => revisions.merge("outcome" => "recommend_close") })
+      reconciliation: { "no_progress" => revisions.merge("outcome" => outcome) })
   end
 
   it "does not hold a single no-progress implementation run" do # @spec NO-OUTPUT-ISSUE-009
@@ -32,6 +32,12 @@ RSpec.describe Issues::NoProgressCreatePrHold do
       run_ids: contain_exactly(first.id, second.id),
       next_action: "Update acceptance evidence or request an authorized retry."
     )
+  end
+
+  it "holds repeated authorized continuations with no delivery progress" do # @spec NO-OUTPUT-ISSUE-009
+    2.times { record_no_progress_run(outcome: "continue") }
+
+    expect(described_class.held_issue_ids(project)).to contain_exactly(issue.id)
   end
 
   it "uses only the latest attempts that can establish the hold" do # @spec NO-OUTPUT-ISSUE-009

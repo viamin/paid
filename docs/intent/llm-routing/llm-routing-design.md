@@ -22,9 +22,17 @@ Post-push source-closure assessments use the owner's enabled fallback order
 when the run's pinned runner cannot complete an isolated text request. The
 fallback budget stays below the assessment activity deadline; disabled
 fallbacks do not authorize another runner or billing mode.
-An isolated text request skips a subscription runner with no active managed
-credential before provisioning a container. When no usable alternative exists,
-it reports the credential configuration error immediately.
+An isolated text request skips a subscription runner with no managed credential
+that is fresh or eligible for provider-owned refresh before provisioning a
+container. An expired, unrevoked rotating credential with supported refresh
+material remains a managed candidate until its serialized refresh attempt has
+completed; failed, unsupported, revoked, or refresh-token-less credentials are
+reported as requiring reconnection. Host-forwarded agent authentication is a
+separate source and never proves isolated managed-audit readiness or imports a
+host credential. When no usable alternative exists, routing reports the
+credential configuration error immediately.
+When concurrent managed records exist, an unusable newer expiry does not shadow
+an older fresh credential at any isolated-text routing or readiness surface.
 
 Text operations accept subscription and API-key runners. The existing chat-runner setting accepts owned runner identifiers, allowing
 multiple configurations behind the same CLI to remain distinguishable. API credentials
@@ -79,6 +87,17 @@ Structured callers include their response contract in the prompt and validate
 JSON locally. They do not require a vendor's schema-only API. Provenance records
 the actual response model rather than an assumed vendor model.
 
+Acceptance requests retain a bounded route-attempt trace at the shared request
+boundary. Each entry names the owned candidate runner, its resolved provider and
+model once execution begins, ordinal, allocated and elapsed budget, phase,
+normalized outcome, and correlation identifiers. A policy-, availability-,
+credential-, or deadline-skipped candidate is explicitly `skipped`, never
+represented as an execution failure. The selected terminal error is bound to
+the attempt that produced it; configured-primary values are retained separately
+as configuration context and never presented as observed failure provenance.
+The trace is allowlisted and bounded before persistence, so it contains no
+prompt, output, credentials, secret-bearing URL, HTTP body, or error message.
+
 Isolated text commands use a process-group deadline before the container
 watchdog, with a short cleanup margin. Their immutable orphan-sweep label uses
 a fixed ten-minute lifetime from creation, so it remains a worker-death safety
@@ -108,9 +127,9 @@ credential mode, provenance, retries, and disposable-container cleanup.
 | Execution context | Callers |
 | --- | --- |
 | Account-only background work | `AgentRunPatterns::Diagnose` |
-| Project-only review, knowledge, design, evidence, and evolution work | `AgentRuns::DiagnoseError`, `DesignAmendments::ImpactReview`, `FeatureIntents::{AssessDesignArtifactCandidates,AssessFacet,CriteriaClarityReview}`, `IntentConformance::ReviewerLlm`, `Issues::PartialCompletionAssessment`, `Knowledge::{ContextIntake::GenerateQuestions,Decisions::Draft}`, `PartialCloseouts::{AssessEvidence,ValidateSubmittedEvidence}`, `PromptEvolution::Mutate`, `Reviews::Verification::LlmSession`, `StrategyEvolution::Mutate`, `StyleGuideEvolution::Mutate`, `StyleGuides::{Compress,Extract}`, and the analyze-issue, analyze-knowledge-gaps, and decompose-feature activities. |
+| Project-only review, knowledge, design, evidence, and evolution work | `AgentRuns::DiagnoseError`, `Automation::AssessBoundedScope`, `DesignAmendments::ImpactReview`, `FeatureIntents::{AssessDesignArtifactCandidates,AssessFacet,CriteriaClarityReview}`, `IntentConformance::ReviewerLlm`, `Issues::PartialCompletionAssessment`, `Knowledge::{ContextIntake::GenerateQuestions,Decisions::Draft}`, `PartialCloseouts::{AssessEvidence,ValidateSubmittedEvidence}`, `PromptEvolution::Mutate`, `Reviews::Verification::LlmSession`, `StrategyEvolution::Mutate`, `StyleGuideEvolution::Mutate`, `StyleGuides::{Compress,Extract}`, and the analyze-issue, analyze-knowledge-gaps, and decompose-feature activities. |
 | Live-run optional work | `ConflictRepairs::AssessScope`, `CycleAnalyses::Analyze`, `Features::ClarifyingQuestions::Analyze`, `Models::MetaAgentSelector`, and `Screenshots::DeriveHints`. A live run never authorizes host execution. `CycleAnalyses::Analyze` dependency-injects `Llm::Request`; the inventory treats that supported call shape like a literal request call. |
-| Post-run / cleanup-race work | `Llm::{AnalyzePartialCloseout,GenerateAgentUpdateSummary,GenerateIssueTitle,GeneratePrDescription,GenerateSessionSummary}`, `AgentRuns::DiagnoseError`, `Knowledge::SessionSummaries::Capture`, `PartialCloseouts::ReconcileLegacy`, and the assess-source-closure, complete-existing-PR-run, create-GitHub-issue, create-pull-request, reconcile-partial-closeout, and run-acceptance-audit activities. They continue through the disposable text container after a run’s container has been removed. The inventory discovers every `Llm::*` request wrapper from its `Request` reference, then source-checks every wrapper `.call` consumer. |
+| Post-run / cleanup-race work | `Llm::{AnalyzePartialCloseout,AssessNoOutputDisposition,GenerateAgentUpdateSummary,GenerateIssueTitle,GeneratePrDescription,GenerateSessionSummary}`, `AgentRuns::DiagnoseError`, `Knowledge::SessionSummaries::Capture`, `PartialCloseouts::ReconcileLegacy`, and the assess-source-closure, complete-existing-PR-run, create-GitHub-issue, create-pull-request, handle-no-output-issue-run, reconcile-partial-closeout, and run-acceptance-audit activities. They continue through the disposable text container after a run’s container has been removed. The inventory discovers every `Llm::*` request wrapper from its `Request` reference, then source-checks every wrapper `.call` consumer. |
 
 ## Decisions
 

@@ -176,6 +176,7 @@ cycles.
 | [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
 | [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Final | — |
 | [RDR-081](RDR-081-partial-closeout-lane-read-model.md) | Partial-Closeout Lane Read Model — Moving the Lane's Admission Off the Request Path | Accepted | P2 |
+| [RDR-082](RDR-082-optional-outcome-feedback-for-autonomous-assessments.md) | Optional Outcome Feedback for Autonomous Assessments | Draft | — |
 
 ### Cloud Execution Readiness
 

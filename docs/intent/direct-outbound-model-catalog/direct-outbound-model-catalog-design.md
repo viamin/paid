@@ -71,6 +71,17 @@ consumes this contract: the trailing custom sentinel uses
 `CUSTOM_MODEL_OPTION`, and an empty provider scope degrades to that sentinel
 alone.
 
+### OpenRouter catalog provenance during save
+
+An OpenRouter model can retain its upstream vendor in `LlmModel.provider`.
+Runner save validation accepts an exact catalog row with
+`catalog_source: "openrouter_sync"` when the selected API key is OpenRouter,
+matching the union used by `Runners::ModelOptions`. It does not rewrite that
+vendor or create a second manual row. Other providers still require their
+own catalog vendor, and a manually registered foreign-vendor row does not
+become OpenRouter-eligible. ZDR endpoint readiness, compatibility and explicit
+selection checks remain additional requirements (#4706).
+
 ### Provider-derived runner model selection
 
 Direct-outbound runner setup (`opencode`, `kilocode`, `pi`, `omp`) must not ask

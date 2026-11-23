@@ -108,6 +108,16 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       expect(blocker_payloads(analysis, :not_evaluated)).to eq([ dependency_not_evaluated_blocker ])
     end
 
+    # @spec AUTO-MERGE-010
+    it "directs an unresolved dependency blocker to its declared source reference" do
+      analysis = strategy.analyze(
+        human_signals(dependencies_resolved: false),
+        owner_reviewer_login: "viamin"
+      )
+
+      expect(blocker_payloads(analysis, :failed)).to eq([ unresolved_dependency_blocker ])
+    end
+
     def stale_approval_blocker
       blocker(
         signal: "reviews_fresh",
@@ -125,6 +135,16 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
         reason_code: "dependencies_unresolved",
         sanitized_message: "Dependency resolution was not evaluated because an earlier auto-merge gate already failed.",
         next_action: "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution."
+      )
+    end
+
+    def unresolved_dependency_blocker
+      blocker(
+        signal: "dependencies_resolved",
+        status: "failed",
+        reason_code: "dependencies_unresolved",
+        sanitized_message: "One or more declared dependencies are not resolved yet.",
+        next_action: "Verify, merge, or remove each declared dependency source (for example, owner/repo#N), then let Paid evaluate this pull request again."
       )
     end
 
@@ -163,6 +183,16 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
         next_action: "Merge this pull request manually or use a supported dependency-update bot such as Dependabot."
       )
     end
+  end
+
+  # @spec AUTO-MERGE-012
+  it "keeps technical state distinct from human approval in merge diagnostics" do
+    signals = Automation::Strategies::AutoMerge::Signals.build(
+      issue_id: 1, pr_number: 42, technical_merge_clear: false)
+    evaluation = strategy.analyze(signals, owner_reviewer_login: nil)
+    blocker = evaluation.blockers.find { |item| item.reason_code == "technical_merge_blocked" }
+    expect(evaluation.eligible?).to be(false)
+    expect(blocker.next_action).to include("no human approval")
   end
 
   describe "#evaluate" do

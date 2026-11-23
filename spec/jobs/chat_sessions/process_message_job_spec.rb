@@ -390,6 +390,27 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     expect(chat_session.messages.last.metadata).to include("chat_turn_failure_notice" => true)
   end
 
+  # @spec CHAT-API-002 CHAT-TURN-RECOVERY-008
+  it "records an empty provider result as a retryable failed turn without an assistant answer" do
+    allow(llm_client).to receive(:call).and_return(
+      { content: nil, tool_calls: [], tokens_input: 12, tokens_output: 0, model: "model" }
+    )
+
+    expect {
+      described_class.perform_now(chat_session_id: chat_session.id, content: "Hello",
+        stream_message_id: stream_message_id)
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "system", html: include("Retry")))
+
+    turn = chat_session.chat_turns.last.reload
+    expect(turn).to have_attributes(status: "failed", failure_classification: "empty_response")
+    expect(chat_session.messages.where(role: "assistant")).to be_empty
+    expect(chat_session.messages.last.metadata).to include(
+      "chat_turn_failure_notice" => true,
+      "retry_available" => true
+    )
+  end
+
   # @spec CHAT-TURN-RECOVERY-008
   it "keeps a provider failure visible after a page reload" do
     allow(llm_client).to receive(:call).and_raise(AgentHarness::Error, "runner unavailable")

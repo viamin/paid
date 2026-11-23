@@ -27,9 +27,9 @@ module Automation
       #   method (+ci_action+, +manual+) has a completion signal.
       # * +reviews_fresh+ — the HEAD commit was not pushed after the
       #   latest blocking approval(s).
-      # * +dependencies_resolved+ — every declared PR dependency has
-      #   already merged. Cross-repo and missing PR references remain
-      #   blocking until Paid can verify them.
+      # * +dependencies_resolved+ — every declared dependency is currently
+      #   verified as a closed issue or merged PR. Cross-repo references remain
+      #   blocking until their tracked source provider can verify them.
       # * +bot_authored+ — the PR was created by a known bot user
       #   (Dependabot, Renovate, etc.).
       # * +dependabot_eligible+ — the project allows auto-merging
@@ -59,7 +59,8 @@ module Automation
         :merge_executor_supported,
         :skip_auto_merge,
         :hold_for_review,
-        :intent_conformance_ok
+        :intent_conformance_ok,
+        :technical_merge_clear
       )
         class << self
           # Builds a Signals from keyword arguments, defaulting boolean
@@ -80,7 +81,8 @@ module Automation
               merge_executor_supported: kwargs.fetch(:merge_executor_supported, false),
               skip_auto_merge: kwargs.fetch(:skip_auto_merge, false),
               hold_for_review: kwargs.fetch(:hold_for_review, false),
-              intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true)
+              intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true),
+              technical_merge_clear: kwargs.fetch(:technical_merge_clear, true)
             )
           end
         end
@@ -98,6 +100,7 @@ module Automation
         def skip_auto_merge? = skip_auto_merge == true
         def hold_for_review? = hold_for_review == true
         def intent_conformance_ok? = intent_conformance_ok == true
+        def technical_merge_clear? = technical_merge_clear == true
       end
     end
   end

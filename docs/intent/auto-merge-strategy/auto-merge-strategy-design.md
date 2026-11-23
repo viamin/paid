@@ -19,12 +19,44 @@ The current implementation splits that policy into:
 - a Dependabot-specific execution path for dependency updates
 - project configuration that keeps auto-merge owner-controlled
 
-An agent that determines its own PR needs a human decision applies the
-`paid-hold-review` label. This is a structured, per-PR hold — never an
-interpretation of prose — and it blocks both scan-time eligibility and the
-last-mile merge activity. Held PRs appear in the Inbox's merge-approval lane
-with a human-review summary, even if ordinary approval/check signals have not
-yet been evaluated. A human releases the hold by removing the label.
+An agent applies `paid-hold-review` only when a pull request it creates or
+materially changes has a concrete human-only decision that ordinary delegated
+checks cannot settle. Examples include an explicit design or intent approval
+gate, a material scope or authority change, or another decision the project's
+automation is not authorized to make. A user-facing change, a request for a
+screenshot or review, normal CI or bot review, missing verification evidence,
+or general caution is not such a decision; those follow their ordinary
+verification or blocker path. An agent does not hold an existing pull request
+merely because it encounters it while completing dependency or bookkeeping
+work, unless its assigned task explicitly requires that review or hold.
+
+This is a structured, per-PR hold — never an interpretation of prose — and it
+blocks both scan-time eligibility and the last-mile merge activity. When it is
+used, the agent records the unresolved decision, why delegated checks cannot
+settle it, and the pull-request, run, and issue evidence in a durable
+operator-visible update; the label remains the merge blocker. Held PRs appear
+in the Inbox's merge-approval lane with a human-review summary, even if
+ordinary approval/check signals have not yet been evaluated. A human releases
+the hold by removing the label.
+
+Technical merge blockers are Paid state on the pull request, independent of
+GitHub labels and label integration mode. Each bounded entry identifies a stable
+key, the observed PR head, reason, responsible project issue and release
+condition. Confirmed writes require project issue-management authorization.
+Resolution records evidence and matches the exact entry version, preventing a
+stale request from erasing a newer stop. Both actions are audited; semantic
+judgment belongs to the authorized operator or delegated agent. Neither action
+grants merge approval or bypasses the normal checks.
+
+Unresolved technical blockers prevent scan-time auto-merge and every final
+merge execution, including dependency-update and credential-fallback paths.
+Final executors reload the internal state before merge I/O. A push, clean
+review, policy change or green CI does not implicitly resolve a separate stop.
+PR diagnostics expose technical work with its owner and release condition;
+that state does not create a human-approval Inbox item. Agents use this path for
+technical acceptance/integration stops instead of `paid-hold-review`. Existing
+labels are never automatically reclassified from prose. Converting a verified
+technical hold requires enforcing its internal replacement before label removal.
 
 This segment captures the shipped behavior rather than the abandoned umbrella
 PR strategy discussed in RDR-022.
@@ -65,6 +97,16 @@ approval (fail closed), as does a post-approval range the first-parent walk
 cannot fully return (the walk is bounded at the same 250-commit cap GitHub
 imposes on its compare response; an over-cap walk is unclassifiable), and
 the classification decision is logged so a stall is diagnosable.
+
+The dependency gate evaluates qualified cross-project declarations through an
+exact case-normalized project tracked in the same account and that project's
+configured provider identity. A closed issue or merged pull request satisfies
+the declaration only after that current provider read. An untracked,
+inaccessible, open, closed-unmerged, or transiently unverifiable source remains
+blocked; Paid-local completion state, sibling relationships, and agent
+inference do not create dependency evidence. The existing unresolved-dependency
+blocker directs operators to the declared dependency source without introducing
+a separate dependency UI.
 
 When an automatic rebase finds conflicts, the resulting existing-PR run is a
 repair, not a continuation of general implementation work. Its trusted prompt
@@ -130,3 +172,5 @@ and never generates a request.
   dependency-update bots the project explicitly supports.
 - **Not PR-body parsing.** A request for review in prose does not change merge
   authority; the explicit hold label is the only agent-controlled review gate.
+  Nor is prose a substitute for the required structured label when an explicit
+  human-only decision remains unresolved.
