@@ -814,7 +814,7 @@ class Project < ApplicationRecord
   # @spec QUEUE-TIER-008
   def pr_numbers_with_queued_auto_continue
     agent_runs
-      .where(trigger_type: "automatic", status: "queued", temporal_workflow_id: nil,
+      .where(trigger_type: "automatic", goal: "create_pr", status: "queued", temporal_workflow_id: nil,
         operator_coding_priority_requested_at: nil)
       .where.not(source_pull_request_number: nil)
       .distinct

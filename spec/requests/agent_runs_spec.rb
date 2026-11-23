@@ -2552,6 +2552,19 @@ RSpec.describe "AgentRuns" do
         expect(run2.operator_coding_priority_requested_at).to be_nil
       end
 
+      it "prioritizes a coding retry when an older review run exists for the pull request" do # @spec QUEUE-TIER-008
+        review_run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
+          source_pull_request_number: 77, created_at: 2.minutes.ago)
+        coding_retry = create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          source_pull_request_number: 77, created_at: 1.minute.ago)
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(review_run.reload.operator_coding_priority_requested_at).to be_nil
+        expect(coding_retry.reload.operator_coding_priority_requested_at).to be_present
+        expect(response).to redirect_to(project_path(project))
+      end
+
       it "redirects with error when no pull request selected" do
         post bump_priority_project_agent_runs_path(project)
         expect(response).to redirect_to(project_path(project))

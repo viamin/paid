@@ -333,7 +333,7 @@ module Projects
       end
 
       run = @project.agent_runs
-        .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
+        .where(source_pull_request_number: pr.github_number, trigger_type: "automatic", goal: "create_pr")
         .where(status: "queued", temporal_workflow_id: nil)
         .order(:created_at, :id)
         .first

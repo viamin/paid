@@ -1517,6 +1517,14 @@ RSpec.describe Project do
 
       expect(project.pr_numbers_with_queued_auto_continue).to be_empty
     end
+
+    # @spec QUEUE-TIER-008
+    it "excludes queued automatic review runs" do
+      create(:agent_run, :queued, :automatic, project: project, goal: "review",
+        source_pull_request_number: 42)
+
+      expect(project.pr_numbers_with_queued_auto_continue).to be_empty
+    end
   end
 
   describe "#pr_numbers_with_active_runs" do

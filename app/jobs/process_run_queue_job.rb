@@ -37,11 +37,11 @@ class ProcessRunQueueJob < ApplicationJob
   # onto 5 wire priorities when starting workflows.
   TEMPORAL_PRIORITY_KEYS = {
     manual: 1,
-    pr_p1: 2,
-    pr_p2: 2,
+    operator_coding: 2,
+    pr_p1: 3,
+    pr_p2: 3,
     pr_p3: 3,
     pr_continue: 3,
-    operator_coding: 4,
     issue_p1: 4,
     issue_p2: 4,
     issue_p3: 5,

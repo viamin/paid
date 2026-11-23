@@ -798,7 +798,7 @@ RSpec.describe ProcessRunQueueJob do
       issue = create(:issue, project:, github_state: "open")
       queued_run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
         operator_coding_priority_requested_at: Time.current)
-      priority = Temporalio::Priority.new(priority_key: 4, fairness_key: queued_run.project.account_id.to_s)
+      priority = Temporalio::Priority.new(priority_key: 2, fairness_key: queued_run.project.account_id.to_s)
 
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
@@ -2975,8 +2975,9 @@ RSpec.describe ProcessRunQueueJob do
     let(:expected_temporal_keys) do
       {
         manual: 1,
-        pr_p1: 2,
-        pr_p2: 2,
+        operator_coding: 2,
+        pr_p1: 3,
+        pr_p2: 3,
         pr_p3: 3,
         pr_continue: 3,
         issue_p1: 4,
@@ -2999,6 +3000,8 @@ RSpec.describe ProcessRunQueueJob do
     def runs_by_tier
       {
         manual: create(:agent_run, :queued, project: project, trigger_type: "manual"),
+        operator_coding: create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          auto_pick: true, operator_coding_priority_requested_at: Time.current),
         pr_p1: pr_run(github_number: 101, label: "P1"),
         pr_p2: pr_run(github_number: 102, label: "P2"),
         pr_p3: pr_run(github_number: 103, label: "P3"),
