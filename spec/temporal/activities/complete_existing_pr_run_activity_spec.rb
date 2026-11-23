@@ -222,7 +222,11 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       it "bounds comparison reads by the assessment budget and fails closed" do # @spec AUTO-MERGE-011
         allow(activity).to receive(:remaining_activity_seconds)
           .and_return(described_class::PUBLICATION_RESERVE_SECONDS + 1.0)
-        allow(github_client).to receive(:compare_summary) { sleep 1.3 }
+        allow(Timeout).to receive(:timeout).and_call_original
+        allow(Timeout).to receive(:timeout)
+          .with(1.0, described_class::ComparisonDeadlineExceeded)
+          .and_raise(described_class::ComparisonDeadlineExceeded)
+        expect(github_client).not_to receive(:compare_summary)
         expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
         expect { activity.execute(agent_run_id: agent_run.id) }
@@ -232,6 +236,8 @@ allow(GithubClient).to receive(:new).and_return(github_client)
           end
 
         expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+        expect(Timeout).to have_received(:timeout)
+          .with(1.0, described_class::ComparisonDeadlineExceeded)
       end
 
       it "records an unavailable assessment without a request when no assessment budget remains" do
@@ -292,8 +298,12 @@ allow(GithubClient).to receive(:new).and_return(github_client)
 
       it "still raises the typed stop when rejection publication exceeds its reserve" do
         allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
-        allow(activity).to receive(:publication_budget_seconds).and_return(0.05)
-        allow(github_client).to receive(:update_pull_request) { sleep 0.3 }
+        allow(activity).to receive(:publication_budget_seconds).and_return(1.0)
+        allow(Timeout).to receive(:timeout).and_call_original
+        allow(Timeout).to receive(:timeout)
+          .with(1.0, described_class::RejectionPublicationDeadlineExceeded)
+          .and_raise(described_class::RejectionPublicationDeadlineExceeded)
+        expect(github_client).not_to receive(:update_pull_request)
         allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return([])
 
         expect { activity.execute(agent_run_id: agent_run.id) }
@@ -303,6 +313,8 @@ allow(GithubClient).to receive(:new).and_return(github_client)
           end
 
         expect(github_client).not_to have_received(:add_comment)
+        expect(Timeout).to have_received(:timeout)
+          .with(1.0, described_class::RejectionPublicationDeadlineExceeded)
       end
 
       it "skips rejection publication when no publication budget remains" do
