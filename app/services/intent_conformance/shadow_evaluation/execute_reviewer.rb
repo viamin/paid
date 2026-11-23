@@ -189,6 +189,12 @@ module IntentConformance
           design_docs: docs,
           diff_entries: diff_entries
         }
+      rescue GithubClient::RateLimitError, Faraday::Error
+        raise
+      rescue GithubClient::ApiError => error
+        raise if error.status.to_i >= 500
+
+        { failure: "pinned_evidence_unavailable" }
       rescue GithubClient::Error
         { failure: "pinned_evidence_unavailable" }
       end

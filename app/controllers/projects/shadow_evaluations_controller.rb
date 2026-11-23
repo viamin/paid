@@ -64,10 +64,6 @@ module Projects
           locals: { result:, evaluation: @evaluation, project: @project, case_view:,
                     case_id: params[:case_id].to_s, inbox_context: inbox_context }
       end
-      if params[:kind] == "inline_diff"
-        return render partial: "projects/shadow_evaluations/diff",
-          locals: { result:, evaluation: @evaluation, case_id: params[:case_id].to_s }
-      end
       return redirect_to(result.url, allow_other_host: true) if result.available?
 
       redirect_to evaluation_path(@evaluation, case_id: params[:case_id]), alert: result.error

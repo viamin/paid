@@ -42,8 +42,8 @@ module IntentConformance
         return unavailable("case repository identity is invalid") unless valid_repository?
         return unavailable("repository access is not configured") unless client
 
-        %w[diff inline_diff review_context].include?(kind) ? diff : design_document
-      rescue GithubClient::Error,
+        %w[diff review_context].include?(kind) ? diff : design_document
+      rescue GithubClient::Error, Faraday::Error,
         IntentConformance::ShadowEvaluationCorpus::MissingManifest,
         Errno::ENOENT,
         Psych::Exception

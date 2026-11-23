@@ -64,5 +64,6 @@
       The review evidence could not be loaded: <%= result.error %>.
       Refresh to try again. Your saved decisions have not changed.
     </div>
+    <%= button_to "Leave this change for later", skip_project_shadow_evaluation_path(project, evaluation, **inbox_context), params: { case_id: }, form: { data: { turbo_frame: "_top" } }, class: "mt-4 text-sm font-medium text-violet-700 underline" %>
   <% end %>
 <% end %>

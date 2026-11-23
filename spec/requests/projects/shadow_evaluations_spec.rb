@@ -124,24 +124,6 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).not_to include("selection_rationale")
   end
 
-  it "renders inline patches as text without exposing answers" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
-    project.update!(owner: "viamin", repo: "paid")
-    evaluation = start_evaluation!
-    client = instance_double(GithubClient)
-    allow(GithubClient).to receive(:new).and_return(client)
-    allow(client).to receive(:compare).and_return(files: [
-      { filename: "example.rb", patch: "+<script>attack()</script>", additions: 1, deletions: 0 }
-    ])
-
-    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "inline_diff")
-
-    expect(response).to have_http_status(:ok)
-    expect(response.body).to include("&lt;script&gt;attack()&lt;/script&gt;", "example.rb")
-    expect(response.body).not_to include("<script>attack()", "selection_rationale", "expected_label")
-    expect(Nokogiri::HTML(response.body).at_css("turbo-frame")).to be_present
-    expect(Nokogiri::HTML(response.body).css("details[data-file-diff][open]")).to be_empty
-  end
-
   # @spec INTENT-CONFORMANCE-ROLLOUT-013
   it "recovers legacy requirements at the approved revision and keeps patches collapsed" do
     project.update!(owner: "viamin", repo: "paid")
@@ -177,6 +159,20 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("Requirements need preparing", "Continue to the next change")
     expect(Nokogiri::HTML(response.body).at_css('[name="cited_design_claim"]')).to be_nil
     expect(evaluation.labels).to be_empty
+  end
+
+  it "keeps a skip route when pinned review evidence cannot be loaded" do # @spec INTENT-CONFORMANCE-ROLLOUT-013
+    project.update!(owner: "viamin", repo: "paid")
+    evaluation = start_evaluation!
+    client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:compare).and_raise(Faraday::TimeoutError, "timed out")
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "review_context")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("The review evidence could not be loaded")
+    expect(response.body).to include(skip_project_shadow_evaluation_path(project, evaluation))
   end
 
   it "allows uncertainty without inventing an approved requirement" do # @spec INTENT-CONFORMANCE-ROLLOUT-012
