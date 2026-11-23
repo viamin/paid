@@ -260,11 +260,18 @@ poll and eager sources through it, expose an asynchronous operation in
 `Worker::initiate_shutdown` cannot be adapted because it cancels the terminal
 token and unregisters eager work before it can support resume.
 
-An initial local build invocation, `cargo test -p temporal-sdk-core --lib
-worker --no-default-features`, could not start because this execution
-environment has no `cargo` executable (`Failed to spawn process: No such file
-or directory (os error 2)`). Therefore no Core/Ruby prototype patch or
-SDK/server harness result is claimed from this environment. Installing or
-changing the SDK toolchain is outside this Paid change. The retained source
-checkout is `/tmp/paid-temporal-sdk-ruby-1.11.0` at the revisions above; it is
-research material only, not a Paid dependency, release, or runtime integration.
+The local checkout was recreated with `git clone --branch v1.11.0 --depth 1
+--recurse-submodules`; `HEAD` and the checked-out submodule resolve to the
+revisions above. A disposable Rust 1.88.0 toolchain was then installed outside
+the Paid repository, using `RUSTUP_HOME=/workspace/.paid-temporal-rustup` and
+`CARGO_HOME=/workspace/.paid-temporal-cargo`. It could not execute even
+`cargo --version`: the installed `cargo` proxy failed before Cargo started
+with `OrbStack ERROR: Dynamic loader not found: /lib64/ld-linux-x86-64.so.2`.
+The host reports `aarch64`; reinstalling with the
+`aarch64-unknown-linux-gnu` default-host option produced the same proxy-loader
+failure. Consequently `cargo test -p temporal-sdk-core --lib worker
+--no-default-features` was not run, and no Core/Ruby prototype patch or
+SDK/server harness result is claimed. The disposable toolchain directories are
+removed after this record; the retained source checkout is
+`/tmp/paid-temporal-sdk-ruby-1.11.0` at the revisions above. It is research
+material only, not a Paid dependency, release, or runtime integration.
