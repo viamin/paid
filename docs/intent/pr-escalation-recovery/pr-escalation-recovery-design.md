@@ -273,7 +273,12 @@ unchanged. At the exact expiry instant the limits apply again to retained
 history, without a restoration job. Expiry never cancels already running work.
 Existing escalations require the normal explicit unblock action; setting a
 suspension does not clear them or grant a token allowance. Project settings and
-the authorized settings tool expose the deadline and audit the change.
+the authorized settings tool expose the deadline and audit the actor and
+accepted UTC deadline, including an explicit null when cleared. Malformed
+values, including non-timestamp JSON values and impossible calendar dates,
+are rejected before persistence. The settings form preserves invalid input
+when displaying validation errors so a correction cannot inadvertently clear
+an existing suspension.
 
 Local delivery and running-worker adoption are distinct. A deadline stored in
 the database has no effect on workers that have not loaded this policy.

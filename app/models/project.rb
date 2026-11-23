@@ -722,10 +722,19 @@ class Project < ApplicationRecord
     DEFAULT_PRIORITY_LABELS.merge(overrides)
   end
 
+  # @spec PR-ESCALATION-031
   def pr_escalation_suspension_deadline_valid
     raw = pr_escalation_limits_suspended_until_before_type_cast
-    return unless raw.is_a?(String) && raw.present?
-    return if raw.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i) && Time.iso8601(raw)
+    valid = case raw
+    when nil, Time, DateTime, ActiveSupport::TimeWithZone
+      true
+    when String
+      raw.blank? || (pr_escalation_limits_suspended_until.present? && raw.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i) &&
+        DateTime.iso8601(raw) && Time.iso8601(raw))
+    else
+      false
+    end
+    return if valid
 
     errors.add(:pr_escalation_limits_suspended_until, "must be an ISO 8601 timestamp with a time zone")
   rescue ArgumentError

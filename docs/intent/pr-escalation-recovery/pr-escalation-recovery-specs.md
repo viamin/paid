@@ -252,7 +252,17 @@ have failed for long enough.
   *Test:* `spec/models/project_escalation_suspension_spec.rb`.
 - [x] **PR-ESCALATION-030** — The system SHALL expose the deadline through
   authorized project settings and the project settings tool and SHALL audit
-  changes using their existing actor-bound settings audit.
+  the accepted UTC deadline or explicit clearing using their existing actor-bound
+  settings audit.
   *Code:* `ProjectsController`, `Tools::UpdateProjectSettings`.
   *Test:* `spec/requests/projects_spec.rb`,
+  `spec/mcp/tools/update_project_settings_spec.rb`.
+
+- [x] **PR-ESCALATION-031** — When a submitted suspension deadline has an
+  invalid type, calendar date or missing time zone, the system SHALL reject
+  it before saving and SHALL preserve the input in the settings error form,
+  leaving the previously stored deadline unchanged.
+  *Code:* `Project`, `app/views/projects/edit.html.erb`.
+  *Test:* `spec/models/project_escalation_suspension_spec.rb`,
+  `spec/requests/projects_spec.rb`,
   `spec/mcp/tools/update_project_settings_spec.rb`.

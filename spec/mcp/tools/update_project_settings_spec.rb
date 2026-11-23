@@ -45,6 +45,28 @@ RSpec.describe Tools::UpdateProjectSettings do
       event = account.account_activity_events.last
       expect(event.metadata.fetch("changed_fields")).to include("pr_escalation_limits_suspended_until")
       expect(event.actor_id).to eq(owner.id)
+      expect(event.metadata.fetch("pr_escalation_limits_suspended_until")).to eq(deadline.iso8601(6))
+    end
+
+    # @spec PR-ESCALATION-031
+    it "rejects invalid deadline types without changing the stored suspension" do
+      deadline = 1.week.from_now.utc.change(usec: 0)
+      project.update!(pr_escalation_limits_suspended_until: deadline)
+
+      expect { call(settings: { "pr_escalation_limits_suspended_until" => false }) }
+        .to raise_error(ActiveRecord::RecordInvalid)
+      expect(project.reload.pr_escalation_limits_suspended_until).to eq(deadline)
+    end
+
+    # @spec PR-ESCALATION-030
+    it "audits an explicit clearing when updating suspension alongside phase settings" do
+      deadline = 1.week.from_now.utc.change(usec: 0)
+      project.update!(pr_escalation_limits_suspended_until: deadline)
+
+      call(settings: { "pr_escalation_limits_suspended_until" => nil,
+        "automation_phase_settings" => { "phases" => { "coding" => true } } })
+
+      expect(account.account_activity_events.last.metadata.fetch("pr_escalation_limits_suspended_until")).to be_nil
     end
 
     it "updates permitted attributes and returns them" do
@@ -227,7 +249,7 @@ RSpec.describe Tools::UpdateProjectSettings do
     it "rejects an unauthorized user" do
       viewer = create(:user, :viewer, account:)
       expect {
-        call(settings: { "paused" => true }, user: viewer)
+        call(settings: { "pr_escalation_limits_suspended_until" => 1.week.from_now.utc.iso8601 }, user: viewer)
       }.to raise_error(Pundit::NotAuthorizedError)
     end
 
@@ -235,7 +257,7 @@ RSpec.describe Tools::UpdateProjectSettings do
       other_project = create(:project)
       expect {
         described_class.new(user: owner, session:).call(
-          project_id: other_project.id, settings: { "paused" => true }, confirmed: true
+          project_id: other_project.id, settings: { "pr_escalation_limits_suspended_until" => 1.week.from_now.utc.iso8601 }, confirmed: true
         )
       }.to raise_error(ActiveRecord::RecordNotFound)
     end

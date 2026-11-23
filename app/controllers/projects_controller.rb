@@ -224,7 +224,11 @@ class ProjectsController < ApplicationController
     label_provisioning_result = provision_labels_after_opt_in(previous_label_mode)
     refresh_code_scanning_after_enable if enabling_security_scan?(update_params)
 
-    audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
+    metadata = { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys }
+    if update_params.key?(:pr_escalation_limits_suspended_until)
+      metadata[:pr_escalation_limits_suspended_until] = @project.pr_escalation_limits_suspended_until&.utc&.iso8601(6)
+    end
+    audit_event("project.updated", metadata: metadata)
     if label_provisioning_result&.any_errors?
       return redirect_to edit_project_path(@project, anchor: "labels"),
         alert: "Project settings were saved, but GitHub labels were not fully synced: #{label_provisioning_result.notice_message}. Retry with Sync Labels to GitHub."

@@ -128,12 +128,16 @@ module Tools
     end
 
     def record_activity!(project, changed_fields:)
+      metadata = { changed_fields: changed_fields.uniq }
+      if changed_fields.include?("pr_escalation_limits_suspended_until")
+        metadata[:pr_escalation_limits_suspended_until] = project.pr_escalation_limits_suspended_until&.utc&.iso8601(6)
+      end
       Accounts::RecordActivity.call(
         account:,
         actor: user,
         action: "project.settings_changed",
         subject: project,
-        metadata: { changed_fields: changed_fields.uniq }
+        metadata: metadata
       )
     end
 
