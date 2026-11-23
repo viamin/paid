@@ -256,14 +256,15 @@ readiness_heartbeat = Paid::WorkerReadiness::Heartbeat.start(
   identity: {
     pid: Process.pid,
     revision: startup_boot_revision,
-    deployment_revision: startup_identity.revision
+    deployment_revision: startup_identity.revision,
+    environment: Rails.env.to_s
   },
   interval: ENV.fetch("WORKER_READINESS_HEARTBEAT_SECONDS", "30").to_f,
   recorder: lambda { |beat|
     WorkerReadinessObservation.record!(
       role: beat.fetch(:role), pid: beat.fetch(:pid), ready_at: beat.fetch(:ready_at),
       revision: beat.fetch(:revision), deployment_revision: beat.fetch(:deployment_revision),
-      heartbeat_at: beat.fetch(:at)
+      heartbeat_at: beat.fetch(:at), environment: beat.fetch(:environment)
     )
   }
 )

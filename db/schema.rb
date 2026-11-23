@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_044418) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5207,13 +5207,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   create_table "worker_readiness_observations", comment: "Per-role Temporal worker readiness heartbeats; system-wide, not tenant-owned.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "deployment_revision", comment: "Complete deployment identity observed when the worker booted."
+    t.string "environment", comment: "Rails environment of the worker process that published this observation."
     t.datetime "heartbeat_at", null: false, comment: "When the live process last published its readiness identity."
     t.integer "pid", null: false
     t.datetime "ready_at", null: false, comment: "When this worker process finished booting."
     t.string "revision"
     t.string "role", null: false
     t.datetime "updated_at", null: false
-    t.index ["role", "pid", "ready_at"], name: "idx_on_role_pid_ready_at_dee3f95bf7", unique: true
+    t.index ["environment", "role", "pid", "ready_at"], name: "idx_on_environment_role_pid_ready_at_5fadc857e0", unique: true
   end
 
   create_table "workflow_states", force: :cascade do |t|

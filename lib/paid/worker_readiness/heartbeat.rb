@@ -99,7 +99,8 @@ module Paid
       def record_role(role, at)
         recorder.call({ role:, pid: identity.fetch(:pid), ready_at: @ready_at,
                         revision: identity.fetch(:revision),
-                        deployment_revision: identity.fetch(:deployment_revision), at: })
+                        deployment_revision: identity.fetch(:deployment_revision),
+                        environment: identity.fetch(:environment), at: })
       rescue StandardError => error
         warn "Failed to record worker readiness heartbeat for #{role}: #{error.class}: #{error.message}"
       end

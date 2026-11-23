@@ -12,7 +12,7 @@ module TrustedMeasurements
     # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 6
+      VERSION = 7
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -52,7 +52,7 @@ module TrustedMeasurements
       attr_reader :clock, :deployment_revision, :environment, :observations, :project
 
       def records_for(role, observed_at)
-        role_records = observations.for_role(role)
+        role_records = observations.for_role(role, environment:)
         live_window = role_records.where(heartbeat_at: (observed_at - MAX_AGE)..).to_a
         return live_window if live_window.any?
 
@@ -102,6 +102,7 @@ module TrustedMeasurements
 
       def worker_result(record)
         {
+          "environment" => record.environment,
           "pid" => record.pid,
           "ready_at" => record.ready_at&.utc&.iso8601,
           "revision" => record.revision,
