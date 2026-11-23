@@ -1508,6 +1508,15 @@ RSpec.describe Project do
 
       expect(project.pr_numbers_with_queued_auto_continue).to be_empty
     end
+
+    # @spec QUEUE-TIER-008
+    it "excludes queued automatic runs with an existing coding priority request" do
+      create(:agent_run, :queued, :automatic, project: project,
+        source_pull_request_number: 42, custom_prompt: "Fix PR",
+        operator_coding_priority_requested_at: Time.current)
+
+      expect(project.pr_numbers_with_queued_auto_continue).to be_empty
+    end
   end
 
   describe "#pr_numbers_with_active_runs" do
