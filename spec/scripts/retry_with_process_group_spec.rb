@@ -216,6 +216,17 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   # @spec TEST-SUITE-023
+  it "cancels an owned setup leader before it creates its session" do
+    with_unacknowledged_setup_leader do |wrapper_pid, setup_leader_pid|
+      Process.kill("TERM", wrapper_pid)
+      _pid, status = Process.wait2(wrapper_pid)
+
+      expect(status.termsig).to eq(15)
+      expect { Process.kill(0, setup_leader_pid) }.to raise_error(Errno::ESRCH)
+    end
+  end
+
+  # @spec TEST-SUITE-023
   it "terminates and reaps a cooperative descendant when an attempt times out" do
     child_pid_file = Rails.root.join("tmp/retry-with-process-group-cooperative-child.pid")
     FileUtils.rm_f(child_pid_file)
@@ -385,6 +396,18 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     cleanup_startup_watchdog(wrapper_pid, resources)
   end
 
+  def with_unacknowledged_setup_leader
+    resources = startup_setup_resources
+    wrapper_pid = Process.spawn(resources.fetch(:environment), script_path, "bash", "-c", "exec sleep 60", close_others: false)
+    setup_leader_pid = Integer(Timeout.timeout(2) { resources.fetch(:started_reader).gets }.strip)
+    resources[:setup_leader_pid] = setup_leader_pid
+
+    yield wrapper_pid, setup_leader_pid
+  ensure
+    cleanup_startup_watchdog(wrapper_pid, resources)
+    terminate_and_reap(resources&.fetch(:setup_leader_pid, nil))
+  end
+
   def startup_watchdog_resources
     directory = Dir.mktmpdir("retry-with-process-group-startup-watchdog")
     started_reader, started_writer = IO.pipe
@@ -407,12 +430,50 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     }
   end
 
+  def startup_setup_resources
+    directory = Dir.mktmpdir("retry-with-process-group-startup-setup")
+    started_reader, started_writer = IO.pipe
+    gate_reader, gate_writer = IO.pipe
+    started_writer.nonblock = false
+    gate_reader.nonblock = false
+    started_writer.close_on_exec = false
+    gate_reader.close_on_exec = false
+    delayed_setsid = File.join(directory, "setsid")
+    File.write(delayed_setsid, delayed_setup_setsid_script)
+    FileUtils.chmod("u+x", delayed_setsid)
+
+    {
+      directory: directory,
+      environment: fast_supervision.merge(
+        "DEPENDENCY_SETUP_TIMEOUT" => "4s",
+        "PATH" => "#{directory}:#{ENV.fetch("PATH")}",
+        "SETUP_STARTED_FD" => started_writer.fileno.to_s,
+        "SETUP_GATE_FD" => gate_reader.fileno.to_s
+      ),
+      gate_reader: gate_reader,
+      gate_writer: gate_writer,
+      started_reader: started_reader,
+      started_writer: started_writer
+    }
+  end
+
   def delayed_setsid_script
     <<~BASH
       #!/usr/bin/env bash
       if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
         printf '%s\\n' "$$" >&"$WATCHDOG_STARTED_FD"
         read -r _ <&"$WATCHDOG_GATE_FD"
+      fi
+      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
+    BASH
+  end
+
+  def delayed_setup_setsid_script
+    <<~BASH
+      #!/usr/bin/env bash
+      if [[ "$#" -eq 3 && "$1" == "bash" && "$2" == "-c" ]]; then
+        printf '%s\\n' "$$" >&"$SETUP_STARTED_FD"
+        read -r _ <&"$SETUP_GATE_FD"
       fi
       exec #{Shellwords.escape(`which setsid`.strip)} "$@"
     BASH
