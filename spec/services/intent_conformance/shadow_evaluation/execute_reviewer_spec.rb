@@ -182,6 +182,50 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(evaluation.runs.find_by(case_id: "A-03")).to be_not_evaluated
   end
 
+  it "uses the same recovered legacy requirements as the human review context" do # @spec INTENT-CONFORMANCE-ROLLOUT-013
+    legacy_case = corpus_case("A-01", "design_document_paths" => nil)
+    File.write(manifest_path, { "cases" => [ legacy_case ], "reviewer" => reviewer_identity }.to_yaml)
+    evaluation.update!(manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison([
+      { filename: "docs/intent/widgets/widget-design.md", status: "modified", additions: 3, deletions: 1, patch: "widget code" }
+    ]))
+    allow(github_client).to receive(:file_content)
+      .with("acme/widgets", path: "docs/intent/widgets/widget-design.md", ref: "c" * 40)
+      .and_return("# Widget requirements\nThe widget SHALL be blue.")
+    prompt = nil
+    allow(AgentHarness.conductor).to receive(:execute_direct) do |value, **|
+      prompt = value
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result.executed).to eq(1)
+    expect(prompt).to include("### docs/intent/widgets/widget-design.md")
+  end
+
+  it "records permanent pinned-evidence failures without calling the reviewer" do # @spec INTENT-CONFORMANCE-ROLLOUT-013
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_raise(GithubClient::NotFoundError, "not found")
+    allow(AgentHarness.conductor).to receive(:execute_direct)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result.failed).to eq(2)
+    expect(evaluation.runs).to all(have_attributes(verdict: "not_evaluated", failure_reason: "pinned_evidence_unavailable"))
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
+  it "retries transient GitHub evidence failures through the execution job" do # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_raise(GithubClient::RateLimitError)
+
+    expect { described_class.call(evaluation: evaluation) }.to raise_error(GithubClient::RateLimitError)
+    expect(evaluation.runs).to be_empty
+  end
+
   it "retries only cases that lack an evaluated verdict" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)

@@ -30,6 +30,34 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
     described_class.call(evaluation:, case_id: "case-1", kind:, path:, client:)
   end
 
+  it "returns only bounded patch fields for the review context" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    allow(client).to receive_messages(
+      compare: { files: [
+        { filename: "app/example.rb", status: "modified", additions: 1, deletions: 1,
+          patch: "-old\n+<script>alert(1)</script>", notes: "expected outcome" }
+      ] },
+      file_content: nil
+    )
+
+    result = call(kind: "review_context")
+
+    expect(result).to be_available
+    expect(result.files).to eq([ { filename: "app/example.rb", status: "modified", additions: 1,
+      deletions: 1, patch: "-old\n+<script>alert(1)</script>", truncated: false } ])
+  end
+
+  it "marks oversized patches as incomplete rather than presenting a full diff" do # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    allow(client).to receive_messages(
+      compare: { files: [ { filename: "large.txt", patch: "x" * 210_000 } ] },
+      file_content: nil
+    )
+
+    result = call(kind: "review_context")
+
+    expect(result.files.first[:patch].bytesize).to be <= 200_000
+    expect(result.files.first[:truncated]).to be(true)
+  end
+
   it "validates an exact diff before returning its revision-bound URL" do
     expect(client).to receive(:compare).with("acme/widgets", "a" * 40, "b" * 40).and_return({})
 
@@ -83,6 +111,15 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
 
     expect(result).not_to be_available
     expect(result.url).to be_nil
+    expect(result.error).to eq("pinned evidence is unavailable")
+  end
+
+  it "reports GitHub transport failures as unavailable review evidence" do # @spec INTENT-CONFORMANCE-ROLLOUT-013
+    allow(client).to receive(:compare).and_raise(Faraday::TimeoutError, "timed out")
+
+    result = call(kind: "review_context")
+
+    expect(result).not_to be_available
     expect(result.error).to eq("pinned evidence is unavailable")
   end
 
