@@ -1,0 +1,31 @@
+<%# @spec INTENT-CONFORMANCE-ROLLOUT-012 @spec INTENT-CONFORMANCE-ROLLOUT-013 %>
+<% own = current["label"] %>
+<% requirement_options = documents.map { |document| [ review_requirement_title(document), document[:path] ] } %>
+<% if own && own["cited_design_claim"].present? && requirement_options.none? { |_, value| value == own["cited_design_claim"] } %>
+  <% requirement_options << [ "Saved requirement: #{own['cited_design_claim'].truncate(80)}", own["cited_design_claim"] ] %>
+<% end %>
+<%= form_with url: label_project_shadow_evaluation_path(project, evaluation, **inbox_context), method: :post, data: { turbo_frame: "_top" }, class: "space-y-5 rounded-xl border border-gray-200 bg-white p-6" do |form| %>
+  <%= form.hidden_field :case_id, value: current["id"] %>
+  <fieldset class="space-y-3">
+    <legend class="mb-3 font-semibold text-gray-900">Does this change match what was agreed?</legend>
+    <% { "within_scope" => "The agreed behavior is preserved; internal implementation choices may differ.",
+         "material_drift" => "The change adds, removes, or alters agreed behavior, constraints, or scope.",
+         "uncertain" => "The available evidence is too incomplete or ambiguous to decide." }.each do |outcome, explanation| %>
+      <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-4 has-checked:border-violet-500 has-checked:bg-violet-50 dark:has-checked:border-violet-400 dark:has-checked:bg-violet-950">
+        <%= form.radio_button :outcome, outcome, checked: own && own["state"] == "labeled" && own["outcome"] == outcome, required: true, aria: { describedby: "verdict_#{outcome}_help" }, class: "mt-1 h-4 w-4 border-gray-300 text-violet-600" %>
+        <span><span class="block text-sm font-semibold text-gray-900"><%= review_decision_text(outcome) %></span><span id="verdict_<%= outcome %>_help" class="mt-1 block text-sm text-gray-600"><%= explanation %></span></span>
+      </label>
+    <% end %>
+  </fieldset>
+  <div>
+    <%= form.label :cited_design_claim, "Which requirement document informed your decision?", class: "block text-sm font-semibold text-gray-900" %>
+    <p id="requirement-help" class="mt-1 text-sm text-gray-600">Choose from the approved documents above. This links your decision to its source. Optional if you chose Not enough information.</p>
+    <%= form.select :cited_design_claim, options_for_select(requirement_options, own && own["cited_design_claim"]), { include_blank: "Choose a requirement document" }, aria: { describedby: "requirement-help" }, class: "mt-2 w-full rounded-md border-gray-300 text-sm" %>
+  </div>
+  <div>
+    <%= form.label :reason, "What led you to this decision? (optional)", class: "block text-sm font-semibold text-gray-900" %>
+    <p id="decision-help" class="mt-1 text-sm text-gray-600">Add context if it would help explain your choice, or leave this blank.</p>
+    <%= form.text_area :reason, value: own && own["reason"], rows: 3, aria: { describedby: "decision-help" }, class: "mt-2 w-full rounded-md border-gray-300 text-sm" %>
+  </div>
+  <%= form.submit "Save decision and continue", class: "inline-flex items-center rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white" %>
+<% end %>

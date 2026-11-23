@@ -9,7 +9,7 @@ import { renderMarkdown } from "../lib/safe_markdown"
 // block-level rendering for multi-paragraph content (e.g. the
 // clarifying-questions context panel).
 export default class extends Controller {
-  static values = { content: String, block: Boolean }
+  static values = { content: String, block: Boolean, newTab: Boolean }
 
   connect() {
     this.render()
@@ -25,6 +25,12 @@ export default class extends Controller {
     try {
       this.element.classList.remove("whitespace-pre-wrap", "break-words")
       this.element.innerHTML = renderMarkdown(rawContent, { inline: !this.blockValue })
+      if (this.newTabValue) {
+        this.element.querySelectorAll("a").forEach((link) => {
+          link.target = "_blank"
+          link.rel = "noopener noreferrer"
+        })
+      }
     } catch {
       this.element.classList.add("whitespace-pre-wrap", "break-words")
       this.element.textContent = rawContent

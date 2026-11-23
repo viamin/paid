@@ -3,13 +3,20 @@
 module IntentConformance
   module ShadowEvaluation
     # Validates one pinned repository artifact immediately before navigating
-    # there. The labeling page itself remains side-effect-free: repository
-    # reads happen only after an authorized maintainer asks to open evidence.
+    # there or returning an escaped-text preview through the authorized evidence
+    # endpoint. All reads stay pinned to the case's recorded revisions.
     # @spec INTENT-CONFORMANCE-ROLLOUT-010
     class Evidence
-      Result = Data.define(:available, :url, :error) do
+      Result = Data.define(:available, :url, :error, :files, :context) do
+        def initialize(available:, url: nil, error: nil, files: [], context: {})
+          super
+        end
+
         def available? = available
       end
+
+      MAX_FILES = 30
+      MAX_PATCH_BYTES = 200_000
 
       SHA = /\A[0-9a-f]{40}\z/i
       PATH_SEGMENT = /\A[a-zA-Z0-9._-]+\z/
@@ -35,8 +42,8 @@ module IntentConformance
         return unavailable("case repository identity is invalid") unless valid_repository?
         return unavailable("repository access is not configured") unless client
 
-        kind == "diff" ? diff : design_document
-      rescue GithubClient::Error,
+        %w[diff review_context].include?(kind) ? diff : design_document
+      rescue GithubClient::Error, Faraday::Error,
         IntentConformance::ShadowEvaluationCorpus::MissingManifest,
         Errno::ENOENT,
         Psych::Exception
@@ -60,8 +67,23 @@ module IntentConformance
       def diff
         return unavailable("pinned diff has an invalid revision") unless valid_sha?(base_sha) && valid_sha?(head_sha)
 
-        client.compare(repository, base_sha, head_sha)
-        available(diff_url)
+        comparison = client.compare(repository, base_sha, head_sha)
+        files = kind == "diff" ? [] : preview_files(comparison)
+        context = kind == "review_context" ? ReviewContext.call(corpus_case:, comparison:, client:,
+          default_paths: evaluation.corpus.design_document_paths) : {}
+        Result.new(available: true, url: diff_url, files:, context:)
+      end
+
+      def preview_files(comparison)
+        remaining = MAX_PATCH_BYTES
+        Array(comparison[:files]).first(MAX_FILES).map do |file|
+          values = file.to_h.symbolize_keys
+          fields = values.slice(:filename, :status, :additions, :deletions)
+          patch = values[:patch] if values[:patch].is_a?(String)
+          preview = patch&.byteslice(0, remaining)&.scrub("")
+          remaining -= preview.to_s.bytesize
+          fields.merge(patch: preview, truncated: patch.to_s.bytesize > preview.to_s.bytesize)
+        end
       end
 
       def design_document

@@ -28,6 +28,9 @@ RSpec.describe Automation::DelegatedActionAdmission do
         assessment_run, { "criteria" => [], "gaps" => [] }
       ) })
     end
+    allow(Automation::AssessBoundedScope).to receive(:call).and_return(
+      Automation::AssessBoundedScope::Result.new(status: "in_scope", explanation: "test correspondence", evidence_refs: [])
+    )
   end
 
   def authorize(action:, work_item: issue, stop_before_phase: "merge")
@@ -268,6 +271,56 @@ RSpec.describe Automation::DelegatedActionAdmission do
 
     expect(result).to be_blocked
     expect(result.reasons).to include(:budget)
+  end
+
+  it "pauses and requires reassessment when repair correspondence is unknown" do # @spec BOUNDED-PHASE-AUTHORIZATION-005 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    allow(Automation::AssessBoundedScope).to receive(:call).and_return(
+      Automation::AssessBoundedScope::Result.new(status: "unknown", explanation: "ambiguous", evidence_refs: [])
+    )
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:scope_correspondence)
+    expect(authorization.reload).to be_reassessment_required
+    expect(authorization.reassessment_reasons).to include("scope_correspondence")
+  end
+
+  it "assesses repair scope outside the lifecycle lock and rechecks the current authorization" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"status":"in_scope","explanation":"repair matches","evidence_refs":[]}')
+    transaction_depth = ActiveRecord::Base.connection.open_transactions
+    assessment_transaction_depth = nil
+    allow(Automation::AssessBoundedScope).to receive(:call).and_call_original
+    allow(Llm::Request).to receive(:call) do
+      assessment_transaction_depth = ActiveRecord::Base.connection.open_transactions
+      authorization.update!(status: "revoked")
+      response
+    end
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(assessment_transaction_depth).to eq(transaction_depth)
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_lifecycle)
+  end
+
+  it "does not admit a repair under an authorization superseded during scope assessment" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    superseding_authorization = nil
+    allow(Automation::AssessBoundedScope).to receive(:call) do
+      superseding_authorization = authorize(action: "repair")
+      Automation::AssessBoundedScope::Result.new(status: "in_scope", explanation: "repair matches", evidence_refs: [])
+    end
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_changed)
+    expect(authorization.reload).to be_active
+    expect(superseding_authorization).to be_active
   end
 
   it "blocks when the repository-control channel is inactive" do # @spec PROJECT-DELEGATION-004

@@ -27,6 +27,9 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     FeatureFlags.enable!(:project_delegation, project:)
     project.update!(automation_phase_settings: { "phases" => { "coding" => true } })
     create(:project_delegation_posture, project:, level: "bounded_delivery", selected_by: user)
+    allow(Automation::AssessBoundedScope).to receive(:call).and_return(
+      Automation::AssessBoundedScope::Result.new(status: "in_scope", explanation: "test correspondence", evidence_refs: [])
+    )
   end
 
   it "creates a bounded action with inspectable evidence and audit" do
