@@ -5,7 +5,10 @@ require "rails_helper"
 RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
   let(:project) { Struct.new(:id).new(1) }
   let(:agent_run) do
-    Struct.new(:id, :project, :status, :error_message, :diagnosis_status, keyword_init: true) do
+    Struct.new(
+      :id, :project, :status, :error_message, :diagnosis_status, :focus, :result_commit_sha,
+      keyword_init: true
+    ) do
       def finished? = true
 
       def paused? = false
@@ -20,7 +23,9 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
       project: project,
       status: "failed",
       error_message: nil,
-      diagnosis_status: nil
+      diagnosis_status: nil,
+      focus: nil,
+      result_commit_sha: nil
     )
   end
   let(:retry_runner_options) do
