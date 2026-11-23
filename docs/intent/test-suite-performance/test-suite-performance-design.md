@@ -40,6 +40,9 @@ The shard matrix and dropped-shard recovery retry JavaScript dependency setup
 at most five times, bounding each attempt to twenty minutes with increasing
 delays. This absorbs transient registry and hosted-runner stalls without
 skipping setup or relaxing the shard's 360-minute job boundary.
+Each Yarn registry request may use up to ten minutes of that bounded attempt,
+while four concurrent requests prevent the shard matrix from overwhelming a
+degraded registry.
 
 ## Platform-dropped shard recovery
 
