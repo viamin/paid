@@ -9,7 +9,7 @@ module ConflictRepairs
   # carries the complete bounded path inventory with mechanically verified base
   # imports separated from paths needing classification, so the validator never
   # demands classification of evidence it did not supply (#5312).
-  # @spec AUTO-MERGE-010 AUTO-MERGE-011 AUTO-MERGE-012
+  # @spec AUTO-MERGE-010 AUTO-MERGE-011 AUTO-MERGE-013
   class AssessScope
     TIMEOUT = 45
     MINIMUM_REQUEST_SECONDS = 1

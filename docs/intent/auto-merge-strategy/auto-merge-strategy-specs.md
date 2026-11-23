@@ -236,7 +236,7 @@
   *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
 
-- [x] **AUTO-MERGE-012** — When a merge-conflict repair is scope-assessed with
+- [x] **AUTO-MERGE-013** — When a merge-conflict repair is scope-assessed with
   fewer than the file-count truncation guard's compare files, the assessment
   input SHALL carry the complete immutable result-path inventory: every path
   changed in the pre-run-to-result range SHALL be listed, and a path whose
@@ -261,3 +261,17 @@
   `app/services/github_client.rb` (`#compare_files_payload`).
   *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/services/github_client_spec.rb`.
+- [x] **AUTO-MERGE-012** — Technical acceptance, integration, and verification
+  stops SHALL be bounded internal PR state, independent of GitHub labels.
+  Each entry SHALL identify its key, observed head, reason, responsible project
+  issue, release condition and recorder. Confirmed project-authorized writes
+  SHALL record or resolve entries with audit history; resolution SHALL name
+  evidence and match the exact entry version. Unresolved or malformed state
+  SHALL block scan-time and final automatic merge paths, including dependency
+  updates and credential fallbacks. PR UI and tools SHALL show technical work
+  and its release condition separately from human approval. Technical state
+  SHALL NOT create a human-approval Inbox item, grant approval, or change labels.
+  Existing human holds SHALL remain enforced until explicitly released.
+  *Code:* `app/services/pull_requests/technical_merge_blockers.rb`.
+  *Test:* `spec/services/pull_requests/technical_merge_blockers_spec.rb`,
+  `spec/mcp/tools/update_technical_merge_blocker_spec.rb`.

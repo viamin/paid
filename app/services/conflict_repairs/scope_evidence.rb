@@ -9,7 +9,7 @@ module ConflictRepairs
   # metadata could forge inventory lines, coverage fails closed with an
   # explicit reason instead of silently omitting paths the response must
   # classify (#5312). Semantic scope judgments stay with agent_harness.
-  # @spec AUTO-MERGE-012
+  # @spec AUTO-MERGE-013
   class ScopeEvidence
     MAX_INVENTORY_CHARS = 30_000
     MAX_EVIDENCE_CHARS = 30_000

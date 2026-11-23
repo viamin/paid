@@ -244,6 +244,7 @@ module Inbox
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
       return false unless reviewable_pr?
       return true if held_for_review?
+      return false if PullRequests::TechnicalMergeBlockers.blocked?(issue)
       return true if stalled_execution?
       return false unless normal_reviewable_pr?
       return false if manual_merge? && automatic_merge_active?

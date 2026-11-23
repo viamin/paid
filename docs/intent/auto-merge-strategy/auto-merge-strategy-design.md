@@ -39,6 +39,25 @@ in the Inbox's merge-approval lane with a human-review summary, even if
 ordinary approval/check signals have not yet been evaluated. A human releases
 the hold by removing the label.
 
+Technical merge blockers are Paid state on the pull request, independent of
+GitHub labels and label integration mode. Each bounded entry identifies a stable
+key, the observed PR head, reason, responsible project issue and release
+condition. Confirmed writes require project issue-management authorization.
+Resolution records evidence and matches the exact entry version, preventing a
+stale request from erasing a newer stop. Both actions are audited; semantic
+judgment belongs to the authorized operator or delegated agent. Neither action
+grants merge approval or bypasses the normal checks.
+
+Unresolved technical blockers prevent scan-time auto-merge and every final
+merge execution, including dependency-update and credential-fallback paths.
+Final executors reload the internal state before merge I/O. A push, clean
+review, policy change or green CI does not implicitly resolve a separate stop.
+PR diagnostics expose technical work with its owner and release condition;
+that state does not create a human-approval Inbox item. Agents use this path for
+technical acceptance/integration stops instead of `paid-hold-review`. Existing
+labels are never automatically reclassified from prose. Converting a verified
+technical hold requires enforcing its internal replacement before label removal.
+
 This segment captures the shipped behavior rather than the abandoned umbrella
 PR strategy discussed in RDR-022.
 

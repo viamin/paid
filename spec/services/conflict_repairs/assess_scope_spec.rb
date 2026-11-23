@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AUTO-MERGE-010 AUTO-MERGE-011 AUTO-MERGE-012
+# @spec AUTO-MERGE-010 AUTO-MERGE-011 AUTO-MERGE-013
 RSpec.describe ConflictRepairs::AssessScope do
   before { configure_llm_routing(project: agent_run.project) }
   after { Current.user = nil }
