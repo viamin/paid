@@ -22,6 +22,7 @@ RSpec.describe Tools::Registry do
       trigger_readiness_bootstrap
       cancel_agent_run
       retry_source_closure
+      update_technical_merge_blocker
       request_issue_continuation
       prioritize_coding_retry
       request_acceptance_audit

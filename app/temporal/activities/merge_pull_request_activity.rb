@@ -48,6 +48,8 @@ module Activities
       end
 
       return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
+      technical_stop = technical_merge_blocked_result(project, issue, pr_number)
+      return technical_stop if technical_stop
 
       # Delegated merge boundary: merging is how delegated delivery work
       # closes. A bounded merge authorization that fails its recheck must
@@ -264,6 +266,8 @@ module Activities
     end
 
     def attempt_merge(provider, project, issue, pr_data)
+      return false if technical_merge_blocked_result(project, issue, pr_data.number)
+
       config = Automation::Configuration::AutoMerge.from_project(project)
 
       result = provider.merge_pull_request(
@@ -329,6 +333,17 @@ module Activities
       pr_data.labels.include?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
     end
 
+    # @spec AUTO-MERGE-012
+    def technical_merge_blocked_result(project, issue, pr_number)
+      return unless PullRequests::TechnicalMergeBlockers.blocked?(issue.reload)
+
+      record_attempt(project, issue, status: "blocked",
+        reason_code: AutoMergeAttempt::REASON_TECHNICAL_MERGE_BLOCKED,
+        message: "Paid has unresolved technical work; no human approval is requested.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project))
+      { merged: false, skipped: true, technical_blocked: true, pr_number: }
+    end
+
     # @spec AUTO-MERGE-009
     def held_for_review_result(project, issue, pr_number)
       logger.info(
@@ -353,6 +368,7 @@ module Activities
 
       fallback_merged = attempt_merge_with_pat_fallback(project, pr_data, config)
       return true if fallback_merged == :merged
+      return false if fallback_merged == :technical_blocked
 
       if fallback_merged == :retryable_failure
         issue.record_merge_permission_rejection!(reason: message)
@@ -390,6 +406,9 @@ module Activities
     # - :permission_rejected when the fallback hit the same terminal rejection
     # - :retryable_failure for transient or non-permission fallback failures
     def attempt_merge_with_pat_fallback(project, pr_data, config)
+      issue = project.issues.find_by!(github_number: pr_data.number, is_pull_request: true)
+      return :technical_blocked if technical_merge_blocked_result(project, issue, pr_data.number)
+
       client = project.git_push_fallback_client
       return :not_configured unless client
 

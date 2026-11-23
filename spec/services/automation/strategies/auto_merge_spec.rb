@@ -185,6 +185,16 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
     end
   end
 
+  # @spec AUTO-MERGE-012
+  it "keeps technical state distinct from human approval in merge diagnostics" do
+    signals = Automation::Strategies::AutoMerge::Signals.build(
+      issue_id: 1, pr_number: 42, technical_merge_clear: false)
+    evaluation = strategy.analyze(signals, owner_reviewer_login: nil)
+    blocker = evaluation.blockers.find { |item| item.reason_code == "technical_merge_blocked" }
+    expect(evaluation.eligible?).to be(false)
+    expect(blocker.next_action).to include("no human approval")
+  end
+
   describe "#evaluate" do
     context "when auto-merge is disabled" do
       before { allow(project).to receive(:auto_merge_enabled?).and_return(false) }

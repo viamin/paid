@@ -17,6 +17,7 @@ module Tools
       "Tools::RevokeContinuationGrant",
       "Tools::ExtendContinuationGrant",
       "Tools::UpdateIssueControlState",
+      "Tools::UpdateTechnicalMergeBlocker",
       "Tools::TriggerAgentRun",
       "Tools::StartMaintenanceRun",
       "Tools::TriggerReadinessBootstrap",

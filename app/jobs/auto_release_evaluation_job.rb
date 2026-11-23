@@ -153,6 +153,15 @@ class AutoReleaseEvaluationJob < ApplicationJob
   end
 
   def merge_release_pr(client, project, result)
+    issue = project.issues.find_by(github_number: result.pr_number, is_pull_request: true)
+    if issue && PullRequests::TechnicalMergeBlockers.blocked?(issue)
+      record_attempt(project, result.pr_number, status: "blocked",
+        reason_code: AutoMergeAttempt::REASON_TECHNICAL_MERGE_BLOCKED,
+        message: "Paid has unresolved technical work; no human approval is requested.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project))
+      return
+    end
+
     client.merge_pull_request(
       project.full_name, result.pr_number,
       merge_method: project.merge_method

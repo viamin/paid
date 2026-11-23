@@ -32,6 +32,8 @@ class AccountActivityEvent < ApplicationRecord
     "issue.reopened" => "project",
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
+    "pull_request.technical_blocker_recorded" => "project",
+    "pull_request.technical_blocker_resolved" => "project",
     "issue.continuation_requested" => "project",
     "issue.closeout_resolved" => "project",
     "issue.closeout_revalidation_failed" => "project",
