@@ -291,6 +291,19 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       hash_including(timeout: be_between(0, 4.0))).at_least(:once)
   end
 
+  # @spec LLM-ROUTING-013
+  it "applies candidate deadlines to eager worker metadata refreshes" do
+    stub_request(:post, "#{manager_url}/services/create")
+      .to_return(status: 200, body: { "ID" => service_id }.to_json)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    service = backend.create_container(container_config, deadline: 4.0)
+    backend.start_container(service, deadline: 3.0)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 4.0))).at_least(:twice)
+  end
+
   it "waits for a runnable task before returning from start_container" do
     pending_task = task_payload.deep_dup
     pending_task["Status"] = { "State" => "pending", "ContainerStatus" => {} }
@@ -324,7 +337,7 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     backend.exec_in_container(service, [ "pwd" ], deadline: 3.0, user: "agent")
 
     expect(Docker::Connection).to have_received(:new).with(worker_url,
-      hash_including(timeout: be_between(0, 3.0)))
+      hash_including(timeout: be_between(0, 3.0))).twice
     expect(concrete_container).to have_received(:exec).with([ "pwd" ], user: "agent")
   end
 
@@ -336,7 +349,7 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     backend.stop_container(service, deadline: 2.0, timeout: 1)
 
     expect(Docker::Connection).to have_received(:new).with(worker_url,
-      hash_including(timeout: be_between(0, 2.0)))
+      hash_including(timeout: be_between(0, 2.0))).twice
     expect(concrete_container).to have_received(:stop).with(timeout: 1)
   end
 

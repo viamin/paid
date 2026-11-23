@@ -22,36 +22,36 @@ module Containers
       class ServiceHandle
         attr_reader :backend, :id, :info, :task
 
-        def initialize(backend:, service:, task: nil)
+        def initialize(backend:, service:, task: nil, deadline_at: nil)
           @backend = backend
           @id = service.fetch("ID")
           @service = service
           @task = task
           @info = {}
-          rebuild_info!
+          rebuild_info!(deadline_at:)
         end
 
         def exec(command, options = {}, &block)
           backend.exec_in_container(self, command, **options, &block)
         end
 
-        def refresh!
+        def refresh!(deadline_at: nil)
           @service = backend.inspect_service(id)
           @task = backend.primary_task_for(id)
-          rebuild_info!
+          rebuild_info!(deadline_at:)
           self
         end
 
-        def update!(service:, task:)
+        def update!(service:, task:, deadline_at: nil)
           @service = service
           @task = task
-          rebuild_info!
+          rebuild_info!(deadline_at:)
           self
         end
 
-        def update_task!(task)
+        def update_task!(task, deadline_at: nil)
           @task = task
-          rebuild_info!
+          rebuild_info!(deadline_at:)
           self
         end
 
@@ -61,8 +61,8 @@ module Containers
 
         private
 
-        def rebuild_info!
-          @info = backend.service_info(@service, @task)
+        def rebuild_info!(deadline_at: nil)
+          @info = backend.service_info(@service, @task, deadline_at:)
         end
       end
 
@@ -140,6 +140,7 @@ module Containers
         get_container_with_deadline(response.fetch("ID"), deadline_at)
       end
 
+      # @spec LLM-ROUTING-013
       def start_container(container, deadline: nil)
         wait_for_runnable_task!(container, operation_deadline(deadline))
       end
@@ -333,10 +334,10 @@ module Containers
         choose_primary_task(tasks || tasks_for(service_id, connection:))
       end
 
-      def service_info(service, task)
+      def service_info(service, task, deadline_at: nil)
         labels = service.dig("Spec", "TaskTemplate", "ContainerSpec", "Labels") || service.dig("Spec", "Labels") || {}
-        node = node_for(task)
-        concrete = concrete_container_info(task, node: node)
+        node = node_for(task, deadline_at:)
+        concrete = concrete_container_info(task, node:, deadline_at:)
         state = service_state(task, concrete)
 
         info = concrete || {}
@@ -492,13 +493,13 @@ module Containers
         Docker::Container.get(container_id, {}, node_connection(node, deadline: remaining_time(deadline_at)))
       end
 
-      def concrete_container_info(task, node:)
+      def concrete_container_info(task, node:, deadline_at: nil)
         return nil unless task
 
         container_id = task.dig("Status", "ContainerStatus", "ContainerID")
         return nil if container_id.blank? || node.blank?
 
-        Docker::Container.get(container_id, {}, node_connection(node)).json
+        Docker::Container.get(container_id, {}, node_connection(node, deadline: remaining_time(deadline_at))).json
       rescue Docker::Error::DockerError
         nil
       end
@@ -519,7 +520,7 @@ module Containers
         if container.respond_to?(:service_id)
           connection = manager_connection_for(deadline_at)
           latest_task = primary_task_for(service_id(container), connection:)
-          container.update_task!(latest_task) if container.respond_to?(:update_task!)
+          container.update_task!(latest_task, deadline_at:) if container.respond_to?(:update_task!)
           return latest_task if latest_task
         end
 
@@ -653,7 +654,7 @@ module Containers
           connection = manager_connection_for(deadline_at)
           service = inspect_service(service_id(container), connection:)
           task = primary_task_for(service.fetch("ID"), connection:)
-          container.update!(service:, task:)
+          container.update!(service:, task:, deadline_at:)
           return container if runnable_task?(task)
 
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline_at
@@ -669,7 +670,7 @@ module Containers
         connection = manager_connection_for(deadline_at)
         service = inspect_service(id, connection:)
         task = primary_task_for(id, connection:)
-        ServiceHandle.new(backend: self, service:, task:)
+        ServiceHandle.new(backend: self, service:, task:, deadline_at:)
       end
 
       def operation_deadline(duration)
