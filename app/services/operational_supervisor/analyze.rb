@@ -84,7 +84,8 @@ module OperationalSupervisor
     end
 
     def response_contract_valid?(response)
-      response.respond_to?(:success?) && response.success? && parse_findings(response.output)
+      parse_findings(response.output)
+      model_identifier(response)
       true
     rescue InvalidResponse, JSON::ParserError
       false
@@ -144,6 +145,7 @@ module OperationalSupervisor
     def validate_snapshot!
       raise InvalidResponse, "supervisor snapshot does not belong to account" unless snapshot.account_id == account.id
       raise InvalidResponse, "supervisor snapshot is invalid" unless snapshot.valid?
+      raise InvalidResponse, "supervisor snapshot includes a disabled project" unless snapshot_project_ids.subset?(enabled_project_ids)
     end
 
     def model_identifier(response)

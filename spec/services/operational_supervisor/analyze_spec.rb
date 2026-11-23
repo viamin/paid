@@ -86,6 +86,18 @@ RSpec.describe OperationalSupervisor::Analyze do
     expect(validator.call(response)).to be(true)
     expect(validator.call(response_class.new(true, "{}", "model-2026-11"))).to be(false)
     expect(validator.call(response_class.new(true, file_fixture("operational_supervisor/forbidden_analysis_response.json").read, "model-2026-11"))).to be(false)
+    expect(validator.call(response_class.new(true, response_output, ""))).to be(false)
+  end
+
+  it "rejects a snapshot that includes a project disabled since capture without contacting agent_harness" do # @spec OPERATIONAL-SUPERVISOR-005, OPERATIONAL-SUPERVISOR-006
+    FeatureFlags.disable!(:operational_supervisor, project:)
+    expect(llm).not_to receive(:call)
+
+    expect(Rails.logger).to receive(:warn).with(
+      message: "operational_supervisor.analysis_rejected", account_id: account.id, snapshot_id: snapshot.id,
+      reason: "invalid_response"
+    )
+    expect { described_class.call(account:, snapshot:, llm:) }.to raise_error(described_class::InvalidResponse)
   end
 
   private
