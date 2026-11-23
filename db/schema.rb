@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3588,6 +3588,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
   end
 
+  create_table "pghero_overview_findings", comment: "Development PgHero Overview scan state; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.integer "consecutive_observations", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "database", null: false
+    t.text "finding_key", null: false
+    t.text "finding_type", null: false
+    t.datetime "first_seen_at", null: false
+    t.bigint "github_issue_number"
+    t.datetime "issue_last_updated_at"
+    t.datetime "last_seen_at", null: false
+    t.bigint "project_id", null: false
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "database", "finding_key"], name: "index_pghero_overview_findings_on_project_db_finding_key", unique: true
+  end
+
   create_table "pghero_queries", comment: "Normalized SQL for development database diagnostics; system-wide, not tenant-owned.", force: :cascade do |t|
     t.text "query"
     t.index ["query"], name: "index_pghero_queries_on_query", using: :hash
@@ -5619,6 +5635,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_22_195243) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "pghero_overview_findings", "projects"
   add_foreign_key "pghero_query_stats", "pghero_queries", column: "query_id"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
