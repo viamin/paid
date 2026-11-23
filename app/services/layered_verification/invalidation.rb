@@ -26,7 +26,7 @@ module LayeredVerification
     attr_reader :dependencies, :obligations, :target_revision
 
     def results
-      LayeredVerificationCheckResult.where(obligation: obligations).order(:id).to_a
+      LayeredVerificationCheckResult.where(obligation: obligations).includes(:obligation).order(:id).to_a
     end
 
     def reusable?(result)
