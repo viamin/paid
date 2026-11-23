@@ -163,7 +163,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "defers worker adoption instead of killing a same-workspace orphaned tmux session when the control socket is missing" do # @spec TEMPORAL-ORCHESTRATION-018
+  it "defers worker adoption instead of killing a same-workspace orphaned tmux session when the control socket is missing" do # @spec TEMPORAL-ORCHESTRATION-019
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       # A missing control socket cannot be quit gracefully, so stop_overmind
       # would force-kill the orphaned session, interrupting any worker_poll/
@@ -603,7 +603,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-018
+  # @spec TEMPORAL-ORCHESTRATION-019
   it "defers a full update before stopping the supervisor when a legacy worker is ready" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
@@ -619,12 +619,12 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind.")
-      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-018")
+      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-019")
       expect(updater_log).not_to include("Full restart update complete.")
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-018
+  # @spec TEMPORAL-ORCHESTRATION-019
   it "defers an idle ready worker rather than treating activity count as admission safety" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
@@ -640,7 +640,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-018
+  # @spec TEMPORAL-ORCHESTRATION-019
   it "defers a full update when a running Overmind reports Temporal workers without readiness metadata" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       # Models a worker that failed before mark_ready! (or whose readiness
@@ -663,7 +663,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-018
+  # @spec TEMPORAL-ORCHESTRATION-019
   it "defers a full update when Overmind status cannot inspect a present control socket" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(
@@ -689,7 +689,36 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-018
+  # @spec TEMPORAL-ORCHESTRATION-019
+  it "defers a full update when overmind status exits successfully with unparseable output" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      # A zero exit status only proves the command ran, not that its output
+      # parsed as status rows. Garbled text contains no "worker_poll"/
+      # "worker_agent" row not because none exists, but because nothing
+      # parsed; this must not be read as verified absence of a worker.
+      script_path = prepare_script_fixture(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        start_overmind_running: true,
+        overmind_status_malformed: true)
+      env = trigger_context_env(dir,
+        "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+        "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb")
+
+      stdout, stderr, status = with_active_overmind_socket(dir) do
+        Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      end
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("overmind status output did not match the expected PROCESS/PID/STATUS format")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-019
   it "proceeds without worker quiescence when a running Overmind reports no Temporal worker processes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
@@ -1415,6 +1444,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     worker_ready: false,
     overmind_worker_processes: false,
     overmind_status_exit_status: 0,
+    overmind_status_malformed: false,
     unknown_checkout_head: false,
     worker_active_activities: 0
   )
@@ -1650,6 +1680,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             if [ "#{status_successes_after_start.nil? ? '' : status_successes_after_start}" != "" ] && [ "$count" -gt #{status_successes_after_start || 0} ]; then
               rm -f "#{dir}/overmind-running"
               exit 1
+            fi
+            if [ "#{overmind_status_malformed ? 1 : 0}" = "1" ]; then
+              echo "private malformed status response"
+              exit 0
             fi
             echo "PROCESS   PID       STATUS"
             echo "web       12345     running"

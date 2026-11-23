@@ -75,6 +75,29 @@ dev_supervisor_overmind_has_dead_processes() {
   printf '%s\n' "$output" | awk 'NR > 1 { print $3 }' | grep -qx 'dead'
 }
 
+# Whether `overmind status` output matches its real PROCESS/PID/STATUS
+# grammar (header row, then one row per process with a numeric PID and a
+# running/dead STATUS). A zero exit status only proves the command ran, not
+# that its output parsed as status rows — unparseable text must not be
+# treated as proof that no row names a Temporal worker process.
+# @spec TEMPORAL-ORCHESTRATION-019
+dev_supervisor_overmind_status_well_formed() {
+  local output="$1"
+  printf '%s\n' "$output" | awk '
+    BEGIN { valid = 1 }
+    NR == 1 {
+      if (NF != 3 || $1 != "PROCESS" || $2 != "PID" || $3 != "STATUS") valid = 0
+      next
+    }
+    NF == 0 { next }
+    {
+      rows += 1
+      if (NF != 3 || $2 !~ /^[0-9]+$/ || ($3 != "running" && $3 != "dead")) valid = 0
+    }
+    END { exit(valid && rows > 0 ? 0 : 1) }
+  '
+}
+
 dev_supervisor_log_line() {
   local file="$1"
   shift
@@ -401,7 +424,7 @@ dev_supervisor_workspace_tmux_sessions() {
 # enumeration never force-kills, and an uninspectable orphaned session is
 # failed before setup by the stop path's own guard (RAILS-CONTROL-PLANE-019),
 # not silently assumed to hold workers.
-# @spec TEMPORAL-ORCHESTRATION-018
+# @spec TEMPORAL-ORCHESTRATION-019
 dev_supervisor_workspace_tmux_window_names() {
   local socket panes window_name pane_path
 

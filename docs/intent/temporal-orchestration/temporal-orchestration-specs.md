@@ -39,7 +39,15 @@
   *Tests:* `spec/lib/paid/temporal_worker_config_spec.rb`.
   *Code:* `Paid::TemporalWorkerConfig`.
 
-- [ ] **TEMPORAL-ORCHESTRATION-018** — Before an updater stops a ready Temporal
+- [x] **TEMPORAL-ORCHESTRATION-018** — Temporal activity execution SHALL publish
+  coarse worker-ownership observations without exposing activity data or claiming
+  to control task admission. The updater SHALL NOT use those observations to
+  authorize a worker stop.
+  *Tests:* `spec/temporal/activities/base_activity_spec.rb`,
+  `spec/lib/paid/worker_readiness_spec.rb`.
+  *Code:* `Activities::BaseActivity`, `Paid::WorkerReadiness`.
+
+- [ ] **TEMPORAL-ORCHESTRATION-019** — Before an updater stops a ready Temporal
   worker, it SHALL obtain a public-SDK quiescence acknowledgement that closes
   new poll and eager task admission, includes every outstanding unused poll or
   eager reservation, and identifies each admitted task as either safely queued
@@ -56,10 +64,13 @@
   and no same-workspace orphaned supervisor tmux session the stop path would
   kill hosts a Temporal worker window, a present socket positively refuses a
   local connection as stale, or a successful running-Overmind inspection reports
-  no Temporal worker processes). Any other failed inspection SHALL be treated as
-  unknown; when an orphaned session cannot be inspected, the updater SHALL not
-  drain it but SHALL leave the stop path to fail before setup with the session
-  identity rather than force-killing it. The released
+  no Temporal worker processes). An inspection counts as successful only when
+  its output matches the supervisor's process-status grammar; a zero exit
+  status with unparseable output SHALL be treated as a failed inspection, not
+  as a report of no Temporal worker processes. Any other failed inspection
+  SHALL be treated as unknown; when an orphaned session cannot be inspected,
+  the updater SHALL not drain it but SHALL leave the stop path to fail before
+  setup with the session identity rather than force-killing it. The released
   capability SHALL cover both poll and agent roles and every enabled eager path
   (#5326).
   *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
