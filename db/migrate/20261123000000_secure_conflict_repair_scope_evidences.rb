@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec AUTO-MERGE-011, POSTGRESQL-PERSISTENCE-001
 class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 
@@ -19,6 +20,26 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
   def down
     raise ActiveRecord::IrreversibleMigration,
       "Conflict-repair scope evidence records may differ only by status, which the prior unique index cannot represent losslessly."
+  end
+
+  def enable_tenant_rls
+    safety_assured do
+      execute "ALTER TABLE conflict_repair_scope_evidences ENABLE ROW LEVEL SECURITY"
+      execute "ALTER TABLE conflict_repair_scope_evidences FORCE ROW LEVEL SECURITY"
+      execute <<~SQL
+        CREATE POLICY tenant_isolation ON conflict_repair_scope_evidences
+        FOR ALL USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
+        WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())
+      SQL
+    end
+  end
+
+  def disable_tenant_rls
+    safety_assured do
+      execute "DROP POLICY IF EXISTS tenant_isolation ON conflict_repair_scope_evidences"
+      execute "ALTER TABLE conflict_repair_scope_evidences NO FORCE ROW LEVEL SECURITY"
+      execute "ALTER TABLE conflict_repair_scope_evidences DISABLE ROW LEVEL SECURITY"
+    end
   end
 
   private
@@ -43,26 +64,6 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
     ActiveRecord::Base.transaction do
       safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
       yield
-    end
-  end
-
-  def enable_tenant_rls
-    safety_assured do
-      execute "ALTER TABLE conflict_repair_scope_evidences ENABLE ROW LEVEL SECURITY"
-      execute "ALTER TABLE conflict_repair_scope_evidences FORCE ROW LEVEL SECURITY"
-      execute <<~SQL
-        CREATE POLICY tenant_isolation ON conflict_repair_scope_evidences
-        FOR ALL USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
-        WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())
-      SQL
-    end
-  end
-
-  def disable_tenant_rls
-    safety_assured do
-      execute "DROP POLICY IF EXISTS tenant_isolation ON conflict_repair_scope_evidences"
-      execute "ALTER TABLE conflict_repair_scope_evidences NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE conflict_repair_scope_evidences DISABLE ROW LEVEL SECURITY"
     end
   end
 end
