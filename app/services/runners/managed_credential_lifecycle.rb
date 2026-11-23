@@ -22,7 +22,7 @@ module Runners
   # co-located in one service because their storage formats differ while the
   # refresh/lease/harvest protocol is shared; splitting them would multiply the
   # call sites this extraction exists to unify.
-  # @spec SUBSCRIPTION-RUNNER-AUTH-002 SUBSCRIPTION-RUNNER-AUTH-005 LLM-ROUTING-005
+  # @spec SUBSCRIPTION-RUNNER-AUTH-002 SUBSCRIPTION-RUNNER-AUTH-005 SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-005
   class ManagedCredentialLifecycle
     ROTATING_RUNNER_KEYS = %w[codex opencode omp].freeze
     REFRESH_WINDOW_SECONDS = 600
@@ -61,6 +61,34 @@ module Runners
         AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
           AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
           AgentHarness::Authentication.exchange_refresh_token_supported?(exchange_key)
+      end
+
+      # Classifies whether a canonical managed credential can be materialized
+      # now or can safely reach the provider-owned refresh boundary. This is
+      # intentionally credential-specific: host-forwarded auth is a separate
+      # source and never makes a managed record ready.
+      # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+      def readiness(credential, runner_key:)
+        return :missing unless credential
+        return :revoked if credential.revoked?
+        return :fresh unless near_expiry?(credential, runner_key: runner_key)
+        return :fresh if credential.active? && !refreshable?(credential, runner_key: runner_key)
+        return :unsupported_refresh unless rotating?(runner_key) && refresh_supported?(runner_key)
+        return :missing_refresh_material unless refreshable?(credential, runner_key: runner_key)
+
+        :refreshable
+      end
+
+      # Returns the newest fresh credential, then the newest recoverable expiry.
+      # A newer expired record without a usable refresh path must not shadow an
+      # older credential that can materialize immediately.
+      # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+      def credential_for(account:, runner_key:)
+        credential_scope(account:, runner_key:).active.find do |credential|
+          readiness(credential, runner_key:) == :fresh
+        end || credential_scope(account:, runner_key:).find do |credential|
+          readiness(credential, runner_key:) == :refreshable
+        end
       end
 
       def near_expiry?(credential, runner_key:)
@@ -103,8 +131,14 @@ module Runners
       # harness errors) on failure; callers that need a non-raising outcome use
       # refresh_if_near_expiry! instead.
       def exchange_refresh_token!(credential, runner_key:)
+        if runner_key.to_s == "codex"
+          return RefreshCodexCredential.call(credential: credential) do |native|
+            apply_codex_refresh_result!(credential, native)
+          end
+        end
+
         payload = case runner_key.to_s
-        when "codex", "opencode"
+        when "opencode"
           AgentHarness::Authentication.exchange_refresh_token(runner_key.to_sym).to_h
         when "omp"
           exchange_omp_refresh_token(credential)
@@ -113,6 +147,8 @@ module Runners
         end
         apply_refresh_result!(credential, runner_key: runner_key, payload: payload)
         true
+      rescue RefreshCodexCredential::Error => e
+        raise InvalidRefreshResponse.new(e.message, reason: e.reason)
       end
 
       # Reads the CLI's native auth state from a container and persists any
@@ -195,6 +231,11 @@ module Runners
 
       private
 
+      def credential_scope(account:, runner_key:)
+        account.runner_credentials.where(revoked_at: nil, auth_kind: "oauth_token").for_runner(runner_key)
+          .order(created_at: :desc, id: :desc)
+      end
+
       def parsed_secret(credential, runner_key:)
         token = credential.token.to_s
         return nil if token.blank?
@@ -203,6 +244,15 @@ module Runners
         when "omp" then ClaudeCredentials::Secret.parse(token)
         when "codex", "opencode" then CodexCredentials::Secret.parse(token)
         end
+      end
+
+      def refreshable?(credential, runner_key:)
+        return false unless rotating?(runner_key) && refresh_supported?(runner_key)
+
+        parsed = parsed_secret(credential, runner_key: runner_key)
+        return false unless parsed&.refreshable?
+
+        runner_key.to_s != "codex" || (parsed.account_id.is_a?(String) && parsed.account_id.present?)
       end
 
       def exchange_omp_refresh_token(credential)

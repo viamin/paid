@@ -27,7 +27,12 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       # Require only 1 consecutive healthy poll (instead of the default 2) so
       # tests are resilient to CI timing variance when nohup bin/dev starts up
       # asynchronously and may not be visible on the very first poll.
-      "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "1"
+      "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "1",
+      # Worker adoption verification polls the readiness flag files; the stub
+      # workers write them immediately, and stale-revision tests rely on the
+      # bounded budget expiring quickly (~0.5s).
+      "DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT" => "25",
+      "DEV_UPDATE_WORKER_DRAIN_POLL_COUNT" => "25"
     }
   end
 
@@ -36,7 +41,17 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   around do |example|
     previous = ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"]
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = "1"
-    example.run
+    # Isolate the worker readiness flag directory (TMPDIR) per example so the
+    # stub workers' flag files cannot leak across examples or into the host's
+    # real /tmp. bin/dev-update and the stubs both resolve the flag directory
+    # from TMPDIR, mirroring Ruby's Dir.tmpdir.
+    Dir.mktmpdir("dev-update-readiness", nil) do |readiness_dir|
+      previous_tmpdir = ENV["TMPDIR"]
+      ENV["TMPDIR"] = readiness_dir
+      example.run
+    ensure
+      ENV["TMPDIR"] = previous_tmpdir
+    end
   ensure
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = previous
   end
@@ -461,6 +476,176 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
+  it "upgrades lightweight to full restart when pull brings in only worker-loaded service changes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      # PR5271-style change: service code plus its spec, no app/temporal or
+      # config files. Long-lived workers retain loaded constants, so this must
+      # not complete as a "Rails will autoload changes" lightweight update.
+      # The trigger context only reports docs, so the service change is
+      # discovered from the pull diff after fetching.
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb spec/services/llm/request_spec.rb],
+        changed_files: "docs/design.md")
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Pull included restart-worthy files outside the trigger context; upgrading to full restart.")
+      expect(updater_log).to include("Full restart update complete.")
+      expect(updater_log).not_to include("Lightweight update complete. Rails will autoload changes.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
+  it "upgrades lightweight to full restart when the trigger context includes model and job changes" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/runner.rb\napp/jobs/source_closure_recovery_job.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Restart-worthy files were provided with a lightweight request; upgrading to full restart.")
+      expect(updater_log).to include("Full restart update complete.")
+      expect(updater_log).not_to include("Lightweight update complete. Rails will autoload changes.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
+  it "stays lightweight when pull brings in only docs and web-autoloaded files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[
+          docs/intent/development-environment-update/development-environment-update-design.md
+          app/controllers/projects_controller.rb
+          app/views/projects/index.html.erb
+          README.md
+        ],
+        changed_files: "docs/intent/development-environment-update/development-environment-update-design.md")
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(updater_log).not_to include("upgrading to full restart")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  it "requests worker adoption once and verifies healthy worker readiness revisions after restart" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+
+      # The graceful restart path was requested exactly once: one Overmind
+      # stop, one dev start — no repeated restart attempts.
+      calls = File.readlines(File.join(dir, "calls.log")).map(&:chomp)
+      expect(calls.count("overmind quit")).to eq(1)
+      expect(calls.count("dev")).to eq(1)
+      expect(calls.count("setup --skip-server")).to eq(1)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Worker adoption verified: poll and agent workers report revision post-pull-sha.")
+
+      # The readiness metadata proves the running workers booted the updated
+      # checkout, using revision identity only (no process arguments/env).
+      expect_worker_readiness_revision("post-pull-sha")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "defers a full update before stopping the supervisor while a worker owns an activity" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        worker_active_activities: 1)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "closes admission on an idle role while the other role drains" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      status, poll_admitted, stderr = run_cross_role_arrival(dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(poll_admitted).to be(false)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to include("overmind quit")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  it "fails the update when a restarted worker reports a stale revision" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        worker_readiness_revision: "stale-worker-sha")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("poll worker readiness at")
+      expect(updater_log).to include("did not report revision post-pull-sha")
+      expect(updater_log).to include("Workers did not adopt the updated checkout; update cannot be considered complete.")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  it "fails the update without claiming completion when the checkout revision is unknown" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        unknown_checkout_head: true)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      # The restarted environment came up; the failure is the fail-closed
+      # adoption check, not a crash before start.
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("git rev-parse HEAD failed; the expected worker revision is unknown.")
+      expect(updater_log).to include("update cannot be considered complete. Resolve the Git checkout state and rerun bin/dev-update --full.")
+      expect(updater_log).not_to include("Worker adoption verified")
+      expect(updater_log).not_to include("adopted revision")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
   it "runs migrations before restarting when trigger context includes migration files" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, start_overmind_running: true)
@@ -548,31 +733,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
       expect(read_updater_log(dir)).to include("Recovery start succeeded.")
       expect(read_updater_log(dir)).to include("ERROR: Cannot update while the current branch has uncommitted changes.")
-    end
-  end
-
-  it "stays lightweight when pull brings in only autoloadable files" do
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
-        app/models/user.rb
-        app/services/foo.rb
-      ])
-
-      stdout, stderr, status = Open3.capture3(
-        trigger_context_env(dir,
-          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
-          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
-        script_path,
-        "--lightweight",
-        chdir: dir
-      )
-
-      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
-
-      updater_log = read_updater_log(dir)
-      expect(updater_log).to include("Lightweight update complete.")
-      expect(updater_log).not_to include("upgrading to full restart")
     end
   end
 
@@ -961,6 +1121,83 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     File.read(File.join(dir, "log", "dev-update", "dev-update.log"))
   end
 
+  def worker_readiness_path(mode)
+    File.join(ENV.fetch("TMPDIR", "/tmp"), "paid-worker-ready-temporal_worker-#{mode}")
+  end
+
+  def worker_readiness_payload(mode)
+    JSON.parse(File.read(worker_readiness_path(mode)))
+  end
+
+  def expect_worker_readiness_revision(revision)
+    %w[poll agent].each do |mode|
+      payload = worker_readiness_payload(mode)
+      expect(payload["revision"]).to eq(revision)
+      expect(payload.keys).to match_array(%w[pid ready_at revision active_activities])
+    end
+  end
+
+  # Runs a lightweight request whose trigger context reports changed_files
+  # while the pull diff brings in pull_diff_files, returning the captured
+  # result of bin/dev-update --lightweight. Creates a stale Overmind socket
+  # before the run when with_stale_socket is set so the stop path executes.
+  def run_lightweight_with_pull(dir, pull_diff_files:, changed_files:, with_stale_socket: false, **fixture_args)
+    script_path = prepare_script_fixture(dir, pull_diff_files: pull_diff_files, **fixture_args)
+    create_stale_socket(dir) if with_stale_socket
+    env = trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+      "DEV_UPDATE_CHANGED_FILES" => changed_files)
+    Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+  end
+
+  def run_cross_role_arrival(dir)
+    script_path = prepare_script_fixture(dir,
+      pull_diff_files: %w[app/services/llm/request.rb],
+      start_overmind_running: true)
+    create_stale_socket(dir)
+    agent_readiness = worker_readiness_path("agent")
+    agent_payload = JSON.parse(File.read(agent_readiness)).merge("active_activities" => 1)
+    File.write(agent_readiness, agent_payload.to_json)
+
+    File.open("#{agent_readiness}.admission.lock", File::RDWR | File::CREAT, 0o644) do |agent_lock|
+      agent_lock.flock(File::LOCK_SH)
+      run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    end
+  end
+
+  def run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    env = trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+      "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb")
+    Open3.popen3(env, script_path, "--lightweight", chdir: dir) do |stdin, stdout, stderr, wait_thread|
+      stdin.close
+      stdout_reader = Thread.new { stdout.read }
+      stderr_reader = Thread.new { stderr.read }
+      wait_for_poll_admission_to_close(dir)
+      poll_admitted = poll_arrival_admitted?
+      File.write(agent_readiness, agent_payload.merge("active_activities" => 0).to_json)
+      agent_lock.flock(File::LOCK_UN)
+      [ wait_thread.value, poll_admitted, stderr_reader.value ]
+    ensure
+      Process.kill("TERM", wait_thread.pid) if wait_thread&.alive?
+      stdout_reader&.join
+      stderr_reader&.join
+    end
+  end
+
+  def wait_for_poll_admission_to_close(dir)
+    Timeout.timeout(5) do
+      Thread.pass until File.exist?(File.join(dir, "log", "dev-update", "dev-update.log")) &&
+        read_updater_log(dir).include?("Worker (poll) activity admission is closed")
+    end
+  end
+
+  def poll_arrival_admitted?
+    File.open("#{worker_readiness_path('poll')}.admission.lock", File::RDWR | File::CREAT, 0o644) do |lock|
+      lock.flock(File::LOCK_SH | File::LOCK_NB) != false
+    end
+  end
+
   def expect_calls(dir, expected)
     expect(File.read(File.join(dir, "calls.log")).lines.map(&:chomp)).to eq(expected)
   end
@@ -1069,7 +1306,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     rails_migrate_exit_status: 0,
     rails_sync_exit_status: 0,
     status_successes_after_start: nil,
-    tmux: nil
+    tmux: nil,
+    worker_readiness_revision: nil,
+    unknown_checkout_head: false,
+    worker_active_activities: 0
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -1077,6 +1317,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+    if start_overmind_running
+      %w[poll agent].each do |mode|
+        File.write(
+          worker_readiness_path(mode),
+          { pid: 12_345, ready_at: Time.now.utc.iso8601, revision: "pre-pull-sha", active_activities: worker_active_activities }.to_json
+        )
+      end
+    end
     FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
     # Model refs/stash: a pre-existing stash occupies the ref until a push
     # creates a new entry or a successful pop consumes it.
@@ -1086,6 +1334,34 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(script_source, script_path)
     FileUtils.chmod("+x", script_path)
     FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
+
+    # Models the real Temporal workers' readiness flags: when a stub worker
+    # boots it publishes its boot revision so bin/dev-update can verify
+    # effective worker adoption. An explicit worker_readiness_revision forces
+    # a stale worker that never adopts the updated checkout.
+    write_executable(
+      File.join(dir, "write-worker-readiness"),
+      <<~BASH
+        #!/usr/bin/env bash
+        set -euo pipefail
+        revision="${1:-}"
+        if [ -z "$revision" ]; then
+          revision="$(git rev-parse HEAD 2>/dev/null || true)"
+        fi
+        for mode in poll agent; do
+          file="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}"
+          mkdir -p "$(dirname "$file")"
+          printf '{"pid":%s,"ready_at":"%s","revision":"%s","active_activities":%s}\\n' "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${revision}" "#{worker_active_activities}" > "$file"
+        done
+      BASH
+    )
+    write_worker_readiness_line = %("#{dir}/write-worker-readiness" "#{worker_readiness_revision || ''}")
+
+    # Models a checkout whose HEAD can no longer be resolved once the workers
+    # boot (for example a corrupted .git between the pull and verification):
+    # the stub git fails `rev-parse HEAD` from then on, so bin/dev-update
+    # cannot determine the expected worker revision.
+    unknown_head_line = unknown_checkout_head ? %(touch "#{dir}/head-unknown") : ""
 
     dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
     capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
@@ -1153,6 +1429,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         #{capture_port_line}
         #{capture_kill_all_line}
         #{capture_dev_bundler_line}
+        #{unknown_head_line}
+        #{write_worker_readiness_line}
         #{dev_start_line}
         echo "bin/dev booted"
       BASH
@@ -1179,6 +1457,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
                 fi
                 ;;
               *)
+                if [ -e "#{dir}/head-unknown" ]; then
+                  echo "fatal: unknown revision" >&2
+                  exit 128
+                fi
                 if [ -f "#{dir}/pull-ran" ]; then
                   echo "post-pull-sha"
                 else
@@ -1263,6 +1545,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             exit 0
             ;;
           quit)
+            barriers_held=1
+            for mode in poll agent; do
+              lock="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}.admission.lock"
+              exec 8<>"$lock"
+              flock -n 8 && barriers_held=0
+              exec 8>&-
+            done
+            if [ "$barriers_held" -eq 1 ]; then
+              touch "#{dir}/worker-admission-barriers-held-at-stop"
+            fi
             printf 'overmind quit\\n' >> "#{dir}/calls.log"
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running"
@@ -1270,6 +1562,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             ;;
           restart)
             touch "#{dir}/overmind-restart-ran"
+            #{unknown_head_line}
+            #{write_worker_readiness_line}
             echo "overmind restarted processes"
             exit 0
             ;;

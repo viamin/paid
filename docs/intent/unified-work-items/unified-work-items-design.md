@@ -243,6 +243,19 @@ trusted-GitHub-user configuration. The migration reconciles issues created
 during its maintenance window and avoids long-term dual-write. Existing GitHub
 issue workflows continue through the unified contract after cutover.
 
+`WorkItems::MigrateGithubIssues` is the migration-only command. It uses the
+legacy GitHub issue's immutable GitHub node ID as the unified provider identity,
+retains the legacy issue FK as provenance, snapshots GitHub metadata, Paid
+state, fetched comments, relationships, and trusted-user configuration into
+the retained raw payload, creates a locked default assignment for the legacy
+repository project, and backfills each associated agent run's work-item
+reference. A rerun upserts that same record and assignment; a conflicting
+legacy identity or agent-run link stops the migration rather than overwriting
+history. The `work_items:migrate_github_issues` task accepts `SINCE` for the
+post-window sweep and selects only GitHub-created or GitHub-updated issues in
+that interval. Pull requests remain separate review artifacts. This command
+does not read, enable, or alter the `unified_work_items` runtime flag.
+
 Phase 1 added the default-off `unified_work_items` feature flag and its
 project-scoped rollout guard. Future project-scoped entry points evaluate
 `FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped

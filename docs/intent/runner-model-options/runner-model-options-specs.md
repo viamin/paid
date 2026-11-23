@@ -31,7 +31,10 @@
   advertised-ZDR models that remain runner-compatible. It SHALL require an
   explicit selection, preserve no free-policy or custom-model escape hatch,
   and reject a crafted save unless the current catalog is ready and includes
-  the submitted model.
+  the submitted model. An eligible OpenRouter-synced row SHALL remain
+  saveable when its catalog provider records the upstream vendor.
+  *Tests:* `spec/models/runner_openrouter_synced_catalog_spec.rb`,
+  `spec/system/runners/zdr_model_selection_spec.rb`.
 - [x] **RUNNER-MODEL-OPTIONS-009** — The setup form SHALL distinguish a ZDR
   catalog that is loading, unavailable, stale, empty, or ready. A state other
   than ready SHALL not expose an unverified selectable model list; changing

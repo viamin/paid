@@ -183,6 +183,19 @@ RSpec.describe Llm::Request do
     expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
   end
 
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "does not reject an expired refreshable Codex credential before isolated recovery" do
+    credential = project.account.runner_credentials.for_runner("codex").first
+    credential.update!(token: file_fixture("codex_auth_valid.json").read, expires_at: 1.minute.ago)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(true)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: be_between(1, 30)
+    )
+  end
+
   # @spec LLM-ROUTING-008
   it "uses the selected runner owner's managed credential when no account is supplied" do
     previous_account = Current.account
@@ -254,10 +267,161 @@ RSpec.describe Llm::Request do
       .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches the selected fallback timeout and every attempted route to the raised failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout") ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError, "fallback timeout") do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:selected_attempt_ordinal)).to eq(2)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(ordinal: 1, runner_id: runner.id, provider: "codex", model: "runner-mid", outcome: "timeout"),
+          a_hash_including(ordinal: 2, runner_id: fallback.id, provider: "gemini", model: "gemini-mid", outcome: "timeout")
+        )
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the selected fallback trace for a frozen invalid response" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    malformed = Struct.new(:output) do
+      def success? = true
+    end.new("not json").freeze
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), malformed ]
+    allow(provider).to receive(:send_message) do
+      result = failures.shift
+      raise result if result.is_a?(Exception)
+
+      result
+    end
+
+    result = described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ],
+      response_validator: ->(candidate) { candidate.output == "ok" })
+
+    expect(result).to eq(malformed)
+    expect(described_class.attempt_trace_for(result)).to include(selected_attempt_ordinal: 2)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the selected fallback trace for a frozen timeout" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout").freeze ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError, "fallback timeout") do |error|
+        expect(error).to be_frozen
+        expect(described_class.attempt_trace_for(error)).to include(selected_attempt_ordinal: 2)
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the earlier permanent failure as selected when a fallback times out" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::AuthenticationError.new("primary authentication"), AgentHarness::TimeoutError.new("fallback timeout") ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "primary authentication") do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:selected_attempt_ordinal)).to eq(1)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(ordinal: 1, outcome: "authentication_unavailable"),
+          a_hash_including(ordinal: 2, outcome: "timeout")
+        )
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "records an unavailable fallback as skipped without claiming it executed" do
+    fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message).and_raise(AgentHarness::TimeoutError, "primary timeout")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: fallback.id, outcome: "skipped", skip_reason: "unavailable")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).once
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches a skipped missing-managed-credential route to its configuration failure" do
+    allow(Runners::ManagedCredentialLifecycle).to receive(:credential_for).and_return(nil)
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /No managed subscription credential/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: runner.id, outcome: "skipped", skip_reason: "missing_managed_credential")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches a skipped policy-denied route to its configuration failure" do
+    run.update!(external_metadata: run.external_metadata.merge("zdr_required" => true))
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /zero data retention policy/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: runner.id, outcome: "skipped", skip_reason: "privacy_policy")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches an empty trace when no owned configured route remains" do
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    runner.update!(discarded_at: Time.current)
+
+    expect { described_class.call(project: project, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /No eligible configured runner/) do |error|
+        expect(described_class.attempt_trace_for(error)).to eq(attempts: [])
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
   # @spec PARTIAL-CLOSEOUT-049
   it "fails with a timeout when the overall budget leaves no time for a candidate" do
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 0) }
-      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/)
+      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:attempts)).to include(a_hash_including(outcome: "skipped", skip_reason: "deadline_exhausted"))
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+      end
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
@@ -410,7 +574,12 @@ RSpec.describe Llm::Request do
     allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
-    expect(provider).to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      provider_runtime: an_object_having_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
+      )
+    ))
   end
 
   # @spec MODEL-POLICY-015
@@ -424,7 +593,12 @@ RSpec.describe Llm::Request do
     allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
-    expect(provider).to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      provider_runtime: an_object_having_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
+      )
+    ))
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005 PARTIAL-CLOSEOUT-031

@@ -12,9 +12,23 @@ module ChatSessions
   class AgentLoop
     include ToolDispatch
 
+    # A structurally unusable normalized result. Paid deliberately does not
+    # infer a provider cause; the harness remains the owner of classifications
+    # it can supply. The aggregate usage travels with this failure so the
+    # completed provider attempt is still accounted for.
+    class EmptyResponseError < StandardError
+      attr_reader :tokens_input, :tokens_output, :model
+
+      def initialize(tokens_input:, tokens_output:, model:)
+        @tokens_input = tokens_input
+        @tokens_output = tokens_output
+        @model = model
+        super("The model returned neither usable text nor callable tools")
+      end
+    end
+
     DEFAULT_MAX_TOOL_ITERATIONS = 50
     MAX_CONVERSATION_MESSAGES = 200
-    EMPTY_RESPONSE_MESSAGE = "I couldn't complete that turn because the model returned an empty response. Please try again."
     SOFT_STOP_PROMPT = "You've reached the maximum number of tool calls for this turn. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
     SOFT_STOP_FALLBACK_MESSAGE = "I've reached the maximum number of tool calls for this turn. Please send another message to continue."
     TOKEN_BUDGET_SOFT_STOP_PROMPT = "You've reached the token budget for this chat session. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
@@ -64,10 +78,7 @@ module ChatSessions
 
         if response[:tool_calls].blank?
           final_assistant_message = create_assistant_message(response) if response[:content].present?
-          final_assistant_message ||= create_empty_response_message(
-            model: last_response_model,
-            aggregate_tokens: aggregate_tokens
-          )
+          raise_empty_response!(model: last_response_model, aggregate_tokens:) unless final_assistant_message
           break
         end
 
@@ -468,14 +479,14 @@ module ChatSessions
       message
     end
 
-    def create_empty_response_message(model:, aggregate_tokens:)
+    # @spec CHAT-API-002 @spec CHAT-TURN-RECOVERY-008
+    def raise_empty_response!(model:, aggregate_tokens:)
       log_empty_response(model:, aggregate_tokens:)
-
-      create_assistant_message(
-        content: EMPTY_RESPONSE_MESSAGE,
-        model: model,
+      record_token_usage(aggregate_tokens[:input], aggregate_tokens[:output], model: model)
+      raise EmptyResponseError.new(
         tokens_input: aggregate_tokens[:input],
-        tokens_output: aggregate_tokens[:output]
+        tokens_output: aggregate_tokens[:output],
+        model: model
       )
     end
 

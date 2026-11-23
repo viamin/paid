@@ -230,6 +230,23 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(parsed).not_to have_key("baseURL")
     end
 
+    it "writes required OpenRouter privacy routing to provider request options" do # @spec MODEL-POLICY-022
+      runner = create_opencode_runner(
+        api_provider: "openrouter",
+        model: "moonshotai/kimi-k2-0905",
+        api_service_type: "openrouter",
+        api_key: "sk-openrouter-secret"
+      )
+      project = build(:project, data_classification: "restricted")
+
+      plan = described_class.call(runner: runner, prompt: "ping", project: project)
+      parsed = JSON.parse(plan.preparation.file_writes.first.content)
+
+      expect(parsed.dig("provider", "openrouter", "options", "extraBody", "provider")).to eq(
+        "data_collection" => "deny", "zdr" => true
+      )
+    end
+
     it "constructs the harness runner with external sandboxing enabled", :no_db do
       runner = instance_double(runner_double_class, runner_key: "claude")
       harness_runner = instance_double(

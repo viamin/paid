@@ -17,7 +17,15 @@ workflows:
     github-poll-activity-heartbeats-v1:
       introduced_on: "2026-07-08"
   Workflows::AgentExecutionWorkflow:
+    cleanup-owned-resources-v1:
+      introduced_on: "2026-11-21"
     proxy-health-control-routing-v1:
+      introduced_on: "2026-11-21"
+    failure-bookkeeping-control-v1:
+      introduced_on: "2026-11-21"
+    source-closure-recovery-control-routing-v1:
+      introduced_on: "2026-11-21"
+    enqueue-janitor-control-routing-v1:
       introduced_on: "2026-11-21"
     source-closure-timeout-cause-v1:
       introduced_on: "2026-11-16"
@@ -48,6 +56,8 @@ workflows:
     agent-execution-maintenance-tool-evidence-v1:
       introduced_on: "2026-11-19"
   Workflows::SourceClosureRecoveryWorkflow:
+    source-closure-recovery-control-routing-v1:
+      introduced_on: "2026-11-21"
     source-closure-timeout-cause-v1:
       introduced_on: "2026-11-16"
     source-closure-recovery-post-pr-v1:
@@ -56,6 +66,12 @@ workflows:
       introduced_on: "2026-11-07"
     source-closure-retry-unsuccessful-response-v1:
       introduced_on: "2026-11-12"
+    source-closure-recovery-auto-retry-v1:
+      introduced_on: "2026-11-22"
+    source-closure-recovery-deadline-v1:
+      introduced_on: "2026-11-22"
+    source-closure-recovery-operator-auto-retry-v1:
+      introduced_on: "2026-11-22"
   Workflows::ParallelAgentExecutionWorkflow:
     parallel-agent-execution-remove-pr-aggregation-v1:
       introduced_on: "2026-09-03"

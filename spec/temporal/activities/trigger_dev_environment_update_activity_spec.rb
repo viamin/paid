@@ -51,11 +51,11 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         stub_repo_full_name("paid-ai/paid")
       end
 
-      context "when only app code changed (lightweight)" do
+      context "when only docs and web-autoloaded code changed (lightweight)" do
         before do
           allow(github_client).to receive(:pull_request_files)
             .with("paid-ai/paid", 42)
-            .and_return(%w[app/models/user.rb app/controllers/projects_controller.rb])
+            .and_return(%w[docs/design.md app/controllers/projects_controller.rb])
         end
 
         it "triggers a lightweight update" do
@@ -70,7 +70,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
           expect(Process).to have_received(:spawn).with(
             expected_spawn_env(
               mode: "lightweight",
-              changed_files: "app/models/user.rb\napp/controllers/projects_controller.rb",
+              changed_files: "docs/design.md\napp/controllers/projects_controller.rb",
               restart_trigger_files: "",
               project_id: project.id
             ),
@@ -78,6 +78,59 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
             hash_including(out: [ dev_update_log_path, "a" ], err: [ dev_update_log_path, "a" ])
           )
           expect(Process).to have_received(:detach).with(12345)
+        end
+      end
+
+      context "when worker-loaded services changed (full restart)" do
+        before do
+          allow(github_client).to receive(:pull_request_files)
+            .with("paid-ai/paid", 42)
+            .and_return(%w[app/services/llm/request.rb spec/services/llm/request_spec.rb])
+        end
+
+        it "triggers a full update" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to include(triggered: true, mode: "full")
+        end
+
+        it "spawns the dev-update script with --full" do
+          activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(Process).to have_received(:spawn).with(
+            expected_spawn_env(
+              mode: "full",
+              changed_files: "app/services/llm/request.rb\nspec/services/llm/request_spec.rb",
+              restart_trigger_files: "app/services/llm/request.rb",
+              project_id: project.id
+            ),
+            "setsid", /bin\/dev-update/, "--full",
+            hash_including(out: [ dev_update_log_path, "a" ], err: [ dev_update_log_path, "a" ])
+          )
+        end
+      end
+
+      context "when worker-loaded models or jobs changed (full restart)" do
+        before do
+          allow(github_client).to receive(:pull_request_files)
+            .with("paid-ai/paid", 42)
+            .and_return(%w[app/models/runner.rb app/jobs/source_closure_recovery_job.rb])
+        end
+
+        it "triggers a full update with both files as restart triggers" do
+          result = activity.execute(project_id: project.id, pr_number: 42)
+
+          expect(result).to include(triggered: true, mode: "full")
+          expect(Process).to have_received(:spawn).with(
+            expected_spawn_env(
+              mode: "full",
+              changed_files: "app/models/runner.rb\napp/jobs/source_closure_recovery_job.rb",
+              restart_trigger_files: "app/models/runner.rb\napp/jobs/source_closure_recovery_job.rb",
+              project_id: project.id
+            ),
+            "setsid", /bin\/dev-update/, "--full",
+            hash_including(out: [ dev_update_log_path, "a" ], err: [ dev_update_log_path, "a" ])
+          )
         end
       end
 
@@ -101,7 +154,7 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
             expected_spawn_env(
               mode: "full",
               changed_files: "app/temporal/activities/new_activity.rb\napp/models/user.rb",
-              restart_trigger_files: "app/temporal/activities/new_activity.rb",
+              restart_trigger_files: "app/temporal/activities/new_activity.rb\napp/models/user.rb",
               project_id: project.id
             ),
             "setsid", /bin\/dev-update/, "--full",

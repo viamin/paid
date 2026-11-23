@@ -15,7 +15,7 @@ floor. Keep local `bin/rspec` and separate system/performance checks available.
 
 ## Execution
 
-Partition all non-system, non-performance spec files into four deterministic,
+Partition all non-system, non-performance spec files into five deterministic,
 disjoint groups. Assign largest source files first to the least-loaded group,
 using file bytes as a cheap structural estimate, not a correctness judgment or
 promise of equal runtime. Each CI job has its own PostgreSQL/Qdrant services,
@@ -30,10 +30,16 @@ expected distinct coverage reports exist, then collates them with the original
 Rails filters and enforces the existing 80% minimum. Missing reports, failing
 shards, or insufficient combined coverage fail the final check. Separate query
 performance specs run once, and the system-test workflow remains unchanged.
-Allow each shard 180 minutes at the GitHub job boundary. This remains a bounded
-failure window while leaving headroom for hosted-runner contention beyond the
-normal shard duration; reaching the boundary still cancels the shard and fails
+Allow each shard and dropped-shard recovery execution path 360 minutes at the
+GitHub job boundary. This remains a bounded failure window while leaving
+headroom for hosted-runner contention beyond the normal shard duration and the
+bounded setup retries; reaching the boundary still cancels the shard and fails
 the stable final check.
+
+The shard matrix and dropped-shard recovery retry JavaScript dependency setup
+at most five times, bounding each attempt to twenty minutes with increasing
+delays. This absorbs transient registry and hosted-runner stalls without
+skipping setup or relaxing the shard's 360-minute job boundary.
 
 ## Platform-dropped shard recovery
 
@@ -94,8 +100,8 @@ that would corrupt boot/coverage probe output while profiling the parent suite.
 JSON timings make each shard's examples and durations inspectable. The existing
 opt-in test-prof workflow must allow a full suite to finish within its timeout;
 profiling does not relax normal CI requirements. Compare before/after focused
-examples and actual CI wall time. Four jobs reduce latency at the cost of extra
-setup runner minutes; they do not claim a fourfold reduction in total CPU work.
+examples and actual CI wall time. Five jobs reduce latency at the cost of extra
+setup runner minutes; they do not claim a fivefold reduction in total CPU work.
 
 ## Open decisions
 

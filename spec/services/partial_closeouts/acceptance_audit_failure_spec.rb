@@ -39,6 +39,43 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
     )
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "projects only the bounded allowlisted attempt trace for legacy-safe diagnostics" do
+    run.update!(reconciliation: {
+      "acceptance_audit_failure" => {
+        "category" => "timeout", "provider" => "gemini", "attempt_trace" => {
+          "selected_attempt_ordinal" => 2,
+          "attempts" => [ { "ordinal" => 1, "runner_id" => 1, "provider" => "codex", "model" => "primary",
+            "outcome" => "timeout", "elapsed_ms" => 12, "allocated_ms" => 60_000, "phase" => "unknown", "secret" => "nope" } ]
+        }
+      }
+    })
+
+    diagnostic = described_class.diagnostic_for(run)
+
+    expect(diagnostic.dig("attempt_trace", "selected_attempt_ordinal")).to eq("2")
+    expect(diagnostic.dig("attempt_trace", "attempts", 0)).to eq(
+      "ordinal" => "1", "runner_id" => "1", "provider" => "codex", "model" => "primary",
+      "outcome" => "timeout", "elapsed_ms" => "12", "allocated_ms" => "60000", "phase" => "unknown"
+    )
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "does not invent a selected attempt for a skipped-only trace" do
+    run.update!(reconciliation: {
+      "acceptance_audit_failure" => {
+        "category" => "configuration_error", "attempt_trace" => {
+          "attempts" => [ { "ordinal" => 1, "outcome" => "skipped", "skip_reason" => "privacy_policy" } ]
+        }
+      }
+    })
+
+    trace = described_class.diagnostic_for(run).fetch("attempt_trace")
+
+    expect(trace).not_to have_key("selected_attempt_ordinal")
+    expect(trace.fetch("attempts")).to include("ordinal" => "1", "outcome" => "skipped", "skip_reason" => "privacy_policy")
+  end
+
   it "classifies cancellation, budget exhaustion, and rate-limit recovery as non-transient" do
     expect(described_class.classify(failing_run(status: "cancelled"))).to eq(:cancelled)
     expect(described_class.classify(failing_run(status: "token_budget_exceeded"))).to eq(:budget_exhausted)
@@ -48,10 +85,13 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
   it "classifies authentication and configuration failures separately from transport" do
     auth_status = failing_run(status: "auth_expired")
     auth_category = failing_run(status: "failed", category: "authentication_unavailable")
+    configuration_category = failing_run(status: "failed", category: "configuration_error")
 
     expect(described_class.classify(auth_status)).to eq(:authentication_or_configuration)
     expect(described_class.classify(auth_category)).to eq(:authentication_or_configuration)
+    expect(described_class.classify(configuration_category)).to eq(:authentication_or_configuration)
     expect(described_class).not_to be_transient(auth_category)
+    expect(described_class).not_to be_transient(configuration_category)
   end
 
   it "classifies typed transport categories as transient" do

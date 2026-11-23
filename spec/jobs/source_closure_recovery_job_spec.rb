@@ -5,7 +5,10 @@ require "temporalio/client"
 
 RSpec.describe SourceClosureRecoveryJob do
   let(:client) { instance_double(Temporalio::Client) }
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:account) { create(:account) }
+  let(:operator) { create(:user, :member, account:) }
+  let(:project) { create(:project, account:, created_by: operator, auto_pick_enabled: true) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   before do
     PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)
@@ -21,8 +24,9 @@ RSpec.describe SourceClosureRecoveryJob do
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,
       { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal,
-        commit_sha: "a" * 40 },
-      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
+        commit_sha: "a" * 40, operator_authorized: false },
+      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT
     )
   end
 
@@ -70,5 +74,62 @@ RSpec.describe SourceClosureRecoveryJob do
 
     expect(client).to have_received(:start_workflow).once
     expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "does not start a fourth automatic workflow after repeated recovery epochs" do
+    allow(client).to receive(:start_workflow)
+    handle = instance_double(Temporalio::Client::WorkflowHandle)
+    description = instance_double(Temporalio::Client::WorkflowExecution::Description,
+      status: Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    allow(client).to receive(:workflow_handle).and_return(handle)
+    allow(handle).to receive(:describe).and_return(description)
+    3.times do
+      described_class.perform_now(run.id)
+      PartialCloseouts::SourceClosureRecovery.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    described_class.perform_now(run.id)
+
+    expect(client).to have_received(:start_workflow).exactly(3).times
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+      .to eq("automatic_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops delayed duplicate jobs for a legacy exhausted lineage before starting recovery" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+    PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)
+    allow(client).to receive(:start_workflow)
+    handle = instance_double(Temporalio::Client::WorkflowHandle)
+    allow(client).to receive(:workflow_handle).and_return(handle)
+    allow(handle).to receive(:describe).and_raise(
+      Temporalio::Error::RPCError.new("missing", code: Temporalio::Error::RPCError::Code::NOT_FOUND, raw_grpc_status: nil)
+    )
+
+    described_class.perform_now(run.id)
+    travel 11.minutes do
+      described_class.perform_now(run.id)
+    end
+
+    expect(client).not_to have_received(:start_workflow)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+      .to eq("automatic_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "records an operator-requested workflow separately from automatic recovery" do
+    allow(client).to receive(:start_workflow)
+
+    described_class.perform_now(run.id, operator_id: operator.id)
+
+    expect(client).to have_received(:start_workflow).with(
+      Workflows::SourceClosureRecoveryWorkflow,
+      hash_including(agent_run_id: run.id, operator_authorized: true),
+      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT
+    )
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "operator_recovery_attempt")).to eq(1)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(0)
   end
 end

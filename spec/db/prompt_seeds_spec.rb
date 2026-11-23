@@ -511,13 +511,34 @@ RSpec.describe Prompt, type: :model do
 
     let(:fallback_template) { PromptAssembly::Sections::IssueTask::FALLBACK_PROMPT }
 
-    it "instructs runs to structurally hold a review-gated PR" do
+    it "does not classify #4922-like ordinary review and verification work as a hold" do # @spec AUTO-MERGE-009
       templates = [ seed_template, fallback_template ]
 
-      expect(templates).to all(include("paid-hold-review"))
-      expect(templates).to all(include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"'))
-      expect(templates).to all(include('"X-Agent-Run-Id: $AGENT_RUN_ID"'))
-      expect(templates).to all(include('"X-Proxy-Token: $PROXY_TOKEN"'))
+      expect(templates).to all(include(
+        "user-facing",
+        "screenshots or review",
+        "normal CI or bot review",
+        "verification evidence is missing"
+      ))
+      expect(templates).to all(match(/the pull request this run creates or materially\s+changes/))
+    end
+
+    it "holds #4181-like explicit human-only decisions with structured evidence" do # @spec AUTO-MERGE-009
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(include(
+        "paid-hold-review",
+        "specific unresolved human-only decision",
+        "material scope or authority change",
+        "why normal delegated checks cannot settle it"
+      ))
+      expect(templates).to all(match(/explicit design or intent\s+approval gate/))
+      expect(templates).to all(match(/PR, run,\s+and issue evidence/))
+      expect(templates).to all(include(
+        '"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"',
+        '"X-Agent-Run-Id: $AGENT_RUN_ID"',
+        '"X-Proxy-Token: $PROXY_TOKEN"'
+      ))
     end
   end
 end

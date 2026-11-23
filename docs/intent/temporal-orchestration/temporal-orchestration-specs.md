@@ -158,6 +158,69 @@
   `spec/temporal/activities/check_proxy_health_activity_spec.rb`.
   *Code:* `Workflows::AgentExecutionWorkflow#ensure_proxy_healthy`.
 
+- [x] **TEMPORAL-ORCHESTRATION-015** — When a new agent workflow must publish
+  a quality-gate, startup or execution failure, it SHALL schedule the existing
+  locked `MarkAgentRunFailed` activity on existing poll/control capacity with
+  its unchanged 30-second execution and three-attempt retry bounds, and a
+  120-second total scheduling/recovery bound. Unpatched histories SHALL retain
+  their original routing, options and secondary-error behavior. New histories
+  SHALL preserve the original execution failure if bounded bookkeeping fails,
+  report the unavailable operation and retain normal cleanup/janitor handling.
+  Cancellation SHALL not become a fabricated failure, late failure publication
+  SHALL not overwrite a successful/cancelled terminal state, and long AI work,
+  authority, retry allowances and resource capacity SHALL remain unchanged
+  (#5248).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#execute`.
+
+- [x] **TEMPORAL-ORCHESTRATION-016** — When a new report-only acceptance-audit
+  workflow reaches terminal success, failure, or cancellation, Paid SHALL
+  resolve cleanup ownership through a cancellation-detached activity on
+  bounded poll/control capacity before scheduling cleanup, so an
+  already-cancelled workflow token cannot skip owned-resource cleanup and the
+  resolver is never queued behind a saturated agent pool. It SHALL skip
+  container, MCP/tool-sidecar, service, worktree, and janitor commands only
+  when their durable run references and execution-resource ledger show no
+  owned resource. Persisted references and active ledger/worktree records,
+  including resources from a resumed run, SHALL retain the matching existing
+  cleanup, cancellation behavior, finite retention, and janitor path. A
+  resolver failure SHALL retain legacy cleanup; it SHALL not move expensive
+  cleanup to the poll queue, alter terminal failure publication, mint a retry,
+  or alter closeout authority. The `cleanup-owned-resources-v1` Temporal patch
+  SHALL preserve cleanup commands for unpatched histories (#5266).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_cleanup_ownership_spec.rb`,
+  `spec/temporal/workflows/base_workflow_spec.rb`,
+  `spec/temporal/activities/resolve_cleanup_ownership_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#resolve_cleanup_ownership`,
+  `Activities::ResolveCleanupOwnershipActivity`, `AgentRuns::CleanupOwnership`.
+
+- [x] **TEMPORAL-ORCHESTRATION-017** — When a post-push source-closure
+  assessment needs to publish waiting recovery state, both the original agent
+  workflow and the narrow recovery workflow SHALL schedule only the existing
+  `ParkSourceClosureRecovery` activity through existing poll/control capacity,
+  retaining its 30-second execution bound, existing retry semantics and a
+  120-second total scheduling/recovery bound. The long assessment and agent
+  activities SHALL retain their original queue, and a per-workflow Temporal
+  patch SHALL preserve legacy commands and options for replay. Bounded
+  publication failure SHALL remain an actionable failure without creating a
+  PR, marking completion, bypassing assessment, changing authority/retry
+  allowances, or overwriting a late terminal state. The detached short
+  `EnqueueJanitor` scheduling operation SHALL use the same existing control
+  capacity and a finite 120-second total bound for new histories, while
+  expensive cleanup remains on its original route and a failed enqueue does
+  not claim cleanup completed (#5268).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#park_source_closure_recovery`,
+  `Workflows::SourceClosureRecoveryWorkflow#park_source_closure_recovery`,
+  `Workflows::AgentExecutionWorkflow#execute`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

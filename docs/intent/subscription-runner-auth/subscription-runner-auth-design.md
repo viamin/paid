@@ -75,6 +75,38 @@ harvests the broker's rotated OAuth state back into the canonical
 `RunnerCredential` before releasing the per-credential lease. Both remain
 `remote_safe: false` until broader remote-hardening is proven.
 
+Credential readiness is shared by agent provisioning and isolated text
+execution. It classifies fresh access, refreshable expiry, revoked state,
+missing refresh material, and unsupported refresh without inspecting or
+logging token contents. An expired Codex or OpenCode credential is selected
+only while its canonical unrevoked auth state can reach the configured
+provider-owned OpenAI OAuth client; OMP uses the agent-harness Claude exchange.
+The same row and lease serialize refresh and later rotation harvest. If that
+exchange cannot make the record fresh, no expired native file is materialized.
+When concurrent records exist, a usable fresh credential takes precedence over
+a newer expired credential that cannot reach refresh; the latter cannot shadow
+the former at routing, readiness, materialization, or harvest boundaries.
+All isolated-text routing and dashboard readiness surfaces use this shared
+classification, so a recoverable expiry is not reported as missing.
+Host-forwarded rotation remains intentionally separate: it is not imported
+into a managed record unless an existing authorized identity/writeback boundary
+already establishes equivalence.
+
+Codex recovery adapts the published harness's explicit native-store contract.
+While holding the canonical row lease, Paid writes only the selected managed
+record into a private temporary `auth.json` with mode `0600`. The public harness
+metadata selects its generation and account; recovery receives that explicit
+path, generation, account and a 45-second deadline. Paid validates the returned
+credentials/metadata envelope against the resulting private store, subscription
+billing, the selected identity and fresh usable native credentials before the
+existing canonical persistence action. A changed canonical generation or revoked
+record cannot be overwritten. Temporary native state is removed on success and
+failure, including cancellation. Provider transport and token interpretation stay
+in the harness and existing credential interface; no host auth is imported.
+OpenCode and OMP retain their separate existing exchange contracts. Release
+adoption and actual selected-credential operating acceptance remain separate
+gates from this adapter (#5280, #5262 and #5208).
+
 ## Exceptions Preserved
 
 - **Codex remote placement is still gated off.** The managed materializer is

@@ -107,7 +107,8 @@ module Issues
         next if run.pull_request_number.present? || run.result_commit_sha.present?
 
         outcome = run.reconciliation.to_h.fetch("no_progress", {})
-        outcome["outcome"] == "recommend_close" && outcome["source_revision"] == source_revision && outcome["intent_revision"] == intent_revision
+        outcome["outcome"].in?(%w[recommend_close continue]) &&
+          outcome["source_revision"] == source_revision && outcome["intent_revision"] == intent_revision
       end
     end
   end

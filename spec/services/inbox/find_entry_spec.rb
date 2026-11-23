@@ -15,6 +15,15 @@ RSpec.describe Inbox::FindEntry do
     expect(entry).to have_attributes(id: "clarifying_questions:#{issue.id}")
   end
 
+  # @spec NO-OUTPUT-ISSUE-010
+  it "projects a no-output disposition's exact next action into queue detail" do
+    issue.update!(needs_input_questions: [ "Choose the supported implementation option." ])
+
+    entry = described_class.call(user:, entry_id: "clarifying_questions:#{issue.id}")
+
+    expect(entry.questions).to eq([ "Choose the supported implementation option." ])
+  end
+
   # @spec MOBILE-API-008
   it "returns nil for malformed and stale ids" do
     expect(described_class.call(user:, entry_id: "not-a-queue-id")).to be_nil

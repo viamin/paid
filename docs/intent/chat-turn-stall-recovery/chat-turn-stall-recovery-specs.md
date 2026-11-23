@@ -40,14 +40,25 @@
 
 - [x] **CHAT-TURN-RECOVERY-008** — When an active chat turn fails after its
   user message was persisted, and no durable rate-limit or recovery notice
-  already explains the failure, Paid SHALL persist
-  and broadcast a non-collapsed transcript notice saying the response stopped,
-  that completed tool actions may have taken effect, and that the user can
-  send a new message. The original error SHALL remain in server logs, without
-  exposing its internal details in the notice.
+  already explains the failure, Paid SHALL persist and broadcast a
+  non-collapsed system transcript notice saying the response stopped and that
+  completed tool actions may have taken effect. A response with neither usable
+  text nor callable tools SHALL fail with the `empty_response` classification,
+  SHALL NOT persist its explanation as an assistant answer or rebuild it into
+  model history, and SHALL offer an authenticated Retry action that resumes
+  the same turn from its durable checkpoint until
+  `ChatTurn::MAX_RECOVERY_ATTEMPTS` has been reached. After the final failed
+  retry, the refreshed notice SHALL withdraw Retry and direct the user to send
+  a new message. After a successful retry, the refreshed notice SHALL withdraw
+  Retry and state that recovery completed. Retry SHALL use the existing
+  compare-and-swap recovery claim and SHALL NOT replay completed tools or
+  approve a pending write. The
+  original error SHALL remain in server logs, without exposing its internal
+  details in the notice.
   *Code:* `ChatTurn#fail!`, `ChatTurns::PersistFailureNotice`,
   `ChatMessage#chat_turn_failure_notice?`.
-  *Test:* `spec/jobs/chat_sessions/process_message_job_spec.rb`.
+  *Test:* `spec/jobs/chat_sessions/process_message_job_spec.rb`,
+  `spec/models/chat_turn_spec.rb`, `spec/requests/chat_sessions_spec.rb`.
 
 - [x] **CHAT-TURN-RECOVERY-009** — While a chat turn is pending or streaming,
   Paid SHALL show a visible progress line adjacent to the composer, including

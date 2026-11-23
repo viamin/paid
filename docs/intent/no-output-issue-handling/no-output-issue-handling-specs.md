@@ -82,15 +82,17 @@
 
 - [x] **NO-OUTPUT-ISSUE-009** — When two automatic `create_pr` runs for the
   same issue and current closeout-evidence and intent revisions complete as
-  `recommend_close` without a pull request or result commit, the system SHALL
+  `recommend_close` or an authorized `continue` without a pull request or
+  result commit, the system SHALL
   hold further automatic implementation admission and dequeue for that
   revision pair using the recorded run facts, SHALL retain the bounded run IDs
   and an operator next action in diagnostics, and SHALL release the hold only
   after relevant evidence or intent changes or an authorized explicit retry,
   whose replacement run SHALL retain a release fact bound to the current
   evidence and intent revisions even when it produces no delivery artifact.
-  A single no-progress outcome SHALL not hold the issue, and provider or
-  transport failures SHALL continue through their typed retry policy.
+  A single no-progress outcome SHALL not hold the issue, delivery progress
+  SHALL reset the sequence, and provider or transport failures SHALL continue
+  through their typed retry policy.
   *Tests:* `spec/services/issues/no_progress_create_pr_hold_spec.rb`,
   `spec/requests/agent_runs_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
@@ -102,6 +104,32 @@
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/services/dashboard/held_work_details.rb`,
   `app/views/dashboard/_eligibility_breakdown.html.erb`.
+
+- [x] **NO-OUTPUT-ISSUE-010** — When an issue-scoped `create_pr` run produces
+  no pull request or result commit but its observable main-agent output proposes
+  remaining implementation, design work, or an approval/decision required to
+  continue, the system SHALL obtain a schema-validated semantic disposition
+  through `agent_harness`. When a human decision is required, it SHALL park the
+  issue as `needs_input`, retain the disposition and exact next action on the
+  run, and show that action in the GitHub explanation and Inbox queue/detail.
+  When the canonical effective policy independently proves that coding is
+  already authorized and no human decision is missing, it SHALL preserve the
+  issue's eligibility for that existing continuation. It SHALL NOT recommend
+  closing the issue or create or enlarge continuation authorization from agent
+  output. A disposition that is absent,
+  malformed, or unavailable SHALL fail closed to the same actionable park.
+  *Tests:* `spec/services/llm/assess_no_output_disposition_spec.rb`,
+  `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/services/llm/assess_no_output_disposition.rb`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-011** — When a schema-validated no-output disposition
+  states `recommend_close`, the system SHALL preserve the existing
+  recommend-close state, label, explanation, replay deduplication, and
+  no-progress accounting. Explicit no-code-required declarations and typed
+  provider or infrastructure failures SHALL retain their existing precedence.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
 
 ## PR-producing partial closeouts
 

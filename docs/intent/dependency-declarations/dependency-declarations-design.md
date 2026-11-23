@@ -20,7 +20,12 @@ recognises them. Those directives do not apply when they appear as Markdown code
 examples or describe another numbered issue's dependency status or
 prerequisites, including in a dependency-section list item. A sentence about
 another issue's ordering cannot impose that ordering on the issue carrying the
-sentence. Negative and removal directives retain their ordered-comment
+sentence. This includes a numbered subject immediately followed by a comma and
+a supported directive, with or without an auxiliary: `#4707, blocked by
+owner/repo#557` and `#4707, is blocked by owner/repo#557`. The comma must be
+immediately attributable to the numbered subject; an unrelated reference
+elsewhere earlier in the sentence does not suppress a current-item directive.
+Negative and removal directives retain their ordered-comment
 semantics. When one list item contains
 both a bare declaration for the current item and another issue's ordering, the
 bare declaration remains in effect.
@@ -53,6 +58,15 @@ Auto-Pick edges when an issue is synchronized and is also called directly by
 comment bodies. This prevents a stale association from bypassing an unresolved
 live declaration.
 
+For Auto-Merge, a qualified reference outside the current repository remains a
+blocking declaration unless its exact normalized owner, repository, and number
+match a project tracked by the same account. The gate verifies that tracked
+project through its configured provider identity at evaluation time: a closed
+issue is resolved, and a pull request is resolved only when merged. Local Paid
+state, completed runs, or a sibling relationship never substitute for that
+provider result. Missing tracking, inaccessible sources, open issues,
+closed-unmerged pull requests, and provider errors remain blocked.
+
 ## Blocking graph invariant
 
 Every `IssueDependency` local-edge write validates the proposed account-scoped
@@ -69,6 +83,8 @@ batch is evaluated against earlier additions.
 | --- | --- | --- | --- |
 | Bare-reference admission | Markdown list grammar only within dependency sections | Parse all section prose; semantic keyword heuristics | List syntax is deterministic, intentional, and avoids making an implementation inventory a merge gate. |
 | Consumer contract | One shared extractor | Separate Auto-Pick and Auto-Merge parsers | Both gates must interpret the same declaration text identically. |
+| Comma subject attribution | Recognize only an immediately preceding numbered subject followed by a comma and a supported directive | Suppress directives after any earlier issue reference | The bounded punctuation shape captures appositive related-work status without hiding an actual declaration merely because the prose mentions another issue. |
+| Cross-project Auto-Merge verification | Resolve only an exact same-account tracked project through its provider identity | Treat a local completed state, arbitrary remote access, or a sibling project as proof | Account-scoped tracking establishes the trusted source; the provider supplies the current lifecycle state and failures fail closed. |
 
 ## References
 

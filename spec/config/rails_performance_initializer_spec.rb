@@ -5,7 +5,13 @@ require "rails_helper"
 RailsPerformanceInitializer = Class.new unless defined?(RailsPerformanceInitializer)
 unless defined?(RailsPerformanceInitializerConfig)
   RailsPerformanceInitializerConfig = Class.new do
-    attr_writer :redis, :duration, :ignored_paths, :enabled
+    attr_writer :redis,
+      :duration,
+      :slow_requests_time_window,
+      :slow_requests_limit,
+      :recent_requests_limit,
+      :ignored_paths,
+      :enabled
   end
 end
 unless defined?(RedisClientConnection)
@@ -43,6 +49,9 @@ RSpec.describe RailsPerformanceInitializer, :no_db do
     allow(RailsPerformance).to receive(:setup).and_yield(config)
     allow(config).to receive(:redis=)
     allow(config).to receive(:duration=)
+    allow(config).to receive(:slow_requests_time_window=)
+    allow(config).to receive(:slow_requests_limit=)
+    allow(config).to receive(:recent_requests_limit=)
     allow(config).to receive(:ignored_paths=)
     allow(config).to receive(:enabled=)
     allow(Redis).to receive(:new).and_return(redis_client)
@@ -57,8 +66,11 @@ RSpec.describe RailsPerformanceInitializer, :no_db do
     load initializer_path
 
     expect(Redis).to have_received(:new).with(url: "redis://127.0.0.1:6379/0")
-    expect(config).to have_received(:duration=).with(4.hours)
-    expect(config).to have_received(:ignored_paths=).with([ "/rails/performance" ])
+    expect(config).to have_received(:duration=).with(7.days)
+    expect(config).to have_received(:slow_requests_time_window=).with(7.days)
+    expect(config).to have_received(:slow_requests_limit=).with(500)
+    expect(config).to have_received(:recent_requests_limit=).with(1000)
+    expect(config).to have_received(:ignored_paths=).with([ "/rails/performance", "/pghero" ])
     expect(config).to have_received(:enabled=).with(true)
   end
 

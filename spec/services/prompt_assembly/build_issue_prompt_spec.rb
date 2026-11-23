@@ -235,6 +235,29 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text.scan("# Criterion-Level Verification").length).to eq(1)
     end
 
+    it "keeps the review-hold decision boundary for a project prompt override" do # @spec AUTO-MERGE-009
+      overridden_project = create(:project, auto_merge_mode: "all", allow_bot_authored_pr_auto_merge: true)
+      prompt = create(
+        :prompt,
+        :for_project,
+        project: overridden_project,
+        slug: "coding.issue_implementation",
+        name: "Custom issue implementation",
+        category: "coding"
+      )
+      prompt.create_version!(
+        template: "# Task\n\nImplement {{title}}. Keep a specific unresolved human-only decision for review.",
+        variables: []
+      )
+
+      result = described_class.call(issue: issue, project: overridden_project)
+
+      expect(result.text).to include("specific unresolved human-only decision")
+      expect(result.text).to include("screenshots or review")
+      expect(result.text).to match(/the pull request this run creates or materially\s+changes/)
+      expect(result.text).to include("why normal delegated checks cannot settle it")
+    end
+
     it "omits RDR rollout guard guidance when the issue does not reference an RDR" do
       result = described_class.call(issue: issue, project: project)
 

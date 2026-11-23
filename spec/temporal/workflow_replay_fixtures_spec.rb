@@ -39,6 +39,34 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
     end
   end
 
+  # Captured from the unpatched production workflow with synthetic activities.
+  # @spec TEMPORAL-ORCHESTRATION-015
+  it "replays legacy acceptance-audit failure publication on its original queue" do
+    history = Temporalio::WorkflowHistory.from_history_json(
+      Rails.root.join("spec/fixtures/temporal/agent_execution_failure_history.json").read
+    )
+    publication = history.events.filter_map(&:activity_task_scheduled_event_attributes)
+      .find { |activity| activity.activity_type.name == "MarkAgentRunFailed" }
+    expect(publication.task_queue.name).to eq("paid-agent-tasks")
+    expect(publication.start_to_close_timeout.seconds).to eq(30)
+    expect(publication.retry_policy.maximum_attempts).to eq(3)
+
+    cleanup_activity_names = history.events.filter_map(&:activity_task_scheduled_event_attributes)
+      .map { |activity| activity.activity_type.name }
+    expect(cleanup_activity_names).to include(
+      "CleanupContainer", "CleanupMcpServers", "CleanupServices", "CleanupWorktree", "EnqueueJanitor"
+    )
+
+    result = Temporalio::Worker::WorkflowReplayer.new(
+      workflows: [ Workflows::AgentExecutionWorkflow ],
+      data_converter: Paid::TemporalDataConverter.new,
+      logger: Logger.new(nil),
+      workflow_failure_exception_types: [ Exception ]
+    ).replay_workflow(history, raise_on_replay_failure: false)
+
+    expect(result.replay_failure).to be_nil
+  end
+
   described_class.workflow_classes.each do |workflow_class|
     it "replays #{workflow_class.name.demodulize} from its saved history" do
       history = Temporalio::WorkflowHistory.from_history_json(

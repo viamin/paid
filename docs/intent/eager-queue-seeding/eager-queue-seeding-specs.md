@@ -112,13 +112,27 @@
   and queue-admission checks. A run awaiting in-place rate-limit recovery or
   a run with a PR, pushed revision, or partial-closeout continuation SHALL not
   mint a blind replacement; duplicate callbacks, delayed jobs, and sweeps
-  SHALL converge on one active implementation run.
+  SHALL converge on one active implementation run. Ordinary
+  `create_pr` admission (`Issues::EnqueueEligible`, including periodic
+  sweeps, delayed re-enqueues, and sync-driven seeding) SHALL honor the same
+  produced-work and rate-limit-recovery refusals the shared policy records
+  for the issue's latest failed auto-picked `create_pr` run: it SHALL NOT
+  mint a fresh implementation attempt while that refusal stands (#4989
+  acceptance bypass). A retryable partial-closeout reconciliation with
+  recorded gaps SHALL defer to normal eligibility, which verifies its current
+  assessment before admitting a continuation. Failures created before the authorized operator reset
+  window (`runner_retry_failure_window_reset_at`) SHALL NOT hold admission,
+  and explicitly authorized continuations (`Issues::RequestContinuation`)
+  remain outside this guard. A `no_output`-status source or an
+  `analyze_issue` goal SHALL be unaffected.
   *Code:* `Issue#enqueue_self_if_became_auto_pick_eligible`,
+  `Issue#auto_pick_create_pr_admission_hold`,
   `AgentRuns::AutoPickCreatePrRetryPolicy`,
   `RetryFailedAutoPickCreatePrJob`, `Issues::EnqueueEligible`.
   *Test:* `spec/models/issue_spec.rb`,
   `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
-  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`.
+  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`,
+  `spec/services/issues/enqueue_eligible_admission_hold_spec.rb`.
 
 ## Failed-run retry cap
 

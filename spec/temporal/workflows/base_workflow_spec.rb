@@ -208,5 +208,23 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
         cancellation: detached_cancellation
       )
     end
+
+    # Exercises the real SDK boundary (Temporalio::Workflow.execute_activity) rather than
+    # stubbing run_activity, to prove run_cleanup_activity's detached token — not just a mocked
+    # pass-through — is what keeps the call schedulable once the ambient workflow token is
+    # already cancelled. Plain run_activity has no explicit `cancellation:` kwarg, so it
+    # inherits that cancelled token and would hit the `raise` branch below instead.
+    it "keeps the activity schedulable at the SDK boundary when the ambient workflow token is already cancelled" do
+      allow(Temporalio::Workflow).to receive(:execute_activity) do |_activity_class, _input, **options|
+        raise Temporalio::Error::CanceledError, "workflow canceled" unless options.key?(:cancellation)
+
+        { ok: true }
+      end
+
+      result = workflow.send(:run_cleanup_activity, Activities::CleanupContainerActivity,
+        { agent_run_id: 42 }, timeout: 30)
+
+      expect(result).to eq(ok: true)
+    end
   end
 end

@@ -166,8 +166,7 @@ module Workflows
           source_pull_request_number: source_pull_request_number
         )
         unless gate_result.fetch(:allowed, true)
-          run_activity(Activities::MarkAgentRunFailedActivity,
-            { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
+          mark_run_failed({ agent_run_id: agent_run_id, error: quality_gate_error(gate_result) })
 
           return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
         end
@@ -622,9 +621,9 @@ module Workflows
           elsif issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.
-            run_activity(Activities::HandleNoOutputIssueRunActivity,
+            run_activity(Activities::HandleNoOutputIssueRunActivity, # @spec NO-OUTPUT-ISSUE-010
               { agent_run_id: agent_run_id,
-                output_present: agent_result.fetch(:output_present, false) }, timeout: 30)
+                output_present: agent_result.fetch(:output_present, false) }, timeout: 120)
           else
             # Non-issue run or existing-PR run: mark completed
             complete_result = run_activity(Activities::MarkAgentRunCompleteActivity,
@@ -674,12 +673,12 @@ module Workflows
         # Temporal wraps activity errors in ActivityError — unwrap to get the
         # actual error message from our ApplicationError. Without this, every
         # failure is recorded as the opaque "Activity task failed".
-        run_activity(Activities::MarkAgentRunFailedActivity,
+        mark_run_failed(
           {
             agent_run_id: agent_run_id,
             error: unwrap_error_message(e),
             failure_type: unwrap_error_type(e)
-          }, timeout: 30)
+          }, preserve_error: true)
 
         raise
 
@@ -701,6 +700,7 @@ module Workflows
         # Skip cleanup activities when agent_run_id is not present — calling
         # AgentRun.find(nil) would raise and waste retry budget on a known no-op.
         if agent_run_id.present?
+          cleanup_ownership = resolve_cleanup_ownership(agent_run_id)
           retain = should_retain_container?(agent_step_succeeded, workflow_error)
 
           if retain
@@ -723,7 +723,7 @@ module Workflows
             end
           end
 
-          unless retain
+          if cleanup_ownership[:container] && !retain
             begin
               run_cleanup_activity(Activities::CleanupContainerActivity,
                 { agent_run_id: agent_run_id },
@@ -739,46 +739,52 @@ module Workflows
             end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupMcpServersActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_mcp_servers_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:mcp_servers]
+            begin
+              run_cleanup_activity(Activities::CleanupMcpServersActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_mcp_servers_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupServicesActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_services_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:services]
+            begin
+              run_cleanup_activity(Activities::CleanupServicesActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_services_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupWorktreeActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_worktree_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:worktree]
+            begin
+              run_cleanup_activity(Activities::CleanupWorktreeActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_worktree_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
         end
 
@@ -787,11 +793,15 @@ module Workflows
         # failed the janitor provides another attempt at cleanup outside the workflow.
         # For retained containers the janitor respects the retention TTL.
         begin
-          if agent_run_id.present?
+          if agent_run_id.present? && cleanup_ownership[:janitor]
+            # TODO(#5268): remove after the patch-guard sweep confirms no
+            # pre-control-routing AgentExecutionWorkflow history remains.
+            control_route = Temporalio::Workflow.patched("enqueue-janitor-control-routing-v1")
+            routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
             run_cleanup_activity(Activities::EnqueueJanitorActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 10,
-              retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
+              retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1), **routing)
           end
         rescue => e
           Temporalio::Workflow.logger.warn(
@@ -825,6 +835,34 @@ module Workflows
           end
         end
       end
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-016
+    def resolve_cleanup_ownership(agent_run_id)
+      return legacy_cleanup_ownership unless Temporalio::Workflow.patched("cleanup-owned-resources-v1")
+
+      # This runs at the start of the ensure block, so the workflow token may
+      # already be cancelled. run_cleanup_activity's detached cancellation
+      # keeps the resolver schedulable in that case instead of inheriting the
+      # cancelled token and raising before any owned-resource cleanup below
+      # runs. Routed to the bounded poll/control queue because it is a cheap
+      # metadata read, not the expensive cleanup/AI work that stays on the
+      # agent queue.
+      run_cleanup_activity(Activities::ResolveCleanupOwnershipActivity, { agent_run_id: agent_run_id },
+        start_to_close_timeout: 10, schedule_to_close_timeout: 30, retry_policy: NO_RETRY,
+        task_queue: Paid::POLL_TASK_QUEUE)
+    rescue => error
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.cleanup_ownership_unavailable",
+        agent_run_id: agent_run_id,
+        error_class: error.class.name,
+        error: error.message
+      )
+      legacy_cleanup_ownership
+    end
+
+    def legacy_cleanup_ownership
+      { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
     end
 
     def queue_refactor_followup_if_needed(goal:, tdd_phase:, tdd_returned_to_test_review:, project_id:, issue_id:, source_pull_request_number:, focus:, runner_id:, initiating_user_id:)
@@ -868,9 +906,23 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-unsuccessful-response-recovery-v1")
       end
 
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: agent_run_id, category: category, attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts }, timeout: 30)
+      park_source_closure_recovery(
+        agent_run_id: agent_run_id, category: category, attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts
+      )
       { waiting: true }
+    end
+
+    # Keep the short, durable state publication schedulable while long-running
+    # assessment workers are saturated. The patch preserves commands already
+    # recorded on the agent queue; the activity itself keeps its existing retry
+    # policy and 30-second execution timeout.
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+    def park_source_closure_recovery(input)
+      # TODO(#5268): remove after the patch-guard sweep confirms no
+      # pre-control-routing AgentExecutionWorkflow history remains.
+      control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)
     end
 
     def pre_runner_infra_error?(error_message)
@@ -1043,6 +1095,22 @@ module Workflows
         current = current.cause
       end
       false
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-015
+    def mark_run_failed(input, preserve_error: false)
+      control_route = Temporalio::Workflow.patched("failure-bookkeeping-control-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      run_activity(Activities::MarkAgentRunFailedActivity, input, timeout: 30, **routing)
+    rescue Temporalio::Error::ActivityError, Temporalio::Error::CanceledError => error
+      raise unless control_route && preserve_error
+
+      raise_if_canceled!(error)
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.failure_bookkeeping_unavailable",
+        agent_run_id: input[:agent_run_id],
+        error_class: error.class.name
+      )
     end
 
     # Design: The activity performs a single health check per invocation and

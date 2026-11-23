@@ -8,6 +8,10 @@ class WorkItem < ApplicationRecord
 
   belongs_to :account
   belongs_to :tracker_configuration, optional: true
+  # The legacy aggregate retains Paid-only history while GitHub ticket identity
+  # and content live here after the offline cutover.
+  # @spec UNIFIED-WORK-ITEMS-007
+  belongs_to :legacy_issue, class_name: "Issue", optional: true
 
   has_many :work_item_assignments, dependent: :destroy
   has_many :projects, through: :work_item_assignments
@@ -16,6 +20,7 @@ class WorkItem < ApplicationRecord
 
   validates :provider, :resource_type, :external_id, :title, presence: true
   validates :external_id, uniqueness: { scope: %i[account_id provider resource_type] }
+  validates :legacy_issue_id, uniqueness: true, allow_nil: true
   validates :lifecycle_sync_source, inclusion: { in: LIFECYCLE_SOURCES }, allow_nil: true
   validate :tracker_configuration_belongs_to_account
 

@@ -57,12 +57,24 @@
                         else
                           "Recovered"
                         end %>
+    <% recovery_stop_reason = recovery["stop_reason"].presence %>
+    <% recovery_timing_label = recovery_stop_reason ? "Stop reason" : agent_run.waiting_recovery? ? "Next retry" : "Recovery" %>
+    <% recovery_timing = if recovery_stop_reason
+                           recovery_stop_reason.humanize
+                         elsif agent_run.waiting_recovery? && recovery["next_retry_at"].present?
+                           local_time(Time.zone.parse(recovery["next_retry_at"]))
+                         else
+                           "Completed"
+                         end %>
     <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
       <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200"><%= recovery_state %>: source-closure assessment</h2>
       <dl class="mt-2 grid gap-2 text-sm text-amber-800 dark:text-amber-300 sm:grid-cols-3">
         <div><dt class="font-medium">Failed step</dt><dd><%= recovery["failed_step"].to_s.humanize %></dd></div>
         <div><dt class="font-medium">Category</dt><dd><%= recovery["failure_category"].to_s.humanize %></dd></div>
-        <div><dt class="font-medium"><%= agent_run.waiting_recovery? ? "Next retry" : "Recovery" %></dt><dd><%= agent_run.waiting_recovery? && recovery["next_retry_at"].present? ? local_time(Time.zone.parse(recovery["next_retry_at"])) : "Completed" %></dd></div>
+        <div>
+          <dt class="font-medium"><%= recovery_timing_label %></dt>
+          <dd><%= recovery_timing %></dd>
+        </div>
       </dl>
     </div>
   <% end %>

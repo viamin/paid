@@ -59,6 +59,60 @@ TTL; a failure before successful agent execution does not retain an otherwise
 unused execution environment. A failed health check does not authorize push,
 mark the run successful, replay coding work, or bypass the health gate.
 
+Failure publication also needs short control capacity (#5248). New histories
+route only `MarkAgentRunFailed` through the existing poll pool, retaining its
+30-second execution bound and three-attempt retry policy, with a 120-second
+total scheduling/recovery bound. The `failure-bookkeeping-control-v1` patch
+preserves legacy routing and options. Long-running analysis and coding, normal
+cleanup ownership and resource limits do not move into the control pool.
+
+The activity retains its existing locked terminal-state guard: a late failure
+cannot replace an already completed or cancelled run. Workflow cancellation
+does not publish a fabricated failure. If bounded failure publication itself
+fails, new histories preserve the original workflow failure, log the unavailable
+bookkeeping operation and continue normal cleanup/janitor handling; they do not
+invent a terminal database write, assessment or renewed retry allowance.
+
+Report-only acceptance audits do not provision a coding container, MCP server,
+service container, or worktree. New histories resolve cleanup ownership from
+the persisted run and execution-resource ledger behind the
+`cleanup-owned-resources-v1` Temporal patch before scheduling cleanup, through
+the same detached-cancellation boundary the cleanup commands below it use
+(`run_cleanup_activity`) and routed to bounded poll/control capacity. Both
+properties matter: the detached boundary keeps the resolver schedulable when
+the workflow token is already cancelled, so cancellation cannot skip
+owned-resource cleanup; the poll/control routing keeps this cheap metadata
+read off the agent queue, so a saturated agent pool cannot stall it either.
+Empty ownership skips all cleanup and janitor commands; a persisted
+container/runner handle or active ledger entry, MCP/tool-sidecar ID,
+service-container ID, or active worktree retains the corresponding existing
+cleanup and finite janitor path. The resolver's bounded failure fails safe to
+the legacy cleanup set. Unpatched histories retain their recorded cleanup
+commands. Only this metadata read moves to control capacity; expensive
+cleanup commands and long-running AI work remain on the agent queue (#5266).
+
+Post-push source-closure parking is also short control-plane state publication
+(#5268). New `AgentExecutionWorkflow` and `SourceClosureRecoveryWorkflow`
+histories route only `ParkSourceClosureRecovery` to the existing poll queue,
+with its existing 30-second execution timeout, retry policy, run identity,
+pushed commit, tenant context and 120-second total scheduling/recovery bound.
+The `source-closure-recovery-control-routing-v1` patch is evaluated in each
+workflow so recorded histories retain their original agent-queue command.
+The long assessment and agent activities remain on their original queues. A
+bounded publication failure remains an actionable workflow failure rather than
+evidence that the state publication ran: it cannot synthesize a PR, completion,
+assessment, authority or a new retry allowance, and existing locked terminal
+guards preserve any pushed result.
+
+The final `EnqueueJanitor` operation is similarly a short detached scheduling
+operation, not resource cleanup. New `AgentExecutionWorkflow` histories route
+only that activity to the existing poll queue with its unchanged 10-second
+execution timeout, three attempts, and a 120-second total scheduling/recovery
+bound through `enqueue-janitor-control-routing-v1`. A bounded enqueue failure
+is logged while normal cleanup ownership and the expensive container, service,
+MCP and worktree activities remain on their existing agent route; it does not
+claim cleanup completed or abandon the live owner.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness

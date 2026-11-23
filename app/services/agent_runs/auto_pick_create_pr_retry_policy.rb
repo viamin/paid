@@ -68,7 +68,7 @@ module AgentRuns
     end
 
     def implementation_work_produced?(agent_run)
-      agent_run.result_commit_sha.present? || !agent_run.no_observable_work?
+      agent_run.implementation_work_produced?
     end
 
     def retry_budget_exhausted?(agent_run, attempt)

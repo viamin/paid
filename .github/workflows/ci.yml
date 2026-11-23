@@ -219,13 +219,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4]
     # Separate service containers and workspaces isolate each shard.
-    # Hosted-runner contention can push an otherwise healthy shard beyond the
-    # normal runtime. Keep the allowance bounded; a timeout remains a cancelled
-    # shard and fails the stable test check below.
+    # Hosted-runner contention and bounded dependency retries can push an
+    # otherwise healthy shard beyond the normal runtime. Keep the allowance
+    # bounded; a timeout remains a cancelled shard and fails the stable test
+    # check below.
     # @spec TEST-SUITE-020
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     services:
       postgres:
@@ -249,7 +250,7 @@ jobs:
     env:
       BUNDLE_FROZEN: "true"
       RSPEC_SHARD_INDEX: ${{ matrix.shard }}
-      RSPEC_SHARD_COUNT: "4"
+      RSPEC_SHARD_COUNT: "5"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
@@ -340,6 +341,7 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
+        # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
           retry_with_backoff() {
@@ -347,19 +349,23 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            # Matrix legs otherwise begin registry requests in lockstep after
+            # a shared transient outage. A deterministic per-shard delay
+            # spreads those requests without extending an attempt's bound.
+            sleep "$((RSPEC_SHARD_INDEX * 3))"
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
           }
           retry_with_backoff \
-            10m \
+            20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -579,7 +585,7 @@ jobs:
         id: classify
         env:
           GH_TOKEN: ${{ github.token }}
-          SHARD_COUNT: "4"
+          SHARD_COUNT: "5"
         run: |
           legs_json=""
           for attempt in 1 2 3 4 5; do
@@ -627,8 +633,9 @@ jobs:
       always() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
     runs-on: ubuntu-24.04
     # One dropped leg costs a normal shard runtime; allow for the worst case
-    # of recovering several legs serially in this single job.
-    timeout-minutes: 120
+    # of recovering several legs serially in this single job, including
+    # bounded dependency retries.
+    timeout-minutes: 360
 
     services:
       postgres:
@@ -652,7 +659,7 @@ jobs:
     env:
       BUNDLE_FROZEN: "true"
       RECOVERABLE: ${{ needs.shard-status.outputs.recoverable }}
-      RSPEC_SHARD_COUNT: "4"
+      RSPEC_SHARD_COUNT: "5"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
@@ -742,6 +749,7 @@ jobs:
         run: corepack enable
 
       - name: Install JavaScript dependencies
+        # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
           retry_with_backoff() {
@@ -749,19 +757,19 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
           }
           retry_with_backoff \
-            10m \
+            20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -999,6 +1007,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload recovered shard 4 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '4')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-4
+          path: |
+            tmp/recovered/rspec-shard-4/coverage/.resultset.json
+            tmp/recovered/rspec-shard-4/tmp/rspec-shard-4.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018
   test:
     needs: [ test-shards, shard-status, shard-recovery ]
@@ -1006,7 +1026,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       BUNDLE_FROZEN: "true"
-      RSPEC_SHARD_COUNT: "4"
+      RSPEC_SHARD_COUNT: "5"
     steps:
       - name: Require every test shard to succeed
         # A shard that ran and failed (or was cancelled) always fails this

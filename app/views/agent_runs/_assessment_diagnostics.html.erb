@@ -1,4 +1,4 @@
-<%# @spec PARTIAL-CLOSEOUT-058 %>
+<%# @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059 %>
 <% if diagnostic.present? %>
   <section aria-label="Assessment diagnostics" class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
     <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200">Assessment diagnostics</h2>
@@ -20,6 +20,23 @@
           </li>
         <% end %>
       </ul>
+    <% end %>
+    <% if diagnostic.dig("attempt_trace", "attempts").present? %>
+      <h3 class="mt-3 text-sm font-medium text-amber-900 dark:text-amber-200">Route attempts</h3>
+      <ol class="mt-2 space-y-2 text-sm text-amber-800 dark:text-amber-300">
+        <% diagnostic.dig("attempt_trace", "attempts").each do |attempt| %>
+          <li class="break-words">
+            <span class="font-medium">Attempt <%= attempt["ordinal"] %>:</span>
+            <%= attempt["outcome"].to_s.humanize %>
+            <% if attempt["provider"].present? || attempt["model"].present? %>
+              (<%= attempt["provider"] %><%= " / #{attempt["model"]}" if attempt["model"].present? %>)
+            <% end %>
+            <% if attempt["skip_reason"].present? %>
+              — <%= attempt["skip_reason"].to_s.humanize %>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
     <% end %>
     <% if diagnostic["request_id"].present? || diagnostic["attempt_id"].present? %>
       <details class="mt-3 text-xs text-amber-800 dark:text-amber-300">

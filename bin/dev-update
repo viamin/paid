@@ -42,6 +42,9 @@ OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
+WORKER_ADOPTION_POLL_COUNT="${DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT:-120}"
+WORKER_DRAIN_POLL_COUNT="${DEV_UPDATE_WORKER_DRAIN_POLL_COUNT:-120}"
+WORKER_ADMISSION_LOCK_FDS=()
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
@@ -52,11 +55,18 @@ newline_list_to_csv() {
   printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
 }
 
+# Worker-loaded application code requires the full restart path: the
+# long-lived Temporal workers (worker_poll, worker_agent) and the GoodJob
+# jobs process boot Rails once and keep the constants they loaded, so a git
+# pull alone cannot make them run new code. Web-autoloaded code
+# (controllers, views) and docs/specs stay lightweight. This list must stay
+# in sync with Activities::TriggerDevEnvironmentUpdateActivity::FULL_RESTART_PATTERNS.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
 restart_required_for_file() {
   local file="$1"
 
   case "$file" in
-    app/temporal/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
+    app/temporal/*|app/services/*|app/models/*|app/jobs/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
       return 0
       ;;
     Gemfile|Gemfile.lock|package.json|package-lock.json|yarn.lock)
@@ -439,6 +449,7 @@ stop_overmind() {
       for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
         if [ ! -e "$OVERMIND_SOCKET" ]; then
           log "Overmind socket removed."
+          release_worker_admission_barriers
           return
         fi
 
@@ -451,6 +462,7 @@ stop_overmind() {
       done
 
       remove_stale_overmind_socket
+      release_worker_admission_barriers
       return
     fi
   fi
@@ -466,6 +478,7 @@ stop_overmind() {
   else
     log "Overmind not running, skipping stop."
   fi
+  release_worker_admission_barriers
 }
 
 # Drop databases left behind by removed git worktrees. bin/setup creates a
@@ -571,6 +584,145 @@ wait_for_overmind_health() {
   return 1
 }
 
+worker_readiness_file() {
+  local mode="$1"
+  printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
+}
+
+# Extract the revision identity from a worker readiness JSON payload. The
+# payload carries commit identity only (pid, ready_at, revision) — never
+# secrets or credential data — so parsing it here is safe to log.
+worker_readiness_revision() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  sed -n 's/.*"revision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | tail -n 1
+}
+
+worker_reports_revision() {
+  local mode="$1"
+  local expected_revision="$2"
+  local revision
+  revision="$(worker_readiness_revision "$(worker_readiness_file "$mode")")" || return 1
+  [ -n "$revision" ] && [ "$revision" = "$expected_revision" ]
+}
+
+worker_readiness_active_activities() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  sed -n 's/.*"active_activities"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$file" | tail -n 1
+}
+
+worker_admission_lock_file() {
+  local mode="$1"
+  printf '%s.admission.lock' "$(worker_readiness_file "$mode")"
+}
+
+release_worker_admission_barriers() {
+  local fd
+  for fd in "${WORKER_ADMISSION_LOCK_FDS[@]}"; do
+    exec {fd}>&-
+  done
+  WORKER_ADMISSION_LOCK_FDS=()
+}
+
+acquire_worker_admission_barrier() {
+  local mode="$1"
+  local fd
+  exec {fd}<>"$(worker_admission_lock_file "$mode")"
+  if flock -n "$fd"; then
+    local active_activities
+    active_activities="$(worker_readiness_active_activities "$(worker_readiness_file "$mode")")" || true
+    if [ "$active_activities" = "0" ]; then
+      WORKER_ADMISSION_LOCK_FDS+=("$fd")
+      return 0
+    fi
+  fi
+
+  exec {fd}>&-
+  return 1
+}
+
+# Preserve current activity ownership before a worker-loaded code restart.
+# Each activity owns a shared per-worker admission lock for its full execution.
+# Acquiring that lock exclusively waits for current owners and closes admission
+# atomically. Retaining each acquired barrier while the other role drains
+# prevents the cross-role arrival race left by sequential idle snapshots.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+wait_for_workers_to_drain() {
+  local poll_readiness
+  local agent_readiness
+  poll_readiness="$(worker_readiness_file poll)"
+  agent_readiness="$(worker_readiness_file agent)"
+  if [ ! -f "$poll_readiness" ] && [ ! -f "$agent_readiness" ]; then
+    log "No existing Temporal worker readiness metadata found; no worker activity ownership needs draining."
+    return 0
+  fi
+
+  local mode
+  local i
+  for mode in poll agent; do
+    for ((i = 0; i < WORKER_DRAIN_POLL_COUNT; i += 1)); do
+      if acquire_worker_admission_barrier "$mode"; then
+        log "Worker (${mode}) activity admission is closed and existing activities have drained."
+        break
+      fi
+      sleep "$OVERMIND_POLL_INTERVAL"
+    done
+
+    if [ "$i" -ge "$WORKER_DRAIN_POLL_COUNT" ]; then
+      release_worker_admission_barriers
+      log "Warning: ${mode} worker activity admission barrier was not acquired within ${WORKER_DRAIN_POLL_COUNT} polls."
+      log "ERROR: Worker drain did not complete; deferring worker adoption without stopping Overmind."
+      return 1
+    fi
+  done
+}
+
+# Effective worker adoption verification: Overmind health alone cannot
+# distinguish an on-disk checkout from the code the running workers actually
+# loaded. Each Temporal worker publishes its booted checkout revision in its
+# readiness flag payload (see lib/paid/worker_readiness.rb); a completed
+# restart requires both the poll and agent workers to report the post-update
+# HEAD revision within a bounded poll budget. When the expected revision
+# itself cannot be resolved, verification fails closed — an unverifiable
+# adoption is not a successful one. This rides the existing graceful
+# Overmind stop/start path — it never force-restarts active
+# workflow/activity owners or resets failed runs.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+verify_worker_adoption() {
+  local expected_revision
+  expected_revision="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ -z "$expected_revision" ]; then
+    log "Warning: git rev-parse HEAD failed; the expected worker revision is unknown."
+    log "ERROR: Worker adoption cannot be verified without the checkout revision; update cannot be considered complete. Resolve the Git checkout state and rerun bin/dev-update --full."
+    return 1
+  fi
+
+  local mode
+  for mode in poll agent; do
+    local adopted=0
+    local i
+    for ((i = 0; i < WORKER_ADOPTION_POLL_COUNT; i += 1)); do
+      if worker_reports_revision "$mode" "$expected_revision"; then
+        log "Worker (${mode}) adopted revision ${expected_revision}."
+        adopted=1
+        break
+      fi
+      sleep "$OVERMIND_POLL_INTERVAL"
+    done
+
+    if [ "$adopted" -ne 1 ]; then
+      local file
+      file="$(worker_readiness_file "$mode")"
+      log "Warning: ${mode} worker readiness at ${file} did not report revision ${expected_revision} within ${WORKER_ADOPTION_POLL_COUNT} polls."
+      log "ERROR: Workers did not adopt the updated checkout; update cannot be considered complete."
+      return 1
+    fi
+  done
+
+  log "Worker adoption verified: poll and agent workers report revision ${expected_revision}."
+}
+
 start_dev() {
   mkdir -p "$(dirname "$START_DEV_LOG")"
   remove_stale_overmind_socket
@@ -582,8 +734,10 @@ start_dev() {
     restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
     log_command_output "overmind restart" "$restart_output"
     log "Overmind process restart requested."
-    wait_for_overmind_health
-    return $?
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+    wait_for_overmind_health || return 1
+    verify_worker_adoption
+    return
   fi
 
   log "Starting dev environment..."
@@ -601,7 +755,9 @@ start_dev() {
   disown || true
   log "Dev environment start command launched (PID $!)."
 
-  wait_for_overmind_health
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  wait_for_overmind_health || return 1
+  verify_worker_adoption
 }
 
 recover_dev_if_needed() {
@@ -619,6 +775,7 @@ run_full_restart() {
   log "Starting full restart update..."
   if migrations_changed_in_trigger_context; then
     log "Migration files are in the trigger context; stopping Overmind before pulling to avoid Rails pending-migration errors."
+    wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
     stop_overmind
   fi
 
@@ -630,6 +787,7 @@ run_full_restart() {
     recover_dev_if_needed
     fail "git pull --ff-only failed. Check for diverged history or upstream issues."
   fi
+  wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
   stop_overmind
 
   if ! run_setup; then
@@ -667,6 +825,7 @@ case "$MODE" in
     fi
     if restart_required_from_pull; then
       log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
+      wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
       stop_overmind
       if ! run_setup; then
         recover_dev_if_needed

@@ -121,6 +121,39 @@ The same failure window reset that accompanies an operator's retry-abandonment
 clear also starts a fresh backoff streak. Old failures do not impose a long
 delay on a repaired issue.
 
+### Produced-work hold on ordinary admission (#4989)
+
+For a failed auto-picked `create_pr` source, the shared retry mechanism
+(`AgentRuns::AutoPickCreatePrRetryPolicy` via
+`Issue#schedule_failed_auto_pick_create_pr_retry`) is not the only route back
+to a run: periodic eligibility sweeps (`AutoPickEligibilitySweepJob` /
+`Issues::BulkEnqueueEligible`), delayed `Issues::ReenqueueEligibleJob`
+delivery, and sync-driven seeding all call `Issues::EnqueueEligible`
+directly. A produced-work refusal recorded by the shared policy therefore
+cannot be the whole guard — ordinary admission once minted a fresh
+implementation attempt for work the policy had just refused (the #4711
+run-30353 → run-30371 bypass), duplicating observable main-agent work.
+
+`Issue#auto_pick_create_pr_admission_hold` closes that route: when the
+issue's latest failed auto-picked `create_pr` run
+(`#current_failed_auto_pick_create_pr_run`) produced implementation work
+(`AgentRun#implementation_work_produced?` — a pushed revision, a PR or issue
+side effect, or observable main-agent execution) or is awaiting owned
+in-place rate-limit recovery (`#recoverable_rate_limited?`),
+`Issues::EnqueueEligible` refuses to seed a fresh `create_pr` run and logs
+`enqueue_eligible.implementation_work_held`. The hold is bounded by the same
+authorized operator reset window as the failure streak: a failure created
+before `runner_retry_failure_window_reset_at` no longer holds admission, so
+clearing retry abandonment re-arms ordinary admission cleanly. A failed
+reconciliation that retains an assessment with gaps is a partial-closeout
+re-audit, not a blind implementation retry: it bypasses this hold and returns
+to normal eligibility, which verifies the assessment is current before a
+continuation can be admitted. Explicitly
+authorized continuations (`Issues::RequestContinuation`) mint their run
+outside `Issues::EnqueueEligible` and are unaffected, `no_output` sources
+and `analyze_issue` goals keep their existing paths, and manual runs never
+pass through this admission.
+
 When the same goal reaches the effective issue retry cap, Paid parks the issue
 in the retry-limited Inbox instead of scheduling another automatic attempt.
 This covers failures after successful runner execution, such as a PR write
