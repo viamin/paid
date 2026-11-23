@@ -422,7 +422,7 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   def cleanup_startup_watchdog(wrapper_pid, resources)
-    resources&.values_at(:gate_writer, :started_reader, :started_writer, :gate_reader)&.each { |io| io.close }
+    resources&.values_at(:gate_writer, :started_reader, :started_writer, :gate_reader)&.each(&:close)
     terminate_and_reap(wrapper_pid)
     FileUtils.remove_entry(resources.fetch(:directory)) if resources
   end
