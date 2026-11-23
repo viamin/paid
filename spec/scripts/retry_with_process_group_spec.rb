@@ -205,54 +205,14 @@ RSpec.describe RetryWithProcessGroup, :no_db do
 
   # @spec TEST-SUITE-023
   it "cancels an owned startup watchdog before it acknowledges its session" do
-    delayed_setsid_directory = Dir.mktmpdir("retry-with-process-group-startup-watchdog")
-    delayed_setsid = File.join(delayed_setsid_directory, "setsid")
-    watchdog_started_reader, watchdog_started_writer = IO.pipe
-    watchdog_gate_reader, watchdog_gate_writer = IO.pipe
-    watchdog_started_writer.nonblock = false
-    watchdog_gate_reader.nonblock = false
-    watchdog_started_writer.close_on_exec = false
-    watchdog_gate_reader.close_on_exec = false
-    File.write(delayed_setsid, <<~BASH)
-      #!/usr/bin/env bash
-      if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
-        printf '%s\\n' "$$" >&"$WATCHDOG_STARTED_FD"
-        read -r _ <&"$WATCHDOG_GATE_FD"
-      fi
-      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
-    BASH
-    FileUtils.chmod("u+x", delayed_setsid)
-    environment = fast_supervision.merge(
-      "DEPENDENCY_SETUP_TIMEOUT" => "4s",
-      "PATH" => "#{delayed_setsid_directory}:#{ENV.fetch("PATH")}",
-      "WATCHDOG_STARTED_FD" => watchdog_started_writer.fileno.to_s,
-      "WATCHDOG_GATE_FD" => watchdog_gate_reader.fileno.to_s
-    )
-    wrapper_pid = Process.spawn(environment, script_path, "bash", "-c", "exec sleep 60", close_others: false)
+    with_unacknowledged_watchdog do |wrapper_pid|
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      Process.kill("TERM", wrapper_pid)
+      _pid, status = Process.wait2(wrapper_pid)
 
-    Timeout.timeout(2) { watchdog_started_reader.gets }
-    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    Process.kill("TERM", wrapper_pid)
-    _pid, status = Process.wait2(wrapper_pid)
-
-    expect(status.termsig).to eq(15)
-    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
-  ensure
-    watchdog_gate_writer&.close
-    watchdog_started_reader&.close
-    watchdog_started_writer&.close
-    watchdog_gate_reader&.close
-    begin
-      Process.kill("KILL", wrapper_pid) if wrapper_pid
-    rescue Errno::ESRCH
-      nil
+      expect(status.termsig).to eq(15)
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
     end
-    begin
-      Process.wait(wrapper_pid) if wrapper_pid
-    rescue Errno::ECHILD
-      nil
-    end
-    FileUtils.remove_entry(delayed_setsid_directory) if delayed_setsid_directory
   end
 
   # @spec TEST-SUITE-023
@@ -407,6 +367,78 @@ RSpec.describe RetryWithProcessGroup, :no_db do
 
   def read_timer_pid(reader)
     Integer(Timeout.timeout(2) { reader.gets }.strip)
+  end
+
+  def with_unacknowledged_watchdog
+    resources = startup_watchdog_resources
+    wrapper_pid = Process.spawn(resources.fetch(:environment), script_path, "bash", "-c", "exec sleep 60", close_others: false)
+    Timeout.timeout(2) { resources.fetch(:started_reader).gets }
+
+    yield wrapper_pid
+  ensure
+    cleanup_startup_watchdog(wrapper_pid, resources)
+  end
+
+  def startup_watchdog_resources
+    directory = Dir.mktmpdir("retry-with-process-group-startup-watchdog")
+    started_reader, started_writer = IO.pipe
+    gate_reader, gate_writer = IO.pipe
+    started_writer.nonblock = false
+    gate_reader.nonblock = false
+    started_writer.close_on_exec = false
+    gate_reader.close_on_exec = false
+    delayed_setsid = File.join(directory, "setsid")
+    File.write(delayed_setsid, delayed_setsid_script)
+    FileUtils.chmod("u+x", delayed_setsid)
+
+    {
+      directory: directory,
+      environment: startup_watchdog_environment(directory, started_writer, gate_reader),
+      gate_reader: gate_reader,
+      gate_writer: gate_writer,
+      started_reader: started_reader,
+      started_writer: started_writer
+    }
+  end
+
+  def delayed_setsid_script
+    <<~BASH
+      #!/usr/bin/env bash
+      if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
+        printf '%s\\n' "$$" >&"$WATCHDOG_STARTED_FD"
+        read -r _ <&"$WATCHDOG_GATE_FD"
+      fi
+      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
+    BASH
+  end
+
+  def startup_watchdog_environment(directory, started_writer, gate_reader)
+    fast_supervision.merge(
+      "DEPENDENCY_SETUP_TIMEOUT" => "4s",
+      "PATH" => "#{directory}:#{ENV.fetch("PATH")}",
+      "WATCHDOG_STARTED_FD" => started_writer.fileno.to_s,
+      "WATCHDOG_GATE_FD" => gate_reader.fileno.to_s
+    )
+  end
+
+  def cleanup_startup_watchdog(wrapper_pid, resources)
+    resources&.values_at(:gate_writer, :started_reader, :started_writer, :gate_reader)&.each { |io| io.close }
+    terminate_and_reap(wrapper_pid)
+    FileUtils.remove_entry(resources.fetch(:directory)) if resources
+  end
+
+  def terminate_and_reap(pid)
+    Process.kill("KILL", pid) if pid
+  rescue Errno::ESRCH
+    nil
+  ensure
+    reap(pid)
+  end
+
+  def reap(pid)
+    Process.wait(pid) if pid
+  rescue Errno::ECHILD
+    nil
   end
 
   def spawn_default_backoff_wrapper(environment, pid_writer)
