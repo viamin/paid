@@ -3979,6 +3979,7 @@ module Activities
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label,
         hold_for_review: hold_for_review,
+        technical_merge_clear: !PullRequests::TechnicalMergeBlockers.blocked?(issue),
         intent_conformance_ok: intent_conformance_ok
       )
 
@@ -4021,7 +4022,8 @@ module Activities
         mergeable: mergeable_signal,
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label,
-        hold_for_review: hold_for_review
+        hold_for_review: hold_for_review,
+        technical_merge_clear: !PullRequests::TechnicalMergeBlockers.blocked?(issue)
       )
 
       log_skip_auto_merge(project, issue) if skip_label
