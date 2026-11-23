@@ -52,7 +52,7 @@ RSpec.describe Development::PgHeroOverview::Scan do
       Struct.new(:number, :body, :state).new(77, body, "open")
     end
     allow(client).to receive(:update_issue) { |repo, number, **| Struct.new(:number).new(number) }
-    allow(client).to receive_messages(issues: [], add_comment: nil)
+    allow(client).to receive_messages(all_issues: [], add_comment: nil)
   end
 
   # @spec RAILS-CONTROL-PLANE-025
@@ -79,7 +79,7 @@ RSpec.describe Development::PgHeroOverview::Scan do
     expect(row.consecutive_observations).to eq(1)
     expect(row.github_issue_number).to eq(77)
 
-    allow(client).to receive(:issues) { [ Struct.new(:number, :body, :state).new(77, "stale body", "open") ] }
+    allow(client).to receive(:all_issues) { [ Struct.new(:number, :body, :state).new(77, "stale body", "open") ] }
     second = scanner.call
     expect(second.created).to eq(0)
     expect(second.updated).to eq(1)
@@ -96,7 +96,7 @@ RSpec.describe Development::PgHeroOverview::Scan do
       Struct.new(:number, :body, :state).new(88, body, "open")
     end
     allow(other_client).to receive(:update_issue) { |repo, number, **| Struct.new(:number).new(number) }
-    allow(other_client).to receive_messages(issues: [], add_comment: nil)
+    allow(other_client).to receive_messages(all_issues: [], add_comment: nil)
 
     scanner(findings: [ structural_finding ]).call
     scanner(findings: [ structural_finding ], target_project: other_project, target_client: other_client).call
@@ -147,7 +147,7 @@ RSpec.describe Development::PgHeroOverview::Scan do
   it "closes the issue when a collected category no longer shows the finding and reopens on recurrence" do
     scanner(findings: [ structural_finding ]).call
     row = PgHeroOverviewFinding.find_by!(finding_key: "invalid_index/public/idx_broken")
-    allow(client).to receive(:issues) { [ Struct.new(:number, :body, :state).new(77, "body", "open") ] }
+    allow(client).to receive(:all_issues) { [ Struct.new(:number, :body, :state).new(77, "body", "open") ] }
 
     closed = scanner(findings: []).call
     expect(closed.closed).to eq(1)
@@ -156,7 +156,9 @@ RSpec.describe Development::PgHeroOverview::Scan do
 
     recurred = scanner(findings: [ structural_finding ]).call
     expect(recurred.reopened).to eq(1)
-    expect(client).to have_received(:update_issue).with("viamin/paid", 77, state: "open")
+    expect(client).to have_received(:update_issue).with(
+      "viamin/paid", 77, state: "open", body: a_string_including("**Finding type:** invalid_index")
+    )
     expect(row.reload.resolved_at).to be_nil
   end
 
