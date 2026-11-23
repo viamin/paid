@@ -61,7 +61,15 @@ module Activities
     def unresolved_captured_threads(client, project, agent_run, captured_ids)
       client.review_threads(project.full_name, agent_run.source_pull_request_number)
         .select { |thread| !thread[:is_resolved] && captured_ids.include?(thread[:id].to_s) }
+        .select { |thread| complete_thread_evidence?(thread) }
         .select { |thread| thread_with_trusted_comments(project, thread) }
+    end
+
+    def complete_thread_evidence?(thread)
+      return true unless thread[:comment_count].to_i.positive?
+
+      original_id = thread[:original_comment_id].to_s
+      original_id.present? && Array(thread[:comments]).any? { |comment| comment[:id].to_s == original_id }
     end
 
     def thread_with_trusted_comments(project, thread)

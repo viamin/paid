@@ -1721,7 +1721,13 @@ RSpec.describe GithubClient do
                         {
                           id: "thread_1",
                           isResolved: false,
-                          comments: {
+                          firstComment: {
+                            nodes: [
+                              { id: "comment_1", body: "Fix this", path: "app/model.rb", line: 10,
+                                author: { login: "reviewer" } }
+                            ]
+                          },
+                          recentComments: {
                             totalCount: 1,
                             nodes: [
                               { id: "comment_1", body: "Fix this", path: "app/model.rb", line: 10,
@@ -1732,9 +1738,17 @@ RSpec.describe GithubClient do
                         {
                           id: "thread_2",
                           isResolved: true,
-                          comments: {
+                          firstComment: {
                             nodes: [
-                              { body: "Done", path: "app/view.rb", line: 5, author: { login: "author" } }
+                              { id: "comment_2", body: "Done", path: "app/view.rb", line: 5,
+                                author: { login: "author" } }
+                            ]
+                          },
+                          recentComments: {
+                            totalCount: 1,
+                            nodes: [
+                              { id: "comment_2", body: "Done", path: "app/view.rb", line: 5,
+                                author: { login: "author" } }
                             ]
                           }
                         }
@@ -1754,7 +1768,7 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.first[:id]).to eq("thread_1")
         expect(result.first[:is_resolved]).to be false
-        expect(result.first[:comment_count]).to eq(1)
+        expect(result.first).to include(comment_count: 1, original_comment_id: "comment_1")
         expect(result.first[:comments].first[:id]).to eq("comment_1")
         expect(result.first[:comments].first[:body]).to eq("Fix this")
         expect(result.first[:comments].first[:path]).to eq("app/model.rb")
@@ -1762,6 +1776,41 @@ RSpec.describe GithubClient do
         expect(result.first[:comments].first[:author]).to eq("reviewer")
 
         expect(result.last[:is_resolved]).to be true
+      end
+    end
+
+    # @spec FOCUSED-RUN-011
+    context "when a thread has more comments than the recent-comment window" do
+      it "returns the original finding together with the latest replies" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+
+        result = client.review_threads(repo, 42)
+
+        expect(result.first).to include(comment_count: 51, original_comment_id: "original")
+        expect(result.first[:comments]).to match([
+          hash_including(id: "original", body: "Original finding"),
+          hash_including(id: "reply_2", body: "Latest reply")
+        ])
+      end
+
+      it "fails closed when GitHub omits the original finding" do
+        stub_long_thread_response(api_base, first_comments: [])
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /omitted its original comment/)
+      end
+
+      def stub_long_thread_response(api_base, first_comments:)
+        stub_request(:post, "#{api_base}/graphql").to_return(
+          status: 200,
+          body: { data: { repository: { pullRequest: { reviewThreads: { nodes: [
+            {
+              id: "thread_1", isResolved: false, firstComment: { nodes: first_comments },
+              recentComments: { totalCount: 51, nodes: [ { id: "reply_2", body: "Latest reply" } ] }
+            }
+          ] } } } } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
       end
     end
 

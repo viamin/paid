@@ -75,6 +75,39 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     end
   end
 
+  # @spec FOCUSED-RUN-011
+  it "assesses a long thread with both its original finding and recent replies" do
+    long_thread = {
+      id: "thread_1", is_resolved: false, comment_count: 51, original_comment_id: "original",
+      comments: [
+        { id: "original", body: "Original pagination finding", author: "viamin" },
+        { id: "latest", body: "Latest repair explanation", author: "viamin" }
+      ]
+    }
+    allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([ long_thread ])
+
+    described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+    expect(Llm::Request).to have_received(:call) do |prompt:, **|
+      expect(prompt).to include("Original pagination finding")
+      expect(prompt).to include("Latest repair explanation")
+    end
+  end
+
+  # @spec FOCUSED-RUN-011
+  it "fails closed when long-thread evidence omits the original finding" do
+    incomplete_thread = {
+      id: "thread_1", is_resolved: false, comment_count: 51,
+      comments: [ { id: "latest", body: "Latest reply only", author: "viamin" } ]
+    }
+    allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([ incomplete_thread ])
+
+    result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+    expect(result).to include(authorized: false)
+    expect(Llm::Request).not_to have_received(:call)
+  end
+
   it "fails closed for setup-only output" do
     allow(response).to receive(:output).and_return("setup completed")
 

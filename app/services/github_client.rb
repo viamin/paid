@@ -992,7 +992,18 @@ class GithubClient
               nodes {
                 id
                 isResolved
-                comments(last: 50) {
+                firstComment: comments(first: 1) {
+                  nodes {
+                    id
+                    body
+                    path
+                    line
+                    author { login }
+                    createdAt
+                    originalCommit { oid }
+                  }
+                }
+                recentComments: comments(last: 50) {
                   totalCount
                   nodes {
                     id
@@ -1016,11 +1027,19 @@ class GithubClient
     threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
 
     threads.map do |thread|
+      recent_comments = thread.dig("recentComments", "nodes") || []
+      original_comment = thread.dig("firstComment", "nodes", 0)
+      original_comment_id = original_comment&.dig("id").to_s.presence
+      comment_count = thread.dig("recentComments", "totalCount").to_i
+      raise IncompleteTreeError, "review thread #{thread["id"]} omitted its original comment" if comment_count.positive? && original_comment_id.nil?
+
+      comments = [ original_comment, *recent_comments ].compact.uniq { |comment| comment["id"] }
       {
         id: thread["id"],
         is_resolved: thread["isResolved"],
-        comment_count: thread.dig("comments", "totalCount"),
-        comments: (thread.dig("comments", "nodes") || []).map do |c|
+        comment_count: comment_count,
+        original_comment_id: original_comment_id,
+        comments: comments.map do |c|
           {
             id: c["id"], body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
             created_at: c["createdAt"], commit_id: c.dig("originalCommit", "oid")

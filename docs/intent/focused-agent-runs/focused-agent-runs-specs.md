@@ -143,7 +143,8 @@
   captured review thread merely because the run completed, pushed, or reports
   that the feedback was already addressed. A thread remains actionable until a
   current-head, exact-thread-version-bound assessment supplies explicit
-  supported rationale; failed, unavailable, malformed, stale, concurrently
+  supported rationale from evidence that includes the thread's original
+  finding; failed, unavailable, incomplete, malformed, stale, concurrently
   changed, or no-op assessment cannot resolve it. This does not prohibit a
   supported no-code disposition such as invalid, outdated, or already-fixed
   feedback.
