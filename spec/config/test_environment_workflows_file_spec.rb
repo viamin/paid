@@ -252,8 +252,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       expect(step.fetch("run")).to include(
         "yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000"
       )
-      expect(step.fetch("run")).to include('retry_with_backoff \\')
-      expect(step.fetch("run")).to include("20m")
+      expect(step.fetch("run")).to include("bin/retry-with-process-group")
     end
   end
 end
