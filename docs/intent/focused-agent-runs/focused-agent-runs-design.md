@@ -80,6 +80,15 @@ no-code dispositions (for example invalid, outdated, or already-fixed feedback)
 without hiding feedback appended after assessment or equating unrelated changed
 lines or generic agent success with repair evidence.
 
+The PR scanner consumes that public thread state at the next admission
+boundary. A body-only-capable reviewer is not assumed to have produced only a
+top-level finding: when its latest review has inline comments and none of their
+threads remains unresolved, the scanner treats that inline feedback as closed
+and does not enqueue the same coding follow-up again. A genuine top-level-only
+finding remains actionable, as does any review whose comment data cannot be
+fetched. Changed files are not closure evidence; partial or unrelated changes
+continue to require an open thread or a fresh reviewer disposition.
+
 ## Focus-scoped quality scoring
 
 Quality weights are selected per focus (`QualityMetric::FOCUS_WEIGHTS`,

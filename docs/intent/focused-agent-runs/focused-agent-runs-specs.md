@@ -153,3 +153,13 @@
   `spec/temporal/activities/assess_followup_review_threads_activity_spec.rb`,
   `spec/temporal/activities/resolve_review_threads_activity_spec.rb`,
   `spec/temporal/workflow_replay_fixtures_spec.rb`.
+
+- [x] **FOCUSED-RUN-012** — When the latest review from a body-only-capable
+  reviewer has inline comments but no unresolved review threads, Paid SHALL NOT
+  admit another coding follow-up for those resolved comments. Paid SHALL keep a
+  genuine top-level-only finding actionable, fail closed when review-comment
+  data is unavailable, and SHALL NOT infer resolution from a changed related or
+  unrelated file.
+  *Code:* `ScanPaidPrsActivity#check_review_bot_status`,
+  `Automation::Signals::PullRequestCollector#review_inline_comment_state`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
