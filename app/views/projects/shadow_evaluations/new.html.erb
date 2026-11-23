@@ -1,9 +1,10 @@
 <%# @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-009 @spec SETTINGS-COPY-002 %>
 <div class="mx-auto max-w-2xl space-y-6 px-4 py-8">
   <div>
-    <h1 class="text-2xl font-bold text-gray-900">Review conformance decisions</h1>
+    <h1 class="text-2xl font-bold text-gray-900">Review code changes against requirements</h1>
     <p class="mt-1 text-sm text-gray-600">
-      Compare a frozen sample with the reviewer. Starting saves a frozen evidence set for this project. It does not enable enforcement or close work.
+      Your decisions help check whether the AI reviewer can reliably spot changes to agreed requirements.
+      Review each code change yourself before seeing the AI results. Starting does not enable enforcement or close work.
     </p>
   </div>
 
@@ -11,10 +12,9 @@
     <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
       <h2 class="text-sm font-semibold text-violet-900">A review is already in progress</h2>
       <p class="mt-1 text-sm text-violet-800">
-        Status: <span class="font-medium"><%= @existing.status %></span> ·
-        labels <%= @existing.labels.where(state: "labeled").count %>/<%= @existing.corpus.case_ids.length %>
-        (skipped <%= @existing.labels.where(state: "skipped").count %>).
-        Repeated starts resume the same evaluation for the same evidence generation instead of creating duplicates.
+        <%= @existing.labels.where(state: "labeled").count %> of <%= @existing.corpus.case_ids.length %> changes reviewed;
+        <%= @existing.labels.where(state: "skipped").count %> left for later.
+        Continue where you stopped; your saved decisions are retained.
       </p>
       <%= link_to @existing.labeling? ? "Continue review" : "View review",
             project_shadow_evaluation_path(@project, @existing, **@inbox_context),
@@ -26,11 +26,11 @@
   <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
     <%= form_with url: project_shadow_evaluations_path(@project, **@inbox_context), method: :post, class: "space-y-4" do |form| %>
       <div>
-        <%= form.label :manifest_path, "Frozen corpus manifest (repository path)", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.label :manifest_path, "Review sample file", class: "block text-sm font-medium text-gray-700" %>
         <%= form.text_field :manifest_path, required: true,
               placeholder: "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml",
               class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
-        <p class="mt-1 text-xs text-gray-500">Use a committed, frozen sample so this review can be checked later.</p>
+        <p class="mt-1 text-xs text-gray-500">The repository file listing the exact changes and approved requirements to review. Use a committed sample so the results can be checked later.</p>
       </div>
       <div>
         <%= form.label :manifest_commit, "Manifest commit SHA (optional)", class: "block text-sm font-medium text-gray-700" %>
@@ -38,8 +38,8 @@
               class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
       </div>
       <div>
-        <%= form.label :policy, "Evaluation policy", class: "block text-sm font-medium text-gray-700" %>
-        <%= form.select :policy, options_for_select([["Solo maintainer (explicitly selected)", "solo"]], "solo"), {}, disabled: false, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <%= form.label :policy, "Who will review these changes?", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.select :policy, options_for_select([["Just me", "solo"]], "solo"), {}, disabled: false, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
         <p class="mt-1 text-xs text-gray-500">You are the only reviewer for this run. You can label, revise, and finalize it; a second reviewer will not check it.</p>
       </div>
       <%= form.submit "Start review",

@@ -57,6 +57,13 @@ module Projects
         kind: params[:kind].to_s,
         path: params[:path]
       )
+      if params[:kind] == "review_context"
+        case_view = IntentConformance::ShadowEvaluation::CaseView.new(evaluation: @evaluation,
+          case_id: params[:case_id].to_s, actor: current_user)
+        return render partial: "projects/shadow_evaluations/review_case",
+          locals: { result:, evaluation: @evaluation, project: @project, case_view:,
+                    case_id: params[:case_id].to_s, inbox_context: inbox_context }
+      end
       return redirect_to(result.url, allow_other_host: true) if result.available?
 
       redirect_to evaluation_path(@evaluation, case_id: params[:case_id]), alert: result.error
@@ -73,7 +80,7 @@ module Projects
         cited_design_claim: params[:cited_design_claim],
         reason: params[:reason]
       )
-      redirect_for(result, success_notice: "Label recorded.")
+      redirect_for(result, success_notice: "Your decision was saved.")
     end
 
     def skip
@@ -85,14 +92,14 @@ module Projects
         case_id: params[:case_id].to_s,
         outcome: nil
       )
-      redirect_for(result, success_notice: "Case skipped — it still needs a label before you can freeze.")
+      redirect_for(result, success_notice: "Saved for later. Review this change before finishing.")
     end
 
     def freeze
       authorize @evaluation
 
       result = IntentConformance::ShadowEvaluation::FreezeLabels.call(evaluation: @evaluation, actor: current_user)
-      redirect_for(result, success_notice: "Reference labels frozen. You can now execute the reviewer.")
+      redirect_for(result, success_notice: "Your review is complete and your original decisions are locked. You can now run the AI comparison.")
     end
 
     # @spec INTENT-CONFORMANCE-ROLLOUT-011

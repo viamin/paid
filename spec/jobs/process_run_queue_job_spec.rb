@@ -1702,6 +1702,22 @@ RSpec.describe ProcessRunQueueJob do
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
         end
 
+        it "passes persisted proposed repair evidence into the dequeue recheck" do # @spec BOUNDED-PHASE-AUTHORIZATION-006
+          project = create(:project, :with_github_installation, auto_pick_enabled: true)
+          audit = create(:agent_run, :completed, project: project, goal: "layered_verification_audit")
+          evidence = { "cycle_evidence" => [ "failed_check" ], "proposed_repair" => "Repair the failed check" }
+          run = create(:agent_run, :queued, :automatic, project: project, goal: "layered_verification_repair",
+            originating_audit_run: audit, external_metadata: { "action_evidence" => evidence })
+          blocked_recheck = instance_double(Automation::DelegatedWorkBoundary::Result,
+            permitted?: false, boundary: :dequeue, reasons: [ :scope_correspondence ])
+          allow(Automation::DelegatedActionAdmission).to receive(:call).and_return(blocked_recheck)
+
+          expect(job.send(:delegated_boundary_blocked?, run)).to be(true)
+          expect(Automation::DelegatedActionAdmission).to have_received(:call).with(
+            hash_including(goal: "layered_verification_repair", action_evidence: evidence)
+          )
+        end
+
         it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
           project = create(:project, auto_pick_enabled: true)
           pull_request = create(:issue, :pull_request, project: project, github_number: 42,

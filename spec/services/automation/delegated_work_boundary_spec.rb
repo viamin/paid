@@ -36,7 +36,9 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       trust: true,
       budget: true,
       repository_controls: true,
-      assessment_available: true
+      assessment_available: true,
+      scope_correspondence: true,
+      new_risk: false
     }
   end
 
@@ -66,7 +68,9 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(first).to be_blocked
     expect(first.reasons).to include(:intent_revision)
     expect(second).to be_blocked
-    expect(second.reasons).to include(:posture_signature)
+    # The first recheck paused the authorization (BOUNDED-PHASE-AUTHORIZATION-005),
+    # so the second also reports its reassessment-required lifecycle.
+    expect(second.reasons).to include(:authorization_lifecycle, :posture_signature)
     expect(Notification.where(source: described_class::NOTIFICATION_SOURCE).count).to eq(1)
     # The reused decision represents the latest failure, so the operator is
     # never pointed at an authorization, boundary, or reason that no longer
@@ -74,7 +78,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(Notification.last.metadata).to include(
       "authorization_id" => authorization.id,
       "boundary" => "retry",
-      "reasons" => [ "posture_signature" ]
+      "reasons" => [ "authorization_lifecycle", "posture_signature" ]
     )
   end
 
