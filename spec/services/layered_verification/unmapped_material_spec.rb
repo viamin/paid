@@ -58,19 +58,50 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
     expect(discovery.material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
   end
 
-  it "keeps structural findings when the semantic read-through fails or returns invalid JSON" do
+  it "keeps structural findings and discloses a limitation when the semantic read-through fails or returns invalid JSON" do
     project = create(:project)
     obligation = scoped_obligation(project:)
     run = create(:agent_run, goal: "layered_verification_audit")
     failing = ->(prompt:, agent_run:, timeout:) { raise AgentHarness::ConfigurationError, "no runner" }
+    unsuccessful_class = Class.new(Struct.new(:output)) { def success? = false }
+    unsuccessful = ->(prompt:, agent_run:, timeout:) { unsuccessful_class.new("") }
     invalid = ->(prompt:, agent_run:, timeout:) { response_class.new("not json") }
 
-    [ failing, invalid ].each do |llm|
+    [ failing, unsuccessful, invalid ].each do |llm|
       discovery = described_class.call(obligation:, agent_run: run,
         command_runner: command_runner(scope_output: "docs/intent/payments/unmapped-spec.md\n"), llm: llm)
 
       expect(discovery.material).to eq([ "docs/intent/payments/unmapped-spec.md" ])
+      expect(discovery.limitations).to include(a_string_matching(/Semantic read-through could not execute/))
     end
+  end
+
+  # @spec LAYERED-VERIFY-009
+  it "discloses a limitation with empty material when the semantic read-through fails and no structural gap exists" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    failing = ->(prompt:, agent_run:, timeout:) { raise AgentHarness::ConfigurationError, "no runner" }
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: "docs/intent/payments/payment-specs.md\n"), llm: failing)
+
+    expect(discovery.material).to be_empty
+    expect(discovery.limitations).to include(a_string_matching(/Semantic read-through could not execute/))
+  end
+
+  # @spec LAYERED-VERIFY-009
+  it "discloses a limitation instead of an empty-but-successful discovery when no canonical source path exists" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    obligation.update_column(:canonical_source_path, nil)
+    run = create(:agent_run, goal: "layered_verification_audit")
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: ""), llm: semantic_llm("unmapped" => []))
+
+    expect(discovery.material).to be_empty
+    expect(discovery.limitations).to include(a_string_matching(/no canonical source path is recorded/))
   end
 
   it "discloses an explicit limitation instead of guessing when structural discovery cannot execute" do

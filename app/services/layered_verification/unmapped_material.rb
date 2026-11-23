@@ -21,6 +21,9 @@ module LayeredVerification
     CONTENT_LIMIT = 20_000
     SEMANTIC_TIMEOUT = 45
     DISCOVERY_FAILURE = "Structural discovery could not execute in the audit environment."
+    NO_CANONICAL_PATH = "Structural discovery could not enumerate the declared scope: " \
+      "no canonical source path is recorded for this obligation."
+    SEMANTIC_UNAVAILABLE = "Semantic read-through could not execute; linkage freshness was not established."
     NO_ENUMERATED_FILES = "(no scope files could be enumerated mechanically)"
 
     def self.call(...) = new(...).call
@@ -36,8 +39,9 @@ module LayeredVerification
       files, failure = structural_scope_files
       return Discovery.unavailable(failure) if failure
 
-      material = (structural_unmapped(files) + semantic_unmapped(files)).uniq.sort
-      Discovery.new(material.first(SCOPE_FILE_LIMIT), [])
+      semantic, limitation = semantic_unmapped(files)
+      material = (structural_unmapped(files) + semantic).uniq.sort
+      Discovery.new(material.first(SCOPE_FILE_LIMIT), Array(limitation))
     end
 
     private
@@ -45,7 +49,10 @@ module LayeredVerification
     attr_reader :agent_run, :command_runner, :llm, :obligation
 
     def structural_scope_files
-      return [ [], nil ] if scope_directory.blank?
+      # A Phase-1 obligation without a canonical source path cannot be
+      # mechanically enumerated; disclose that rather than reporting an
+      # empty-but-successful discovery.
+      return [ nil, NO_CANONICAL_PATH ] if scope_directory.blank?
 
       output, status = command_runner.call("git", "ls-files", "--", scope_directory)
       return [ nil, DISCOVERY_FAILURE ] unless status.zero?
@@ -76,20 +83,24 @@ module LayeredVerification
       reference.to_s.split("#").first.to_s.strip
     end
 
+    # Returns [material, limitation]: a failed or unparseable read-through
+    # discloses a limitation rather than silently narrowing coverage, so the
+    # audit never overstates established linkage freshness.
     def semantic_unmapped(files)
       response = llm.call(prompt: prompt(files), agent_run:, timeout: SEMANTIC_TIMEOUT)
-      return [] unless response.success?
+      return [ [], SEMANTIC_UNAVAILABLE ] unless response.success?
 
-      Array(JSON.parse(response.output.to_s)["unmapped"]).filter_map { |reference| reference.to_s.presence }
-        .uniq.first(SCOPE_FILE_LIMIT)
+      material = Array(JSON.parse(response.output.to_s)["unmapped"])
+        .filter_map { |reference| reference.to_s.presence }.uniq.first(SCOPE_FILE_LIMIT)
+      [ material, nil ]
     rescue AgentHarness::Error => error
       Rails.logger.warn(
         message: "layered_verification.semantic_read_through_failed", agent_run_id: agent_run.id,
         obligation_id: obligation.id, error_class: error.class.name, error_message: error.message
       )
-      []
+      [ [], SEMANTIC_UNAVAILABLE ]
     rescue JSON::ParserError, TypeError
-      []
+      [ [], SEMANTIC_UNAVAILABLE ]
     end
 
     def scope_directory
