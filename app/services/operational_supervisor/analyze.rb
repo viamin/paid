@@ -65,7 +65,7 @@ module OperationalSupervisor
           }]
         }
 
-        Every project ID must be an included project ID. Every evidence metric must be in the snapshot. The recommendation is advisory and grants no authority.
+        Every project ID must be an included project ID. Every evidence metric must be available in the snapshot. The recommendation is advisory and grants no authority.
 
         #{JSON.generate(snapshot_payload)}
       PROMPT
@@ -140,7 +140,7 @@ module OperationalSupervisor
 
       names = evidence["metric_names"]
       raise InvalidResponse, "supervisor analysis evidence is malformed" unless names.is_a?(Array) && names.any? && names.all?(String) && names.uniq.size == names.size
-      raise InvalidResponse, "supervisor analysis evidence references an unknown metric" unless names.all? { snapshot_metric_names.include?(_1) }
+      raise InvalidResponse, "supervisor analysis evidence references an unavailable metric" unless names.all? { available_snapshot_metric_names.include?(_1) }
 
       { "metric_names" => names }
     end
@@ -167,7 +167,11 @@ module OperationalSupervisor
     end
 
     def snapshot_project_ids = @snapshot_project_ids ||= snapshot.included_project_ids.to_set
-    def snapshot_metric_names = @snapshot_metric_names ||= snapshot.digest.fetch("metrics").pluck("name").to_set
+    def available_snapshot_metric_names
+      @available_snapshot_metric_names ||= snapshot.digest.fetch("metrics")
+        .filter_map { |metric| metric.fetch("name") if metric["status"] == "available" }
+        .to_set
+    end
 
     def enabled_project_ids
       @enabled_project_ids ||= account.projects.where(id: snapshot.included_project_ids).filter_map do |project|

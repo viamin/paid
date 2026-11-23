@@ -76,6 +76,22 @@ RSpec.describe OperationalSupervisor::Analyze do
     end
   end
 
+  it "rejects findings supported only by unavailable snapshot metrics" do # @spec OPERATIONAL-SUPERVISOR-006
+    unavailable_snapshot = create(:supervisor_snapshot, account:, included_project_ids: [ project.id ],
+      digest: { "schema_version" => 1, "metrics" => [
+        { "name" => "queue_starvation", "status" => "unavailable", "value" => nil }
+      ] })
+    allow(llm).to receive(:call).and_return(response)
+
+    expect(Rails.logger).to receive(:warn).with(
+      message: "operational_supervisor.analysis_rejected", account_id: account.id, snapshot_id: unavailable_snapshot.id,
+      reason: "invalid_response"
+    )
+    expect { described_class.call(account:, snapshot: unavailable_snapshot, llm:) }.to raise_error(described_class::InvalidResponse)
+    expect(SupervisorIncident.count).to eq(0)
+    expect(SupervisorIncidentAudit.count).to eq(0)
+  end
+
   it "supplies the same strict contract to Llm::Request for fallback routing" do # @spec OPERATIONAL-SUPERVISOR-005, OPERATIONAL-SUPERVISOR-006
     validator = nil
     allow(llm).to receive(:call) do |**arguments|
