@@ -349,6 +349,10 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
+            # Matrix legs otherwise begin registry requests in lockstep after
+            # a shared transient outage. A deterministic per-shard delay
+            # spreads those requests without extending an attempt's bound.
+            sleep "$((RSPEC_SHARD_INDEX * 3))"
             for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
@@ -364,7 +368,7 @@ jobs:
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --network-timeout 600000 && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -770,7 +774,7 @@ jobs:
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --network-timeout 600000 && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |

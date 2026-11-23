@@ -290,7 +290,8 @@ module Prompts
         .strip_legacy_suffix(content.to_s)
         .rstrip
 
-      rendered = [ stripped_content, safety_rules_body ].compact.reject(&:empty?).join("\n\n")
+      rendered = [ stripped_content, PromptAssembly::Sections::EffectiveMergeReviewPosture::TECHNICAL_BLOCKER_GUIDANCE,
+        safety_rules_body ].compact.reject(&:empty?).join("\n\n")
 
       PromptAssembly::Section.new(
         key: :instructions_and_rules,

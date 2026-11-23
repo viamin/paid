@@ -1081,6 +1081,7 @@ class Issue < ApplicationRecord
   def merge_approval_candidate_state_changed?
     is_pull_request? && (
       saved_change_to_auto_merge_blockers? ||
+      saved_change_to_technical_merge_blockers? ||
       saved_change_to_auto_merge_evaluated_at? ||
       saved_change_to_awaiting_approval_since? ||
       saved_change_to_merge_permission_rejected_at? ||
