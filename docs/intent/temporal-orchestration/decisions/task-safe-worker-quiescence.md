@@ -9,8 +9,35 @@ node: temporal-orchestration
 An updater must replace a worker without allowing a task already returned from
 a long poll to consume its original finite attempt while waiting behind an
 application-level fence. It must also preserve any task admitted through an
-enabled eager path. Ruby SDK 1.9.0 exposes worker shutdown and custom-slot
-suppliers, but neither is a task-safe pause-and-drain lifecycle operation.
+enabled eager path. A source-only audit of the official temporalio Ruby SDK
+1.11.0 tagged gem — the latest published release at audit time, with the same
+boundary as the pinned 1.9.0 — confirms that no released public API is a
+task-safe pause-and-drain lifecycle operation.
+
+## Audited upstream capability (source-only)
+
+The evidence below is a source audit of the official `temporalio` 1.11.0
+tagged gem only; no 1.11.0 execution experiment was performed or claimed.
+
+- `lib/temporalio/worker.rb` — the public worker lifecycle is still
+  `run`/`run_all` (plus hot `client=` replacement for credentials). Documented
+  shutdown "immediately stops accepting new work" and then, "after an optional
+  grace period, all activities are canceled" before the call returns; it emits
+  no admission-fence acknowledgement and is not reversible.
+  `_initiate_shutdown`/`_wait_all_complete` are `@!visibility private` bridge
+  internals, outside the supported boundary.
+- `lib/temporalio/worker/tuner.rb` — `SlotSupplier::Custom` still exposes
+  `reserve_slot` (may block, must yield a permit; the given cancellation only
+  stops the reservation request), `try_reserve_slot` (must return
+  immediately), and `mark_slot_used`/`release_slot`, each documented as
+  "should never block, this should return immediately" and invoked on the
+  shared worker reactor thread with raised exceptions ignored. No callback
+  observes a reservation becoming a task, so none can acknowledge quiescence.
+- `lib/temporalio/worker/poller_behavior.rb` — new since 1.9.0:
+  `PollerBehavior::SimpleMaximum`/`Autoscaling` only bound how many concurrent
+  long polls scale; polling still requires an available slot first and the
+  behavior reports nothing about outstanding reservations. Release and
+  shutdown fixes between 1.9.0 and 1.11.0 do not add the missing contract.
 
 ## Decision Elements
 

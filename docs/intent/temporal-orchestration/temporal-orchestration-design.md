@@ -188,13 +188,19 @@ pool sizing must account for both activity slots and heartbeat threads.
 
 ## Task-Safe Worker Quiescence
 
-The Ruby 1.9.0 public worker lifecycle has shutdown, but shutdown eventually
-cancels activities. Its public custom-slot contract reserves before polling and
-requires `mark_slot_used` and `release_slot` to return immediately. It does not
-acknowledge cancellation of outstanding polls, atomically fence long-poll or
-eager admission, or account for a reservation that becomes a task while a
-worker is draining. Consequently neither activity-body readiness metadata nor a
-custom-slot supplier is a supported quiescence primitive.
+A source-only audit of the official Ruby SDK 1.11.0 tagged gem (the latest
+published release at audit time; the pinned 1.9.0 has the same boundary — no
+execution experiment was performed or claimed) found no public quiescence
+primitive: the public worker lifecycle still has only shutdown, but shutdown
+eventually cancels activities. Its public custom-slot contract reserves before
+polling and requires `mark_slot_used` and `release_slot` to return
+immediately. The poll-scaling behaviors added since 1.9.0 still require an
+available slot before each poll and acknowledge no outstanding reservation.
+The SDK does not acknowledge cancellation of outstanding polls, atomically
+fence long-poll or eager admission, or account for a reservation that becomes
+a task while a worker is draining. Consequently neither activity-body
+readiness metadata nor a custom-slot supplier is a supported quiescence
+primitive.
 
 The updater defers before stopping a ready legacy worker. This preserves owned
 work and its existing finite attempt/deadline rather than presenting an idle
