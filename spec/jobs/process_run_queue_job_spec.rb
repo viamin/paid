@@ -2727,8 +2727,7 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         queued_run.reload
-        expect(queued_run.status).to eq("rate_limited")
-        expect(queued_run.rate_limited_until).to eq(available_at)
+        expect(queued_run).to have_attributes(status: "rate_limited", rate_limited_until: available_at)
         expect(queued_run.external_metadata["capacity_park_reason"]).to eq("backing_storage_reserve_exhausted")
         expect_execution_rejected_event(
           queued_run,
