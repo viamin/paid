@@ -59,28 +59,32 @@ module Containers
         Docker::Container.get(id, {}, connection)
       end
 
-      def create_container(config)
-        Docker::Container.create(config, connection)
+      def create_container(config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        return Docker::Container.create(config, connection) unless deadline
+
+        Docker::Container.create(config, connection_with_deadline(connection, deadline))
       end
 
-      def start_container(container)
-        container.start
+      def start_container(container, deadline: nil)
+        with_deadline(container, deadline) { container.start }
       end
 
-      def stop_container(container, **options)
-        container.stop(**options)
+      def stop_container(container, deadline: nil, **options)
+        with_deadline(container, deadline) { container.stop(**options) }
       end
 
-      def delete_container(container, **options)
-        container.delete(**options)
+      def delete_container(container, deadline: nil, **options)
+        with_deadline(container, deadline) { container.delete(**options) }
       end
 
-      def exec_in_container(container, command, **options, &block)
-        container.exec(command, **options, &block)
+      def exec_in_container(container, command, deadline: nil, **options, &block)
+        with_deadline(container, deadline) { container.exec(command, **options, &block) }
       end
 
-      def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
-        DockerExecWithStdin.call(container:, command:, stdin:, wait:, **options, &block)
+      def exec_in_container_with_stdin(container, command, stdin:, wait:, deadline: nil, **options, &block)
+        deadline_options = deadline ? { deadline: deadline } : {}
+        DockerExecWithStdin.call(container:, command:, stdin:, wait:, **deadline_options, **options, &block)
       end
 
       def container_stats(container, **options)
@@ -95,12 +99,13 @@ module Containers
         Docker::Container.all(options, connection)
       end
 
-      def get_network(name)
-        Docker::Network.get(name, {}, connection)
+      def get_network(name, deadline: nil)
+        Docker::Network.get(name, {}, connection_with_deadline(connection, deadline))
       end
 
-      def create_network(name, config)
-        Docker::Network.create(name, config, connection)
+      def create_network(name, config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        Docker::Network.create(name, config, connection_with_deadline(connection, deadline))
       end
 
       def pull_image(config)
@@ -140,6 +145,22 @@ module Containers
       end
 
       private
+
+      def with_deadline(container, deadline)
+        return yield unless deadline
+
+        original_connection = container.connection
+        container.connection = connection_with_deadline(original_connection, deadline)
+        yield
+      ensure
+        container.connection = original_connection if original_connection
+      end
+
+      def connection_with_deadline(selected_connection, deadline)
+        return selected_connection unless deadline
+
+        Docker::Connection.new(selected_connection.url, selected_connection.options.merge(timeout: deadline, retry_limit: 0))
+      end
 
       def build_tls_config(tls_config)
         tls_config.to_h.compact.merge(scheme: "https")

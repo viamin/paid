@@ -40,6 +40,19 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
     expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :execution_budget_exhausted)
   end
 
+  it "retains a rate-limited sibling with a different goal as the issue owner" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
+    parked = create(:agent_run, project:, issue:, goal: "analyze_issue", status: "rate_limited",
+      rate_limited_until: 1.hour.from_now)
+
+    assessment = policy.assess(run)
+
+    expect(assessment).to have_attributes(eligible?: false, reason: :existing_active_run)
+    expect(assessment.existing_run&.id).to eq(parked.id)
+    expect { policy.assess(run) }.not_to change(AgentRun, :count)
+    expect(parked.reload).to have_attributes(status: "rate_limited", completed_at: nil)
+  end
+
   it "rechecks project opt-out and pause" do
     run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
     project.update!(retry_failed_manual_runs: false)

@@ -341,34 +341,13 @@ jobs:
         # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          retry_with_backoff() {
-            local timeout_limit="$1"
-            local warning_message="$2"
-            shift 2
-            local attempt
-            # Matrix legs otherwise begin registry requests in lockstep after
-            # a shared transient outage. A deterministic per-shard delay
-            # spreads those requests without extending an attempt's bound.
-            sleep "$((RSPEC_SHARD_INDEX * 3))"
-            for attempt in 1 2 3 4 5; do
-              if timeout "$timeout_limit" "$@"; then
-                return 0
-              fi
-              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
-              sleep "$((attempt * 10))"
-            done
-            return 1
-          }
-          # Hosted-runner registry connections can remain idle while a shared
-          # cache or package mirror is contended. Let one request wait up to
-          # five minutes. Serialize each leg's requests so five concurrent
-          # matrix legs do not multiply retryable registry pressure.
-          # The enclosing twenty-minute attempt remains the authoritative
-          # bound from TEST-SUITE-023.
-          retry_with_backoff \
-            20m \
-            "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
+          # Matrix legs otherwise begin registry requests in lockstep after
+          # a shared transient outage. A deterministic per-shard delay
+          # spreads those requests without extending an attempt's bound.
+          sleep "$((RSPEC_SHARD_INDEX * 3))"
+          # The supervisor gives each setup attempt the TEST-SUITE-023 bound,
+          # retries failures, and reaps its process-group descendants.
+          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -582,7 +561,6 @@ jobs:
       actions: read
     outputs:
       recoverable: ${{ steps.classify.outputs.recoverable }}
-      recoverable_matrix: ${{ steps.classify.outputs.recoverable_matrix }}
       failing: ${{ steps.classify.outputs.failing }}
     steps:
       - name: Classify shard outcomes
@@ -624,13 +602,11 @@ jobs:
             fi
           done
           echo "recoverable=${recoverable% }" >> "$GITHUB_OUTPUT"
-          printf 'recoverable_matrix=%s\n' "$(printf '%s' "${recoverable% }" | jq -Rc 'split(" ") | map(select(length > 0) | tonumber)')" >> "$GITHUB_OUTPUT"
           echo "failing=${failing% }" >> "$GITHUB_OUTPUT"
 
   # Re-runs exactly the legs the platform never created, using the same
-  # services, credentials, and per-leg artifact contract as the matrix. Each
-  # missing leg has its own bounded job, rather than serially sharing one job's
-  # timeout. Legs that executed are never re-run here: their verdicts stand.
+  # services, credentials, and per-leg artifact contract as the matrix. Legs
+  # that executed are never re-run here: their verdicts stand.
   # @spec TEST-SUITE-018
   shard-recovery:
     name: Recover dropped test shards
@@ -638,10 +614,9 @@ jobs:
     if: >-
       always() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.shard-status.outputs.recoverable_matrix) }}
+    # One dropped leg costs a normal shard runtime; allow for the worst case
+    # of recovering several legs serially in this single job, including
+    # bounded dependency retries.
     timeout-minutes: 360
 
     services:
@@ -665,7 +640,7 @@ jobs:
 
     env:
       BUNDLE_FROZEN: "true"
-      RSPEC_SHARD_INDEX: ${{ matrix.shard }}
+      RECOVERABLE: ${{ needs.shard-status.outputs.recoverable }}
       RSPEC_SHARD_COUNT: "5"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
@@ -759,28 +734,9 @@ jobs:
         # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          retry_with_backoff() {
-            local timeout_limit="$1"
-            local warning_message="$2"
-            shift 2
-            local attempt
-            sleep "$((RSPEC_SHARD_INDEX * 3))"
-            for attempt in 1 2 3 4 5; do
-              if timeout "$timeout_limit" "$@"; then
-                return 0
-              fi
-              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
-              sleep "$((attempt * 10))"
-            done
-            return 1
-          }
-          # Keep recovery's registry tolerance and deterministic per-shard
-          # stagger aligned with matrix shards. Each complete setup attempt is
-          # still bounded to twenty minutes.
-          retry_with_backoff \
-            20m \
-            "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
+          # The supervisor gives each setup attempt the TEST-SUITE-023 bound,
+          # retries failures, and reaps its process-group descendants.
+          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -951,28 +907,81 @@ jobs:
         run: |
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
 
-      - name: Run recovered shard
+      - name: Run recovered shards
+        # Clear the coverage resultset before each leg so every recovered leg
+        # keeps exactly one shard identity in its own report, then stage the
+        # per-leg artifact layout the matrix job uploads.
         # @spec TEST-SUITE-018
-        run: >-
-          bin/rspec-shard
-          --format progress --format json
-          --out tmp/rspec-shard-${{ matrix.shard }}.json
+        run: |
+          for index in $RECOVERABLE; do
+            export RSPEC_SHARD_INDEX="$index"
+            rm -f coverage/.resultset.json
+            bin/rspec-shard --format progress --format json --out "tmp/rspec-shard-$index.json"
+            mkdir -p "tmp/recovered/rspec-shard-$index/coverage" "tmp/recovered/rspec-shard-$index/tmp"
+            mv coverage/.resultset.json "tmp/recovered/rspec-shard-$index/coverage/.resultset.json"
+            mv "tmp/rspec-shard-$index.json" "tmp/recovered/rspec-shard-$index/tmp/rspec-shard-$index.json"
+            # Shard 0 also owns the query-performance slice.
+            if [ "$index" = "0" ]; then
+              COVERAGE=false bin/rspec spec/performance
+            fi
+          done
 
-      # Shard 0 also owns the query-performance slice.
-      - name: Run query performance benchmarks
-        if: matrix.shard == 0
-        run: COVERAGE=false bin/rspec spec/performance
-
-      - name: Upload recovered shard report
-        # Keep the artifact layout exactly aligned with the original matrix.
-        # @spec TEST-SUITE-018
-        if: always()
+      - name: Upload recovered shard 0 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '0')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rspec-shard-${{ matrix.shard }}
+          name: rspec-shard-0
           path: |
-            coverage/.resultset.json
-            tmp/rspec-shard-${{ matrix.shard }}.json
+            tmp/recovered/rspec-shard-0/coverage/.resultset.json
+            tmp/recovered/rspec-shard-0/tmp/rspec-shard-0.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 1 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '1')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-1
+          path: |
+            tmp/recovered/rspec-shard-1/coverage/.resultset.json
+            tmp/recovered/rspec-shard-1/tmp/rspec-shard-1.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 2 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '2')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-2
+          path: |
+            tmp/recovered/rspec-shard-2/coverage/.resultset.json
+            tmp/recovered/rspec-shard-2/tmp/rspec-shard-2.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 3 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '3')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-3
+          path: |
+            tmp/recovered/rspec-shard-3/coverage/.resultset.json
+            tmp/recovered/rspec-shard-3/tmp/rspec-shard-3.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 4 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '4')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-4
+          path: |
+            tmp/recovered/rspec-shard-4/coverage/.resultset.json
+            tmp/recovered/rspec-shard-4/tmp/rspec-shard-4.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

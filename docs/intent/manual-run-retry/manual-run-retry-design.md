@@ -190,6 +190,8 @@ initiating actor, runner, and manual retry lineage without setting `auto_pick`
 or fabricating a new manual trigger. Claim-time eligibility rechecks the source
 issue, trust, dependencies, active owners, model/phase/privacy policy, retry
 opt-out, and project or issue pause.
+Active ownership covers every goal for the issue. A rate-limited sibling retains
+its slot while waiting to resume, even when its goal differs from `create_pr`.
 
 Only a no-work, non-exhausted failure may consume the remaining finite manual
 allowance. Pushed/unpublished work, a PR, or main-agent output is a hard blind-

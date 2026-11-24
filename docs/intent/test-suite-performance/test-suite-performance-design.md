@@ -38,8 +38,24 @@ the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
 at most five times, bounding each attempt to twenty minutes with increasing
-delays. This absorbs transient registry and hosted-runner stalls without
-skipping setup or relaxing the shard's 360-minute job boundary.
+delays. Each attempt runs in an isolated process group so timeout termination
+also stops its package-manager descendants and reaps its owned session leader
+before the next retry. Its watchdog runs in a separate owned session containing
+both the timer and grace delay, acknowledges that session before cleanup can
+target its process group, and retains its exact child PID from fork through
+that acknowledgement so cancellation can terminate and reap startup ownership
+without waiting for an attempt timer. The setup leader is likewise supervised
+without a blocking wait that defers TERM or INT cleanup. The wrapper terminates
+and waits for owned watchdog state on every success, failure, timeout, and
+cancellation before returning. Retry
+backoff and termination-escalation timers are likewise owned children: cleanup
+terminates and reaps them before returning, including when the wrapper receives
+TERM or INT. The supervisor
+sends TERM to only that owned group, follows with KILL after a finite grace
+period for TERM-resistant descendants, and reports a timeout as a failed setup
+attempt. This absorbs transient registry
+and hosted-runner stalls without skipping setup or relaxing the shard's
+360-minute job boundary.
 
 ## Platform-dropped shard recovery
 
@@ -49,14 +65,12 @@ matrix aggregate reports failure even though no test ran. A lightweight
 `shard-status` job classifies each expected leg from the run's job list after
 the matrix completes: a leg with no job is recoverable, a leg that ran and did
 not succeed is failing, and an unclassifiable run (jobs API unavailable) fails
-closed. `shard-recovery` expands only the recoverable leg identifiers into a
-second matrix, so each re-run receives its own services, credentials, 360-minute
-boundary, coverage command name, and artifact contract. This prevents several
-missing legs from serially consuming one shard's bounded allowance while
-keeping one shard identity per coverage report. The final check treats recovery
-as satisfying only the missing legs: a real shard failure, a failed re-run, an
-incomplete classification, or a still-missing report still fails the check.
-Recovery never re-runs legs that executed.
+closed. A `shard-recovery` job then re-runs exactly the recoverable legs with
+the same services, credentials, coverage command names, and per-leg artifact
+contract as the matrix, keeping one shard identity per coverage report. The
+final check treats recovery as satisfying only the missing legs: a real shard
+failure, a failed re-run, an incomplete classification, or a still-missing
+report still fails the check. Recovery never re-runs legs that executed.
 
 ## System-suite infrastructure recovery
 

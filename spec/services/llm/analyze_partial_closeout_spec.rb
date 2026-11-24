@@ -54,7 +54,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       described_class.call(agent_run: agent_run)
 
       expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-        account: project.account, runner: runner, timeout: described_class::TIMEOUT
+        hash_including(account: project.account, runner: runner, timeout: described_class::TIMEOUT, deadline: be_a(Numeric))
       )
       expect(standalone_executor).to have_received(:close)
     end

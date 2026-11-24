@@ -98,7 +98,7 @@ module AgentRuns
     end
 
     def existing_active_run_for(agent_run)
-      AgentRun.where(project: agent_run.project, issue: agent_run.issue, goal: agent_run.goal,
+      AgentRun.where(project: agent_run.project, issue: agent_run.issue,
         status: AgentRun::DEDUP_BLOCKING_STATUSES).where.not(id: agent_run.id).first
     end
 

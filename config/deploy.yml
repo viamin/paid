@@ -231,6 +231,11 @@ env:
     # TEMPORAL_WORKFLOW_SLOTS: 20
     # TEMPORAL_ACTIVITY_SLOTS: 4
 
+    # Readiness heartbeat cadence (seconds) for the worker_* roles: how often
+    # a live Temporal worker republishes its readiness identity to the shared
+    # application database (see docs/SCALING.md § Worker Readiness Signals).
+    # WORKER_READINESS_HEARTBEAT_SECONDS: 30
+
     # Match this to any external database server to configure Active Record correctly.
     # Use paid-db for a db accessory server on same machine via local kamal docker network.
     # DB_HOST: 192.168.0.2
