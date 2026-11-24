@@ -23,6 +23,10 @@ module Containers
       end
       exit_code = with_deadline(container, absolute_deadline) { execution.json["ExitCode"] }
       [ messages.stdout_messages, messages.stderr_messages, exit_code ]
+    rescue Excon::Error::Socket => e
+      raise e.cause if e.cause.is_a?(Docker::Error::TimeoutError)
+
+      raise
     end
 
     def self.exec_config(container, command, options)

@@ -119,8 +119,11 @@ single request deadline and its allocated slice. Provisioning, including Docker
 network lookup or creation and upgraded exec creation, credential
 materialization and refresh, command execution, and output handling consume
 that same slice; an executor retains the short cleanup margin before it starts
-a command. Thus slow setup cannot obtain a fresh command timeout and a spent
-request deadline cannot start another fallback. Cleanup is bounded and
+a command. The command transport and container watchdog share the executable
+allocation; they cannot consume the reserved cleanup time even when output
+keeps streaming. Stop, delete, and credential cleanup retain the original
+candidate deadline. Thus slow setup cannot obtain a fresh command timeout and a
+spent request deadline cannot start another fallback. Cleanup is bounded and
 best-effort: the executor attempts removal during the remaining candidate
 deadline, and its immutable orphan-sweep label recovers a container when a
 Docker cleanup call cannot finish. Managed credential lease acquisition and

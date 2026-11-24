@@ -329,13 +329,16 @@ module Containers
     end
 
     def run(command, timeout:, env:, input:, output_observer:)
+      timeout = bounded_timeout(timeout)
+      raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
+
       timed_out = false
       finished = false
       mutex = Mutex.new
       completion = ConditionVariable.new
       watchdog = Thread.new do
         mutex.synchronize do
-          completion.wait(mutex, timeout + CLEANUP_MARGIN) unless finished
+          completion.wait(mutex, timeout) unless finished
           timed_out = !finished
         end
         Containers.backend.stop_container(@container, timeout: 0, **backend_deadline) if timed_out
@@ -346,7 +349,7 @@ module Containers
       stderr = +""
       output_exceeded = false
       result = Containers.backend.exec_in_container_with_stdin(@container, command,
-        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }, **backend_deadline) do |stream, chunk|
+        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }, **command_backend_deadline(timeout)) do |stream, chunk|
         output_observer&.call(stream, chunk)
         next if output_exceeded
 
@@ -427,6 +430,10 @@ module Containers
       return {} unless @deadline
 
       { deadline: remaining_deadline }
+    end
+
+    def command_backend_deadline(timeout)
+      @deadline ? { deadline: timeout } : {}
     end
 
     def remaining_deadline

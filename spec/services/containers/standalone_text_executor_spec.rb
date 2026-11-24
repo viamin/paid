@@ -149,7 +149,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-013
-  it "applies the candidate deadline to network setup and upgraded exec creation" do
+  it "preserves cleanup allocation across network setup and upgraded execution" do
     executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
       clock: ->(_) { 100.0 })
     stub_text_exec { [ [], [], 0 ] }
@@ -160,7 +160,12 @@ RSpec.describe Containers::StandaloneTextExecutor do
       network: NetworkPolicy::INFRA_NETWORK_NAME, backend: backend, deadline: 7.0
     )
     expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
-      hash_including(deadline: 7.0))
+      hash_including(wait: 2.0, deadline: 2.0))
+
+    executor.close
+
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0, deadline: 7.0)
+    expect(backend).to have_received(:delete_container).with(container, force: true, deadline: 7.0)
   end
 
   # @spec LLM-ROUTING-013

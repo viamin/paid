@@ -93,7 +93,9 @@
   creation), credential materialization or refresh, command execution, output
   handling, and cleanup SHALL consume that candidate's allocation within the
   shared request deadline. The executor SHALL reserve a bounded cleanup margin
-  before beginning command execution; setup that consumes the executable budget
+  before beginning command execution; command transport and its watchdog SHALL
+  use only the executable allocation while cleanup retains the original
+  candidate deadline. Setup that consumes the executable budget
   SHALL not receive a new command allocation, and an exhausted shared deadline
   SHALL not start a fallback. Physical cleanup remains best-effort. Managed
   credential lease acquisition and the container rotation read SHALL be bounded

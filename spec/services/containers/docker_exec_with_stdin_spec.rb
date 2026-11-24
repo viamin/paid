@@ -141,6 +141,37 @@ RSpec.describe Containers::DockerExecWithStdin, :no_db do
     expect(socket).to have_received(:close)
   end
 
+  describe "wrapped transport errors" do
+    let(:connection) { instance_double(Docker::Connection) }
+    let(:container) { instance_double(Docker::Container, id: "container-1", connection: connection) }
+    let(:execution) { instance_double(Docker::Exec, id: "exec-1") }
+    let(:socket_error) { Excon::Error::Socket.new(IOError.new("upgraded stream failed")) }
+
+    before do
+      allow(Docker::Exec).to receive(:create).and_return(execution)
+    end
+
+    # @spec LLM-ROUTING-013
+    it "preserves the Docker timeout type across the HTTP upgrade wrapper" do
+      original_error = Docker::Error::TimeoutError.new("Docker operation deadline expired")
+      allow(connection).to receive(:post) { raise socket_error, cause: original_error }
+
+      expect {
+        described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5)
+      }.to raise_error { |error| expect(error).to equal(original_error) }
+    end
+
+    # @spec LLM-ROUTING-013
+    it "preserves unrelated socket failures without classifying them as timeouts" do
+      original_error = IOError.new("connection failed")
+      allow(connection).to receive(:post) { raise socket_error, cause: original_error }
+
+      expect {
+        described_class.call(container:, command: [ "cat" ], stdin: StringIO.new("input"), wait: 5)
+      }.to raise_error { |error| expect(error).to equal(socket_error) }
+    end
+  end
+
   describe "Docker integration", :runner_smoke do
     around do |example|
       WebMock.disable!
