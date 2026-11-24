@@ -22,6 +22,15 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
     expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :implementation_work_produced)
   end
 
+  it "refuses a retained unpublished result before its execution counters record work" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      unpublished_result_commit_sha: "b" * 40)
+
+    expect(run.result_commit_sha).to be_blank
+    expect(run).to be_no_observable_work
+    expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :implementation_work_produced)
+  end
+
   it "retains a rate-limited sibling as the active implementation owner" do
     run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
     parked = create(:agent_run, project:, issue:, goal: "create_pr", status: "rate_limited",
