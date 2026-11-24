@@ -92,6 +92,25 @@ Host-forwarded rotation remains intentionally separate: it is not imported
 into a managed record unless an existing authorized identity/writeback boundary
 already establishes equivalence.
 
+Each rotating managed materialization persists non-secret, trusted provenance
+for the specific agent run and container lifecycle: runner key, source,
+canonical credential identity, and its generation timestamp. Harvest resolves
+that provenance first rather than re-selecting the account's current credential.
+It writes only when the recorded managed credential remains unrevoked and at
+the same generation. Missing provenance, host-forwarded provenance, a
+replacement container, and changed generation are explicit skipped harvests;
+they never turn host health or credential freshness into managed readiness.
+
+## Affected Credential Remediation
+
+An owner reviews affected records using typed materialization and harvest
+history, identifies any harvest with missing or host-forwarded provenance, and
+confirms the intended account and subscription identity through a new managed
+login before authorizing any credential action. The review records its evidence
+and decision in the incident/work item. This workflow does not automatically
+restore, revoke, delete, or import credentials, alter provider billing, or
+change rollout/native allowances.
+
 Codex recovery adapts the published harness's explicit native-store contract.
 While holding the canonical row lease, Paid writes only the selected managed
 record into a private temporary `auth.json` with mode `0600`. The public harness

@@ -1727,6 +1727,7 @@ module Containers
         failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: "host_mount" }
       )
+      record_unmanaged_materialization!("codex", :host_forwarded) if seeded
     end
 
     def seed_opencode_credentials!
@@ -3670,7 +3671,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      true
+      record_managed_materialization!("codex", credential)
     end
 
     def materialize_managed_opencode_credentials!
@@ -3700,7 +3701,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      true
+      record_managed_materialization!("opencode", credential)
     end
 
     def seed_omp_credentials!
@@ -3742,7 +3743,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_import")
       )
-      true
+      record_managed_materialization!("omp", credential)
     rescue Docker::Error::DockerError => e
       log_system("container.omp_credentials_seed_failed", error: e.message)
       record_auth_attempt!(
@@ -4533,16 +4534,26 @@ module Containers
     # the canonical credential would go stale after the first successful run.
     # Returns the provider Result contract so the adapter can report harvest state.
     def harvest_codex_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "codex", credential: codex_managed_runner_credential,
-        unsupported_result: unsupported_codex_harvest_result)
+      harvest_managed_rotation(runner_key: "codex", unsupported_result: unsupported_codex_harvest_result)
     end
 
     # Shared managed-rotation harvest: reads the runner's native auth state from
     # the run container and persists any rotation through
     # Runners::ManagedCredentialLifecycle (the same primitive standalone text
     # execution uses), keeping provisioner telemetry and cache resets here.
-    def harvest_managed_rotation(runner_key:, credential:, unsupported_result:)
-      return unsupported_result unless credential
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    def harvest_managed_rotation(runner_key:, unsupported_result:)
+      provenance = materialization_provenance_for(runner_key)
+      unless provenance&.auth_source == RunnerAuthAttempt::AUTH_SOURCE_MANAGED
+        return record_unconfirmed_harvest!(runner_key, unsupported_result,
+          reason: provenance ? "materialization_not_managed" : "materialization_unconfirmed",
+          auth_source: provenance&.auth_source || :none)
+      end
+
+      credential = provenance.runner_credential
+      unless materialization_current?(provenance, credential)
+        return record_unconfirmed_harvest!(runner_key, unsupported_result, reason: "materialization_stale")
+      end
 
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       stdout, stderr, status = backend.exec_in_container(
@@ -4552,7 +4563,7 @@ module Containers
       )
       raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
 
-      result = Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+      result = persist_materialized_rotation!(provenance, credential,
         runner_key: runner_key, raw: Array(stdout).join)
       if result.performed?
         reset_managed_caches_for(runner_key)
@@ -4573,13 +4584,87 @@ module Containers
       telemetry_result, failure_reason = case result.reason
       when "harvested"
         [ RunnerAuthAttempt::RESULT_HARVESTED, nil ]
-      when "no_rotated_credential"
+      when "no_rotated_credential", "materialization_stale"
         [ RunnerAuthAttempt::RESULT_SKIPPED, result.reason ]
       else
         [ RunnerAuthAttempt::RESULT_HARVEST_FAILED, result.reason ]
       end
       harvest_recorder_for(runner_key).call(credential, started_at,
         result: telemetry_result, failure_reason: failure_reason)
+    end
+
+    def record_managed_materialization!(runner_key, credential)
+      record_materialization_provenance!(runner_key, auth_source: :managed, credential: credential)
+    end
+
+    def record_unmanaged_materialization!(runner_key, auth_source)
+      record_materialization_provenance!(runner_key, auth_source: auth_source)
+    end
+
+    def record_materialization_provenance!(runner_key, auth_source:, credential: nil)
+      return unless agent_run&.persisted? && container&.id.present?
+
+      attrs = {
+        account: project.account,
+        project: project,
+        agent_run: agent_run,
+        runner_credential: credential&.reload,
+        runner_key: runner_key,
+        auth_source: auth_source.to_s,
+        container_id: container.id,
+        credential_updated_at: credential&.updated_at,
+        materialized_at: Time.current
+      }
+      RunnerAuthMaterialization.create!(attrs)
+    rescue ActiveRecord::RecordNotUnique
+      existing = materialization_provenance_for(runner_key)
+      return true if existing&.attributes&.slice("auth_source", "runner_credential_id", "credential_updated_at") ==
+        attrs.slice(:auth_source, :runner_credential_id, :credential_updated_at).stringify_keys
+
+      log_system("container.#{runner_key}_materialization_provenance_conflict",
+        container_id: container.id, credential_id: credential&.id)
+      false
+    end
+
+    def materialization_provenance_for(runner_key)
+      return unless agent_run&.persisted? && container&.id.present?
+
+      RunnerAuthMaterialization.find_by(
+        agent_run: agent_run,
+        runner_key: runner_key,
+        container_id: container.id
+      )
+    end
+
+    def materialization_current?(provenance, credential)
+      credential.present? && !credential.revoked? && credential.updated_at == provenance.credential_updated_at
+    end
+
+    def persist_materialized_rotation!(provenance, credential, runner_key:, raw:)
+      credential.with_lock do
+        return stale_materialization_result unless materialization_current?(provenance, credential)
+
+        Runners::ManagedCredentialLifecycle.persist_rotation!(credential, runner_key: runner_key, raw: raw)
+      end
+    end
+
+    def stale_materialization_result
+      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: false, reason: "materialization_stale")
+    end
+
+    def record_unconfirmed_harvest!(runner_key, unsupported_result, reason: "materialization_unconfirmed", auth_source: :none)
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      record_auth_attempt!(
+        runner_key: runner_key,
+        attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+        auth_source: auth_source,
+        materialization_mode: RunnerAuthAttempt::MATERIALIZE_UNSUPPORTED,
+        result: RunnerAuthAttempt::RESULT_SKIPPED,
+        failure_reason: reason,
+        duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round,
+        metadata: { source: "unconfirmed_materialization", provenance_source: auth_source.to_s }
+      )
+      unsupported_result
     end
 
     def harvest_recorder_for(runner_key)
@@ -4622,13 +4707,11 @@ module Containers
     end
 
     def harvest_opencode_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "opencode", credential: opencode_managed_runner_credential,
-        unsupported_result: unsupported_opencode_harvest_result)
+      harvest_managed_rotation(runner_key: "opencode", unsupported_result: unsupported_opencode_harvest_result)
     end
 
     def harvest_omp_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "omp", credential: omp_managed_runner_credential,
-        unsupported_result: unsupported_omp_harvest_result)
+      harvest_managed_rotation(runner_key: "omp", unsupported_result: unsupported_omp_harvest_result)
     end
 
     def record_omp_harvest_attempt!(credential, started_at, result:, failure_reason: nil)
