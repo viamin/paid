@@ -9,6 +9,7 @@ module Issues
     def call
       authorize!
       issue.with_lock do
+        assert_open_source_issue!
         SharedDeliveryEvidenceAssociation.create!(account: issue.project.account, project: issue.project,
           issue:, pull_request:, authorized_by: actor, pull_request_url: canonical_pull_request_url,
           revision: pull_request.merged_commit_sha)
@@ -16,6 +17,17 @@ module Issues
     end
     private
     attr_reader :actor, :issue, :pull_request
+
+    # PARTIAL-CLOSEOUT-060 admits associations only from open source issues;
+    # the guard runs under the issue lock so a concurrently closed target
+    # cannot slip past admission.
+    def assert_open_source_issue!
+      raise ArgumentError, "An open source issue is required" unless open_source_issue?
+    end
+
+    def open_source_issue?
+      !issue.is_pull_request? && issue.github_state == "open"
+    end
 
     def authorize!
       raise Pundit::NotAuthorizedError unless ProjectPolicy.new(actor, issue.project).manage_issues?

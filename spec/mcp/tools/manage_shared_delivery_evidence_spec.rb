@@ -53,4 +53,24 @@ RSpec.describe Tools::ManageSharedDeliveryEvidence do
         pull_request_id: pull_request.id, action: "associate", confirmed: true)
     }.to raise_error(ActiveRecord::RecordNotFound)
   end
+
+  it "refuses a closed source issue without persisting an association" do
+    closed_issue = create(:issue, :closed, project:)
+
+    expect {
+      described_class.new(user: actor, session:).call(
+        project_id: project.id, issue_id: closed_issue.id, pull_request_id: pull_request.id,
+        action: "associate", confirmed: true)
+    }.to raise_error(ArgumentError, /open source issue/)
+    expect(SharedDeliveryEvidenceAssociation.where(issue: closed_issue)).to be_empty
+  end
+
+  it "refuses a pull-request source at the service boundary" do
+    pr_source = create(:issue, :pull_request, project:, github_state: "open")
+
+    expect {
+      Issues::AssociateSharedDeliveryEvidence.call(issue: pr_source, pull_request:, actor:)
+    }.to raise_error(ArgumentError, /open source issue/)
+    expect(SharedDeliveryEvidenceAssociation.where(issue: pr_source)).to be_empty
+  end
 end

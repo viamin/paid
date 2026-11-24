@@ -54,9 +54,11 @@ evidence but cannot manufacture a human authorization or independent judgment.
 
 ### Shared delivery evidence
 
-An authorized operator may record one durable shared-delivery association for a
-source acceptance target when another issue's merged pull request delivered its
-implementation. The association is tenant- and project-scoped and pins the
+An authorized operator may record one durable shared-delivery association for
+an open source acceptance target when another issue's merged pull request
+delivered its implementation. A closed or pull-request source target is refused
+at the service boundary before any association is persisted. The association is
+tenant- and project-scoped and pins the
 synced pull request's canonical URL and immutable merge revision. It preserves
 the pull request's existing parent and originating run. `CloseoutEvidence`
 admits it only while the association is unrevoked and the exact pull request is
