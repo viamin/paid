@@ -22,6 +22,7 @@ RSpec.describe Llm::Request do
     app/services/issues/partial_completion_assessment.rb
     app/services/knowledge/context_intake/generate_questions.rb
     app/services/knowledge/decisions/draft.rb
+    app/services/layered_verification/unmapped_material.rb
     app/services/models/meta_agent_selector.rb
     app/services/operational_supervisor/analyze.rb
     app/services/partial_closeouts/assess_evidence.rb
