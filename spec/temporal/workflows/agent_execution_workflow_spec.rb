@@ -1421,6 +1421,72 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
+
+    it "keeps the existing-PR completion envelope on its existing queue, deadline, and retry policy" do # @spec TEMPORAL-ORCHESTRATION-018
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteExistingPrRunActivity, { agent_run_id: 42 }, timeout: 60)
+      # The completion activity keeps its default retry policy and stays on
+      # the agent queue — its bounded control bookkeeping is the only thing
+      # allowed on the poll queue.
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CompleteExistingPrRunActivity, anything, hash_including(:retry_policy, :task_queue))
+    end
+
+    def stub_existing_pr_scope_stop(called_activities: nil, explanation: "out of scope")
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities&.<< (activity_class)
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::ProvisionServicesActivity" then {}
+        when "Activities::ProvisionContainerActivity" then {}
+        when "Activities::CloneRepoActivity" then {}
+        when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
+        when "Activities::PreparePrPromptActivity" then { review_thread_ids: [] }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::ResolveReviewThreadsActivity" then {}
+        when "Activities::CompleteExistingPrRunActivity"
+          raise Temporalio::Error::ApplicationError.new(
+            "Automatic conflict repair requires human review: #{explanation}",
+            type: "ConflictRepairScopeRejected",
+            non_retryable: true
+          )
+        when "Activities::ResolveCleanupOwnershipActivity"
+          { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
+        when "Activities::RetainContainerActivity" then { retained: true }
+        else {}
+        end
+      end
+    end
+
+    it "publishes the typed ConflictRepairScopeRejected failure type for the run" do # @spec TEMPORAL-ORCHESTRATION-018
+      stub_existing_pr_scope_stop(explanation: "Scope assessment returned an invalid response")
+
+      expect { workflow.execute(input) }
+        .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          hash_including(
+            agent_run_id: 42,
+            failure_type: "ConflictRepairScopeRejected"
+          ), any_args)
+    end
+
+    it "retains diagnostic container ownership for the typed scope stop" do # @spec TEMPORAL-ORCHESTRATION-018
+      called_activities = []
+      stub_existing_pr_scope_stop(called_activities:)
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+      expect(called_activities).to include(Activities::RetainContainerActivity)
+      expect(called_activities).to include(Activities::EnqueueJanitorActivity)
+      expect(called_activities).not_to include(Activities::CleanupContainerActivity)
+    end
   end
 
   describe "existing PR follow-up with no changes" do
