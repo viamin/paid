@@ -372,6 +372,15 @@ writes, so it cannot report how long an issue has actually been parked — the
 operator inbox's `manual_review` lane (see `docs/intent/operator-inbox/`)
 derives the entry's age and displayed reason from these columns instead.
 
+For a classified parser or transient transport failure, technical-stop recovery
+may claim one delayed successor under the current issue revision, automatic
+enhancement policy, and remaining budget. It retains the failed producer's
+error and consumed claim across duplicate delivery and failure bookkeeping.
+The shared deduplication statuses define existing work ownership: a rate-limited
+run still owns its work while awaiting recovery and blocks another successor.
+Human questions, independent holds, and exhausted recovery remain actionable
+in manual review. This bounded continuation does not renew execution authority.
+
 When the configured enhancement-round limit has already been reached, Paid
 does not queue another enhancement run. It moves the issue to `manual_review`
 and posts at most one marked stop comment. Repeated poll or queue ticks are

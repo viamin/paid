@@ -120,6 +120,16 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
   end
 
   # @spec ISSUE-ENHANCEMENT-021
+  it "retains a parked enhancement owner instead of admitting another successor" do
+    parked = create(:agent_run, :automatic, :enhance_issue_goal, project:, issue:, status: "rate_limited")
+
+    expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(parked.reload.status).to eq("rate_limited")
+    expect(issue.reload.paid_state).to eq("manual_review")
+    expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
   it "consumes a producer recovery claim across duplicate delivery" do
     first = described_class.call(agent_run:)
     second = described_class.call(agent_run:)

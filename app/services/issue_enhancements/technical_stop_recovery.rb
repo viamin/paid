@@ -99,7 +99,7 @@ module IssueEnhancements
     end
 
     def no_active_work?
-      !project.agent_runs.where(issue:, status: AgentRun::UNFINISHED_STATUSES).where.not(id: agent_run.id).exists?
+      !project.agent_runs.where(issue:, status: AgentRun::DEDUP_BLOCKING_STATUSES).where.not(id: agent_run.id).exists?
     end
 
     def successor_attributes

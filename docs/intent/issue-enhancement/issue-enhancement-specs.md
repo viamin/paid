@@ -327,8 +327,10 @@
   transient-transport provenance, Paid SHALL perform at most one delayed
   recovery attempt when current issue revision, legacy automatic-enhancement
   authorization, effective issue-preparation policy, budget, and active-work
-  checks still admit it. The producer's consumed recovery claim SHALL survive
-  duplicate activity delivery and terminal-failure bookkeeping. The recovery
+  checks still admit it. A rate-limited run SHALL retain its work ownership and
+  block another recovery successor. The producer's consumed recovery claim
+  SHALL survive duplicate activity delivery and terminal-failure bookkeeping.
+  The recovery
   SHALL preserve the failed run and its error, refuse stale revisions, retained
   human questions, independent holds, unknown provenance, and either legacy or
   rollout policy opt-out, and leave an exhausted or unchanged technical failure
