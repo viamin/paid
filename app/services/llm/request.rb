@@ -17,7 +17,8 @@ module Llm
     end
 
     def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
-      fallback_runner_identifiers: [], per_runner_timeout: nil, response_validator: nil, request_id: nil, attempt_id: nil)
+      fallback_runner_identifiers: [], per_runner_timeout: nil, response_validator: nil, request_id: nil, attempt_id: nil,
+      clock: Process.method(:clock_gettime))
       @runner_identifier = runner
       @model = model
       @agent_run = agent_run
@@ -38,9 +39,10 @@ module Llm
       @request_id = request_id
       @attempt_id = attempt_id
       @attempts = []
+      @clock = clock
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 LLM-ROUTING-012 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 LLM-ROUTING-012 LLM-ROUTING-013 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
       unless @user && (!@account || @user.account_id == @account.id)
         raise configuration_error("No owning user for this LLM request")
       end
@@ -50,9 +52,9 @@ module Llm
       @required_zdr = @project&.restricted? || agent_run&.external_metadata.to_h["zdr_required"] == true ||
         runners.first.zero_data_retention?
 
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
+      @deadline = monotonic_now + @timeout
       runners.each do |runner|
-        remaining = (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil
+        remaining = @deadline - monotonic_now
         if remaining <= 0
           # The overall budget is spent: no later candidate can be attempted.
           # The timeout is recorded rather than raised so an earlier permanent
@@ -88,8 +90,9 @@ module Llm
     # candidate produced no usable answer; every failure is recorded for the
     # final outcome.
     def attempt_runner(runner, remaining:)
-      timeout = @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining
+      timeout = @per_runner_timeout ? [ remaining.ceil, @per_runner_timeout ].min : remaining.ceil
       attempt = start_attempt(runner, allocated_ms: timeout * 1000)
+      candidate_deadline = [ @deadline, attempt.fetch(:started_at) + timeout ].min
       candidate_required_zdr = @required_zdr || runner.zero_data_retention?
       policy = runner.effective_privacy_policy(project: @project, required_zdr: candidate_required_zdr)
       return skipped(attempt, "privacy_policy") unless policy.eligible
@@ -104,7 +107,7 @@ module Llm
         return skipped(attempt, "missing_managed_credential")
       end
 
-      response = perform_request(runner, timeout:, attempt:)
+      response = perform_request(runner, timeout:, deadline: candidate_deadline, attempt:)
       if !response.respond_to?(:success?) || response.success?
         if valid_response?(response)
           finish_attempt(attempt, "success")
@@ -200,14 +203,14 @@ module Llm
       Runners::ManagedCredentialLifecycle.credential_for(account: runner.user.account, runner_key: runner.runner_key).present?
     end
 
-    def perform_request(runner, timeout:, attempt:)
+    def perform_request(runner, timeout:, deadline:, attempt:)
       if runner.api_key? && runner.effective_api_secret.blank?
         raise AgentHarness::ConfigurationError, "Selected runner is missing its API credential"
       end
       key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
       config = AgentHarness.build_config(key)
       config.externally_sandboxed = true
-      executor = executor_for(runner, timeout: timeout)
+      executor = executor_for(runner, timeout: timeout, deadline: deadline)
       provider = AgentHarness.provider_class(key).new(config: config, executor: executor)
       runtime = runtime_for(runner)
       runtime = subscription_runtime(provider, runtime) unless runner.api_key?
@@ -232,7 +235,7 @@ module Llm
         runner: runner.routing_key,
         allocated_ms: allocated_ms,
         phase: "unknown",
-        started_at: Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        started_at: monotonic_now
       }
       @attempts << attempt
       attempt
@@ -255,7 +258,7 @@ module Llm
       attempt[:outcome] = outcome
       attempt[:skip_reason] = skip_reason if skip_reason
       started_at = attempt.delete(:started_at)
-      attempt[:elapsed_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round if started_at
+      attempt[:elapsed_ms] = ((monotonic_now - started_at) * 1000).round if started_at
     end
 
     def normalized_outcome(failure)
@@ -312,8 +315,13 @@ module Llm
       RunnerSelection.available_candidates(user: @user)
     end
 
-    def executor_for(runner, timeout:)
-      Containers::StandaloneTextExecutor.new(account: @account || runner.user.account, runner: runner, timeout: timeout)
+    def executor_for(runner, timeout:, deadline:)
+      Containers::StandaloneTextExecutor.new(account: @account || runner.user.account, runner: runner, timeout: timeout,
+        deadline: deadline)
+    end
+
+    def monotonic_now
+      @clock.call(Process::CLOCK_MONOTONIC)
     end
 
     def subscription_runtime(provider, runtime)

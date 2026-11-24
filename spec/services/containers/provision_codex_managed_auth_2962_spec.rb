@@ -108,7 +108,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       )
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "binds provenance to the generation that supplied the written bytes" do
       credential = create_codex_credential(token: valid_codex_auth)
       materialized_generation = credential.updated_at
@@ -248,7 +248,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(attempt.failure_reason).to eq("rotated_credential_missing_access_token")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "refuses a harvest with no materialization provenance" do
       svc = build_service(credential: credential)
 
@@ -261,7 +261,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       )
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "executes unknown container auth without a current-selection lease or writeback" do
       svc = build_service(credential: credential)
       allow(svc).to receive(:with_codex_managed_auth_lock)
@@ -278,7 +278,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "lease")).to be_empty
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "writes an old container harvest only to its materialized credential after selection changes" do
       authorize_harvest(credential)
       newer = create_codex_credential(token: valid_codex_auth)
@@ -293,7 +293,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.runner_credential).to eq(credential)
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "executes under the materialized credential lease after selection changes" do
       authorize_harvest(credential)
       newer = create_codex_credential(token: valid_codex_auth)
@@ -315,7 +315,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(newer.reload.token).to eq(valid_codex_auth)
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "does not switch a managed container to host writeback after revocation" do
       authorize_harvest(credential)
       credential.revoke!
@@ -337,7 +337,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
         .to eq("materialization_stale")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "refuses a host-forwarded materialization" do
       RunnerAuthMaterialization.create!(
         account: account, project: project, agent_run: agent_run,
@@ -353,7 +353,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(attempt).to have_attributes(auth_source: "host_forwarded", result: "skipped", failure_reason: "materialization_not_managed")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "uses persisted provenance after worker reconstruction" do
       authorize_harvest(credential)
       reconstructed = build_service(credential: create_codex_credential(token: valid_codex_auth))
@@ -365,7 +365,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(JSON.parse(credential.reload.token).dig("tokens", "refresh_token")).to eq("v1.rotated-refresh-token")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "refuses a replacement container without its own provenance" do
       authorize_harvest(credential)
       replacement = instance_double(Docker::Container, id: "replacement-container")
@@ -377,7 +377,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason).to eq("materialization_unconfirmed")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "skips repeated harvest after the first write changes the generation" do
       authorize_harvest(credential)
       encoded = Base64.strict_encode64(rotated_codex_auth)
@@ -391,7 +391,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason).to eq("materialization_stale")
     end
 
-    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     it "refuses a revoked or changed managed generation" do
       authorize_harvest(credential)
       credential.revoke!

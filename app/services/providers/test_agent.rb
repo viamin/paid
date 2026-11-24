@@ -261,6 +261,10 @@ module Providers
       harness_provider_name
     end
 
+    def container_authentication_runner_key
+      effective_provider.provider_key
+    end
+
     def harness_fallback_log_prefix
       "providers.test_agent"
     end
@@ -273,7 +277,7 @@ module Providers
       AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
     end
 
-    def process_harness_result(result)
+    def process_harness_result(result, **)
       status = result[:status].to_s
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence

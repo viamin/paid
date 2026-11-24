@@ -104,6 +104,17 @@ the same generation. Missing provenance, host-forwarded provenance, a
 replacement container, and changed generation are explicit skipped harvests;
 they never turn host health or credential freshness into managed readiness.
 
+Test Runner reports the path it actually exercised. A host health check does
+not establish which authentication source the harness used, so it reports that
+source as unconfirmed. A container smoke test reads only its in-run,
+secret-free materialization telemetry before the ephemeral run is deleted and
+reports the recorded managed, host-forwarded, or proxy source when available.
+Separately, the Test Runner queries the shared managed-credential lifecycle
+without attempting refresh, so its response makes clear whether a canonical
+managed credential is fresh, refreshable, or requires reconnection for an
+isolated acceptance audit. This status never imports host credentials or turns
+a successful host smoke test into standalone-audit authorization.
+
 ## Affected Credential Remediation
 
 An owner reviews affected records using typed materialization and harvest

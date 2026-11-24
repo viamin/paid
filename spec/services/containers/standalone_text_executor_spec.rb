@@ -3,6 +3,7 @@
 require "open3"
 require "rails_helper"
 require "tmpdir"
+require "timeout"
 
 RSpec.describe Containers::StandaloneTextExecutor do
   let(:account) { create(:account) }
@@ -16,11 +17,13 @@ RSpec.describe Containers::StandaloneTextExecutor do
   before do
     allow(Containers).to receive(:backend).and_return(backend)
     allow(backend).to receive(:remote?).and_return(false)
+    allow(container).to receive(:id).and_return("standalone-text-container")
     allow(NetworkPolicy).to receive(:ensure_network!)
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
     allow(backend).to receive(:exec_in_container).with(container,
-      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ],
+      hash_including(user: "root"))
       .and_return([ [ agent_owner ], [], 0 ])
     allow(backend).to receive(:exec_in_container_with_stdin) do |_selected, _command, **options|
       captured_inputs << options.fetch(:stdin).string
@@ -91,6 +94,118 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
 
     expect(backend).not_to have_received(:exec_in_container_with_stdin)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "reserves bounded cleanup time after slow setup before execution" do
+    clock_values = [ 100.0, 154.0, 154.0 ]
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 160.0,
+      clock: ->(_) { clock_values.shift || 154.0 })
+    issued = nil
+    allow(Containers::StandaloneTextCredential).to receive(:issue) do |**options|
+      issued = options
+      "scoped-identity"
+    end
+
+    executor.execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
+      hash_including(wait: 1.0))
+    expect(issued.fetch(:expires_in)).to eq(6.0)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not extend a credential identity past the candidate deadline" do
+    now = 100.0
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+      clock: ->(_) { now })
+    issued = nil
+    allow(Containers::StandaloneTextCredential).to receive(:issue) do |**options|
+      issued = options
+      now = 105.5
+      "scoped-identity"
+    end
+
+    expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
+
+    expect(issued.fetch(:expires_in)).to eq(6.0)
+    expect(backend).not_to have_received(:exec_in_container_with_stdin)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "passes the candidate's remaining deadline to every setup operation" do
+    now = 100.0
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
+      clock: ->(_) { now })
+    allow(backend).to receive(:start_container) { now = 101.0 }
+    stub_text_exec { [ [], [], 0 ] }
+
+    executor.execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(anything, deadline: 7.0)
+    expect(backend).to have_received(:start_container).with(container, deadline: 7.0)
+    expect(backend).to have_received(:exec_in_container).with(container, anything,
+      user: "root", deadline: 6.0)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "preserves cleanup allocation across network setup and upgraded execution" do
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
+      clock: ->(_) { 100.0 })
+    stub_text_exec { [ [], [], 0 ] }
+
+    executor.execute([ "codex", "exec", "hello" ])
+
+    expect(NetworkPolicy).to have_received(:ensure_network!).with(
+      network: NetworkPolicy::INFRA_NETWORK_NAME, backend: backend, deadline: 7.0
+    )
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
+      hash_including(wait: 2.0, deadline: 2.0))
+
+    executor.close
+
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0, deadline: 7.0)
+    expect(backend).to have_received(:delete_container).with(container, force: true, deadline: 7.0)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "supports the deadline contract when isolated text uses the Swarm backend" do
+    swarm_backend = instance_double(Containers::Backends::Swarm, remote?: false)
+    allow(Containers).to receive(:backend).and_return(swarm_backend)
+    allow(swarm_backend).to receive_messages(create_container: container, start_container: true,
+      stop_container: true, delete_container: true,
+      exec_in_container: [ [ agent_owner ], [], 0 ], exec_in_container_with_stdin: [ [], [], 0 ])
+
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
+      clock: ->(_) { 100.0 })
+    executor.execute([ "codex", "exec", "hello" ])
+    executor.close
+
+    expect(swarm_backend).to have_received(:create_container).with(anything, deadline: 7.0)
+    expect(swarm_backend).to have_received(:start_container).with(container, deadline: 7.0)
+    expect(swarm_backend).to have_received(:exec_in_container).with(container, anything,
+      user: "root", deadline: 7.0)
+    expect(swarm_backend).to have_received(:stop_container).with(container, deadline: 7.0, timeout: 0)
+    expect(swarm_backend).to have_received(:delete_container).with(container, deadline: 7.0, force: true)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not block close past the remaining candidate deadline" do
+    now = 100.0
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+      clock: ->(_) { now })
+    executor.execute([ "codex", "exec", "hello" ])
+    now = 105.9
+    allow(backend).to receive(:stop_container) do
+      now = 107.0
+      raise Docker::Error::TimeoutError, "deadline reached"
+    end
+
+    expect { executor.close }.not_to raise_error
+
+    expect(backend).to have_received(:stop_container).with(container,
+      hash_including(timeout: 0, deadline: be_within(0.001).of(0.1)))
+    expect(backend).not_to have_received(:delete_container)
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -461,6 +576,21 @@ RSpec.describe Containers::StandaloneTextExecutor do
       end
     end
 
+    def stub_blocked_rotation_persistence(started:, release:, completed:)
+      allow(Runners::ManagedCredentialLifecycle).to receive(:persist_rotation!) do
+        started << true
+        release.pop
+        completed << true
+        Runners::ManagedCredentialLifecycle::Result.new(supported: true, performed: true, reason: "harvested")
+      end
+    end
+
+    def expect_credential_lease_released
+      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |file|
+        expect { Timeout.timeout(0.5) { file.flock(File::LOCK_EX) } }.not_to raise_error
+      end
+    end
+
     around do |example|
       File.delete(lockfile) if File.exist?(lockfile)
       example.run
@@ -470,6 +600,103 @@ RSpec.describe Containers::StandaloneTextExecutor do
     before do
       captured_payload
       credential.update!(token: valid_codex_auth)
+    end
+
+    # @spec LLM-ROUTING-013
+    it "does not wait past the candidate deadline for a contended credential lease" do
+      stub_execs
+      now = 100.0
+      lease_timeouts = []
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      allow(Runners::ManagedCredentialLifecycle).to receive(:acquire_lock_with_timeout) do |_file, timeout|
+        lease_timeouts << timeout
+        now += timeout
+        false
+      end
+
+      expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
+
+      expect(backend).not_to have_received(:exec_in_container_with_stdin)
+      expect(lease_timeouts.first).to eq(1.0)
+    end
+
+    # @spec LLM-ROUTING-013
+    it "defers a blocked post-command credential harvest at the candidate deadline" do
+      stub_execs
+      now = 100.0
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      executor.execute([ "codex", "exec", "hello" ])
+      now = 105.9
+      allow(backend).to receive(:exec_in_container) do |_selected, command, options = {}, &_stream|
+        next [ [ agent_owner ], [], 0 ] if options[:user] == "root"
+
+        if command.include?("base64 -w0 /home/agent/.codex/auth.json")
+          now = 106.0
+          raise Docker::Error::TimeoutError, "deadline reached"
+        end
+        [ [], [], 0 ]
+      end
+
+      expect { executor.close }.not_to raise_error
+
+      expect(backend).to have_received(:exec_in_container).with(container, anything,
+        hash_including(user: "agent", deadline: be_within(0.001).of(0.1)))
+      expect(backend).not_to have_received(:delete_container)
+    end
+
+    # @spec LLM-ROUTING-013
+    it "returns at the candidate deadline while a captured rotation persists in recovery" do
+      now = 100.0
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      executor.execute([ "codex", "exec", "hello" ])
+      now = 105.9
+      started = Queue.new
+      release = Queue.new
+      completed = Queue.new
+      stub_blocked_rotation_persistence(started:, release:, completed:)
+      stub_text_exec do |_c, command, _options = {}|
+        next [ [ Base64.strict_encode64(rotated_codex_auth) ], [], 0 ] if command.include?("base64 -w0 /home/agent/.codex/auth.json")
+
+        [ [], [], 0 ]
+      end
+
+      expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+      expect { Timeout.timeout(0.5) { started.pop } }.not_to raise_error
+
+      release << true
+      expect { Timeout.timeout(0.5) { completed.pop } }.not_to raise_error
+      expect_credential_lease_released
+    ensure
+      release << true if release && release.empty?
+    end
+
+    # @spec LLM-ROUTING-013
+    it "releases a transferred credential lease when recovery admission fails" do
+      executor = described_class.new(account: account, runner: runner, timeout: 60,
+        deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1)
+      captured_lease = nil
+
+      Dir.mktmpdir do |directory|
+        recovery_lockfile = File.join(directory, "rotation.lock")
+        allow(Runners::ManagedCredentialLifecycle).to receive(:managed_auth_lockfile_path).and_return(recovery_lockfile)
+        allow(Thread).to receive(:new).and_raise(ThreadError)
+
+        expect do
+          Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: "codex", credential: nil, timeout: 0.1) do |lease|
+            captured_lease = lease
+            executor.send(:persist_captured_rotation, nil, "synthetic-captured-rotation", lease)
+          end
+        end.to raise_error(ThreadError)
+
+        File.open(recovery_lockfile, File::WRONLY | File::CREAT, 0o600) do |file|
+          expect(file.flock(File::LOCK_EX | File::LOCK_NB)).to eq(0)
+        end
+      end
+    ensure
+      captured_lease&.release! unless captured_lease&.instance_variable_get(:@file)&.closed?
     end
 
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005

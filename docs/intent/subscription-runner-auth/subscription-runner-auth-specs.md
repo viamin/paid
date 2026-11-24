@@ -106,7 +106,24 @@
   `spec/services/runners/managed_credential_lifecycle_spec.rb`.
   *Code:* `Runners::ManagedCredentialLifecycle`, `Runners::RefreshCodexCredential`.
 
-- [x] **SUBSCRIPTION-RUNNER-AUTH-008** — When a rotating managed credential is
+- [x] **SUBSCRIPTION-RUNNER-AUTH-008** — When Test Runner completes, it SHALL
+  expose the actual execution path and the observed authentication source when
+  container materialization telemetry establishes one; a host health-check
+  result or absent telemetry SHALL be reported as unconfirmed. For a
+  subscription runner, it SHALL separately report the canonical managed
+  credential's non-mutating standalone-audit readiness using the shared
+  lifecycle classification. A passing host-forwarded or unconfirmed smoke test
+  SHALL NOT imply that a standalone acceptance audit can use the managed
+  credential. The response and UI SHALL contain only bounded source and
+  readiness categories, never credential contents.
+  *Tests:* `spec/services/runners/test_agent_spec.rb`,
+  `spec/requests/runners_spec.rb`,
+  `spec/lib/test_agent_controller_node_harness_spec.rb`.
+  *Code:* `Runners::TestAgent`, `TestAgentHealthCheckFallback`,
+  `Runners::ManagedCredentialLifecycle`, `RunnersController`,
+  `test_agent_controller.js`.
+
+- [x] **SUBSCRIPTION-RUNNER-AUTH-009** — When a rotating managed credential is
   materialized, Paid SHALL persist trusted provenance binding its runner key,
   canonical credential identity and generation, agent run, and container lifecycle.
   Execution SHALL resolve its lease and writeback source from that provenance,
