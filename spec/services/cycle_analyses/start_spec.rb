@@ -85,4 +85,68 @@ RSpec.describe CycleAnalyses::Start do
     expect { result = described_class.call(cycle: changed_cycle, actor: user) }.to change(AgentRun, :count).by(1)
     expect(result).to be_success
   end
+
+  # @spec AUTO-PICK-QUEUE-025
+  it "records an automatic trigger on the scheduled run" do
+    user = create(:user)
+    create(:runner, user:, enabled_for_agent_runs: true)
+    cycle = cycle_for(user)
+
+    result = described_class.call(cycle:, actor: user, trigger: :automatic)
+
+    expect(result).to be_success
+    expect(result.agent_run).to have_attributes(trigger_type: "automatic", initiating_user: user)
+  end
+
+  # @spec AUTO-PICK-QUEUE-025
+  it "never schedules a second automatic attempt for an unchanged occurrence, including after failure" do
+    user = create(:user)
+    create(:runner, user:, enabled_for_agent_runs: true)
+    cycle = cycle_for(user)
+    create(:agent_run, :failed, project: cycle.project, initiating_user: user,
+      goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+
+    result = nil
+    expect { result = described_class.call(cycle:, actor: user, trigger: :automatic) }.not_to change(AgentRun, :count)
+
+    expect(result).not_to be_success
+    expect(result.status).to eq(:duplicate)
+  end
+
+  # @spec AUTO-PICK-QUEUE-025 AUTO-PICK-QUEUE-019
+  it "never resumes a pending-sync confirmation automatically" do
+    user = create(:user)
+    create(:runner, user:, enabled_for_agent_runs: true)
+    cycle = cycle_for(user)
+    pending = create(:agent_run, :completed, project: cycle.project, initiating_user: user,
+      goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
+
+    result = nil
+    expect { result = described_class.call(cycle:, actor: user, trigger: :automatic) }.not_to change(AgentRun, :count)
+
+    expect(result).not_to be_success
+    expect(pending.reload).to have_attributes(status: "completed")
+  end
+
+  # @spec AUTO-PICK-QUEUE-025
+  it "bounds automatic attempts for a recurring cycle fingerprint" do
+    user = create(:user)
+    create(:runner, user:, enabled_for_agent_runs: true)
+    cycle = cycle_for(user)
+    described_class::AUTOMATIC_RUNS_PER_FINGERPRINT.times do |index|
+      described_class.call(cycle: cycle.with(occurrence: "#{cycle.occurrence}:r#{index}"), actor: user,
+        trigger: :automatic)
+    end
+
+    result = nil
+    expect {
+      result = described_class.call(cycle: cycle.with(occurrence: "#{cycle.occurrence}:next"), actor: user,
+        trigger: :automatic)
+    }.not_to change(AgentRun, :count)
+
+    expect(result.status).to eq(:recurrence_bound)
+  end
 end
