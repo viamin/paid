@@ -154,6 +154,18 @@ outside `Issues::EnqueueEligible` and are unaffected, `no_output` sources
 and `analyze_issue` goals keep their existing paths, and manual runs never
 pass through this admission.
 
+The dequeue-time companion
+(`AgentRuns::RecheckIssueEligibility#produced_work_replacement?`) cancels a
+queued automatic replacement that raced the hold before it starts, and its
+cancellation reason distinguishes an in-place rate-limit recovery — whose
+re-queue the parked producer owns — from preserved produced work that should
+be published and reviewed. Both the hold and that cancellation are scoped to
+source-issue replacement implementation: a `create_pr` run scoped to an
+existing pull request (a set `source_pull_request_number`, or an issue row
+that is itself a PR) is an ordinary PR repair with its own retry semantics,
+never replacement coding, and the ordinary dequeue eligibility recheck
+(EAGER-QUEUE-006) continues to apply only to eagerly-seeded auto-pick runs.
+
 When the same goal reaches the effective issue retry cap, Paid parks the issue
 in the retry-limited Inbox instead of scheduling another automatic attempt.
 This covers failures after successful runner execution, such as a PR write

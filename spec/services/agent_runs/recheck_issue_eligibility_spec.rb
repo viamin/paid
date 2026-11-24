@@ -58,6 +58,42 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(replacement.reload.status).to eq("cancelled")
   end
 
+  # @spec EAGER-QUEUE-018
+  it "keeps an ordinary automatic PR repair queued when the PR has no producer" do
+    pr_issue = create(:issue, :pull_request, project:, github_state: "open")
+    repair = create(:agent_run, :queued, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number)
+
+    expect(described_class.call(repair)).to be false
+
+    expect(repair.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "does not treat a failed PR repair's pushed result as replacement coding" do
+    pr_issue = create(:issue, :pull_request, project:, github_state: "open")
+    create(:agent_run, :failed, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number, result_commit_sha: "b" * 40)
+    repair = create(:agent_run, :queued, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number)
+
+    expect(described_class.call(repair)).to be false
+
+    expect(repair.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "points a rate-limit-recovery hold at the in-place re-queue instead of a published result" do
+    issue = create(:issue, project:, github_state: "open")
+    producer = create(:agent_run, :rate_limited, :automatic, project:, issue:, goal: "create_pr", auto_pick: true)
+    replacement = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: false)
+
+    expect(described_class.call(replacement)).to be(true)
+
+    expect(replacement.reload.error_message).to include("rate-limit recovery", "run #{producer.id}")
+    expect(replacement.error_message).not_to include("publish and review")
+  end
+
   it "cancels the run when the issue carries an auto-pick skip label" do
     issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
     run = queued_auto_pick_run(issue: issue)

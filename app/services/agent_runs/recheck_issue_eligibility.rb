@@ -16,7 +16,11 @@ module AgentRuns
   # Only eagerly-seeded auto-pick runs tied to an issue are rechecked:
   # manual runs are an explicit operator request, create_issue / no-issue
   # runs have nothing to recheck, and review goals are PR-scoped with
-  # their own retry/limit handling.
+  # their own retry/limit handling. Separately, a queued automatic
+  # source-issue create_pr replacement is cancelled when the issue still
+  # holds recoverable produced implementation work; a create_pr run
+  # scoped to an existing PR is an ordinary repair, never replacement
+  # coding (#5273).
   class RecheckIssueEligibility
     # RDR-077: goal -> automation capability, so the dequeue recheck asks the
     # same effective policy the entry points asked when the run was created.
@@ -110,20 +114,25 @@ module AgentRuns
     end
 
     def recheck_applicable? # @spec EAGER-QUEUE-006 ISSUE-ENHANCEMENT-018
-      agent_run.issue_id.present? && !agent_run.review_goal? &&
-        (agent_run.auto_pick? || automatic_create_pr_run?)
+      agent_run.auto_pick? && agent_run.issue_id.present? &&
+        !agent_run.review_goal?
     end
 
     # @spec EAGER-QUEUE-018
     def produced_work_replacement?
-      return false unless automatic_create_pr_run?
+      return false unless automatic_source_issue_create_pr_run?
 
       @produced_work_hold = issue.auto_pick_create_pr_admission_hold
       @produced_work_hold.present? && @produced_work_hold.id != agent_run.id
     end
 
-    def automatic_create_pr_run?
-      agent_run.automatic? && agent_run.create_pr_goal? && agent_run.issue_id.present?
+    # Replacement coding re-implements a source issue. A create_pr run
+    # scoped to an existing pull request — source_pull_request_number set,
+    # or an issue row that is itself a PR — is an ordinary PR repair with
+    # its own retry semantics, so both existing-PR controls must be clear.
+    def automatic_source_issue_create_pr_run?
+      agent_run.automatic? && agent_run.create_pr_goal? && agent_run.issue_id.present? &&
+        agent_run.source_pull_request_number.blank? && !issue.is_pull_request?
     end
 
     def cancel_produced_work_replacement
@@ -131,10 +140,17 @@ module AgentRuns
     end
 
     def produced_work_replacement_reason
+      return rate_limit_recovery_reason if @produced_work_hold.recoverable_rate_limited?
+
       artifact = @produced_work_hold.result_commit_sha || "observable implementation work"
       branch = @produced_work_hold.branch_name.presence || "the producer branch"
       "Automatic replacement was cancelled because create_pr run #{@produced_work_hold.id} preserved #{artifact} on #{branch}. " \
         "Resume its bounded recovery or publish and review that preserved result; do not start replacement coding."
+    end
+
+    def rate_limit_recovery_reason
+      "Automatic replacement was cancelled because create_pr run #{@produced_work_hold.id} is awaiting in-place " \
+        "rate-limit recovery, which owns re-queueing the preserved attempt; do not start replacement coding."
     end
 
     def automatic_enhancement_recheck?
