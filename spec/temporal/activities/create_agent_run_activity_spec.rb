@@ -316,6 +316,120 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(queued_run.custom_prompt).to include("docs/hld.md")
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "records secret-free progress for each queued-resume setup stage" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      diagnostics = queued_run.reload.agent_run_logs.where("metadata ->> 'type' = ?", "queued_run_resume_stage")
+      stages = diagnostics.map { |log| log.metadata.fetch("stage") }
+
+      expect(stages).to include(
+        "runner_revalidation",
+        "issue_state_publication",
+        "user_settings",
+        "marketplace_attachment",
+        "policy_evaluation",
+        "configuration_bundle_assignment",
+        "strategy_selection"
+      )
+      expect(diagnostics).to all(satisfy { |log|
+        log.metadata.slice("attempt", "account_id", "project_id", "stage", "outcome").values.none?(&:blank?)
+      })
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "records only the failure class when a queued-resume dependency is unavailable" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      allow(activity).to receive(:attach_marketplace_entries_for_resume).and_raise(
+        Timeout::Error, "credential=secret-value"
+      )
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Timeout::Error)
+
+      failure = queued_run.reload.agent_run_logs.where("metadata ->> 'type' = ?", "queued_run_resume_stage").find { |log|
+        log.metadata["stage"] == "marketplace_attachment" && log.metadata["outcome"] == "failed"
+      }
+      expect(failure.metadata).to include("error_class" => "Timeout::Error")
+      expect(failure.metadata.to_json).not_to include("secret-value")
+      expect(failure.content).not_to include("secret-value")
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "resumes the original queued run after a partial setup failure" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      marketplace_calls = 0
+      allow(activity).to receive(:attach_marketplace_entries_for_resume).and_wrap_original do |original, **arguments|
+        marketplace_calls += 1
+        raise Timeout::Error, "dependency unavailable" if marketplace_calls == 1
+
+        original.call(**arguments)
+      end
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Timeout::Error)
+
+      result = activity.execute(agent_run_id: queued_run.id)
+
+      expect(result[:agent_run_id]).to eq(queued_run.id)
+      expect(queued_run.reload).to have_attributes(status: "queued", temporal_workflow_id: queued_run.temporal_workflow_id)
+      expect(queued_run.configuration_bundle).to be_present
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "rejects a late queued-resume attempt without changing a terminal run" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      queued_run.update!(status: "failed", error_message: "newer terminal failure")
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("QueuedRunResumeSuperseded")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(queued_run.reload).to have_attributes(status: "failed", error_message: "newer terminal failure")
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "records cancellation without terminalizing the queued run" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      allow(activity).to receive(:validate_and_sync_resumed_runner!).and_raise(
+        Temporalio::Error::CanceledError, "activity cancelled"
+      )
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::CanceledError)
+
+      cancellation = queued_run.reload.agent_run_logs.where("metadata ->> 'type' = ?", "queued_run_resume_stage").find { |log|
+        log.metadata["stage"] == "runner_revalidation" && log.metadata["outcome"] == "cancelled"
+      }
+      expect(cancellation.metadata).not_to have_key("error_class")
+      expect(queued_run.status).to eq("queued")
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "rejects a superseded retry without touching another tenant's queued run" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue,
+        external_metadata: { "queued_run_resume" => { "attempt" => 2 } })
+      other_project = create(:project, primary_language: "Ruby")
+      other_run = create(:agent_run, :queued, :automatic, project: other_project)
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("QueuedRunResumeSuperseded")
+      }
+
+      expect(other_run.reload).to have_attributes(status: "queued", external_metadata: {})
+      expect(other_run.agent_run_logs).to be_empty
+    end
+
     # @spec LID-RUNS-005
     it "includes the stored plan source alongside metadata docs when resuming planning" do
       queued_run = create(:agent_run, :queued, :automatic,

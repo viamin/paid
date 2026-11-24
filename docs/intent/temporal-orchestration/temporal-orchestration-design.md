@@ -199,6 +199,28 @@ failure no longer leaves the row stuck at `running` while
 are re-raised unwrapped (no failed status write), and the existing cleanup
 path continues to run via `ensure` (#4196).
 
+## Queued-run resume diagnostics
+
+Queued runs are resumed inside the existing `CreateAgentRun` activity before
+any coding, container, or provider-runner activity is scheduled. The activity
+keeps its existing 30-second start-to-close deadline and native retry policy.
+It records a compact progress event before and after each local setup stage so
+the last recorded start identifies an unfinished or timed-out dependency.
+Events contain only stable IDs, Temporal attempt number, stage name, outcome,
+and elapsed milliseconds; prompts, credentials, provider payloads, and
+exception text are excluded.
+
+Each stage rechecks the run's persisted resume-attempt ownership and terminal
+state. A later Temporal attempt supersedes an earlier one, and a terminal run
+supersedes both. A superseded attempt raises a typed non-retryable setup error
+instead of returning a successful activity result, so it cannot advance the
+workflow to `RunAgent` or overwrite the newer terminal result. Setup remains
+idempotent on retry: runner synchronization, marketplace attachment, model
+selection, policy persistence, configuration assignment, and strategy logging
+reuse their existing persisted records. This is an observability and
+late-attempt fencing change; it neither moves work to a control pool nor
+widens execution, retry, model, or authority budgets (#5356).
+
 ## Worker Capacity Model
 
 Temporal worker configuration derives the minimum Active Record pool size from
