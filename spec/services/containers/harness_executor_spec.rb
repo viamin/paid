@@ -12,6 +12,7 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "OK", stderr: "", exit_code: 0
       )
+      allow(Process).to receive(:clock_gettime).and_call_original
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.25)
       allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
 
