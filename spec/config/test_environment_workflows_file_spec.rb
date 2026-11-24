@@ -10,7 +10,6 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
   let(:workflow_paths) do
     %w[
       .github/workflows/ci.yml
-      .github/workflows/claude-code-review.yml
       .github/workflows/pr-screenshots.yml
       .github/workflows/pr-screenshots-publish.yml
       .github/workflows/system_tests.yml
@@ -250,10 +249,9 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     expect(shard_setup.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
     [ shard_setup, recovery_setup ].each do |step|
       expect(step.fetch("run")).to include(
-        "yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000"
+        "yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000"
       )
-      expect(step.fetch("run")).to include('retry_with_backoff \\')
-      expect(step.fetch("run")).to include("20m")
+      expect(step.fetch("run")).to include("bin/retry-with-process-group")
     end
   end
 end

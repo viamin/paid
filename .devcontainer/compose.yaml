@@ -46,7 +46,10 @@ services:
       # bin/dev-web defaults to loopback; the port mapping above forwards from
       # the container's non-loopback address, so Puma must listen there too.
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
+      REDIS_URL: "redis://redis:6379/0"
       PAID_ENABLE_DEV_QUERY_STATS: "1"
+      # Prune unused Docker images and build cache with seven-day retention.
+      PAID_DOCKER_DISK_CLEANUP_ENABLED: "${PAID_DOCKER_DISK_CLEANUP_ENABLED:-true}"
       PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
       PAID_DOCKER_BACKING_STORE_PROBE_PATH: "/mnt/paid-docker-backing-store"
       PAID_DOCKER_BACKING_STORE_DAEMON_ROOT: "${PAID_DOCKER_BACKING_STORE_DAEMON_ROOT:?Set this to Docker info DockerRootDir}"
@@ -54,8 +57,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       temporal:
         condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    restart: unless-stopped
+    volumes:
+    - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   postgres:
     image: postgres:16.15
@@ -124,6 +142,7 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:
   # Agent CLI tool state (see rails-app service volumes above).
   agent-claude:
   agent-codex:

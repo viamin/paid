@@ -234,3 +234,39 @@ have failed for long enough.
   unchanged on every other pull request.
   *Code:* `db/migrate/20260819042625_release_escalation_set_auto_continue_pause.rb`.
   *Test:* `spec/migrations/release_escalation_set_auto_continue_pause_spec.rb`.
+
+## Temporary suspension
+
+- [x] **PR-ESCALATION-028** — While a project's suspension deadline is in the
+  future, the system SHALL admit automatic PR work without applying ready-phase
+  follow-up count/failure-streak or cumulative PR token limits at scanner and
+  execution boundaries. Other escalation and merge gates SHALL remain active.
+  *Code:* `Project`, `Activities::ScanPaidPrsActivity`,
+  `Activities::CheckQualityGateActivity`, `Activities::MarkEscalatedActivity`.
+  *Test:* `spec/models/project_escalation_suspension_spec.rb`,
+  `spec/temporal/activities/check_quality_gate_activity_spec.rb`,
+  `spec/temporal/activities/mark_escalated_activity_spec.rb`.
+- [x] **PR-ESCALATION-029** — When the deadline is absent, cleared or reached,
+  the system SHALL enforce the configured limits using retained history and
+  allowances, without requiring a scheduled restoration action. A suspension
+  SHALL apply only to its project and SHALL NOT clear existing escalations.
+  *Code:* `Project`, `Activities::ScanPaidPrsActivity`.
+  *Test:* `spec/models/project_escalation_suspension_spec.rb`.
+- [x] **PR-ESCALATION-030** — The system SHALL expose the deadline through
+  authorized project settings and the project settings tool and SHALL audit
+  the accepted UTC deadline or explicit clearing using their existing actor-bound
+  settings audit.
+  *Code:* `ProjectsController#update`, `Tools::UpdateProjectSettings#perform`,
+  `app/views/projects/edit.html.erb`.
+  *Test:* `spec/requests/projects_spec.rb`,
+  `spec/mcp/tools/update_project_settings_spec.rb`.
+
+- [x] **PR-ESCALATION-031** — When a submitted suspension deadline has an
+  invalid type, calendar date or missing time zone, the system SHALL reject
+  it before saving and SHALL preserve the input in the settings error form,
+  leaving the previously stored deadline unchanged.
+  *Code:* `Project`, `ProjectsController#update`, `Tools::UpdateProjectSettings#perform`,
+  `app/views/projects/edit.html.erb`.
+  *Test:* `spec/models/project_escalation_suspension_spec.rb`,
+  `spec/requests/projects_spec.rb`,
+  `spec/mcp/tools/update_project_settings_spec.rb`.

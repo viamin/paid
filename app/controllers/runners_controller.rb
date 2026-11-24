@@ -177,7 +177,10 @@ class RunnersController < ApplicationController
     render json: {
       success: result.success?,
       error_type: result.error_type,
-      message: result.message
+      message: result.message,
+      execution_source: result.execution_source,
+      authentication_source: result.authentication_source,
+      standalone_audit_readiness: result.standalone_audit_readiness
     }
   end
 

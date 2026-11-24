@@ -204,6 +204,63 @@
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
 
+- [x] **AUTO-MERGE-011** — When an automatic merge-conflict repair run
+  reaches existing-PR completion, the completion activity SHALL bound the
+  semantic scope assessment and its required durable bookkeeping within one
+  finite enclosing activity deadline. The comparison reads that gather
+  assessment evidence SHALL be bounded by that same enclosing budget, and
+  their elapsed time SHALL be deducted before the assessment request is
+  admitted; the assessment request SHALL receive
+  only the enclosing budget remaining after a deliberate publication
+  reserve, and a retry of that activity SHALL reuse the persisted assessment
+  bound to the exact recorded pre-run, integration-base, and pushed head
+  SHAs instead of re-assessing, so retries add no LLM spend. When no
+  assessment budget remains after the reserve — or a bounded comparison read
+  exhausts it — the activity SHALL record an
+  unavailable assessment without issuing a request. A malformed, unavailable,
+  or rejected assessment SHALL persist the exact pushed head SHA and bound
+  scope status before any PR publication and SHALL remain the durable typed
+  review stop (`ConflictRepairScopeRejected`) even when PR-body refresh or
+  comment publication is slow, exhausted, or unavailable; ancillary
+  publication SHALL run only inside the remaining reserve, SHALL be
+  abandoned (with a sanitized warning) when the reserve is exhausted, and
+  SHALL NOT consume the activity's remaining attempts or replace the typed
+  stop with a generic timeout. The stop-path publication SHALL post at most
+  one rejection comment per repair range, and the activity SHALL record
+  sanitized per-component elapsed diagnostics (assessment, publication) on
+  the run's phase record without persisting prompts or raw provider output.
+  No new retry allowance, spend, worker slot, task-queue authority, or
+  native mapping is granted by this envelope (#5310).
+  *Code:* `app/services/conflict_repairs/assess_scope.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`.
+  *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-013** — When a merge-conflict repair is scope-assessed with
+  fewer than the file-count truncation guard's compare files, the assessment
+  input SHALL carry the complete immutable result-path inventory: every path
+  changed in the pre-run-to-result range SHALL be listed, and a path whose
+  result blob SHA equals the base-import range's blob SHA SHALL be supplied as
+  a mechanically verified base import requiring no diff text, so a normal
+  large-base-import/small-repair case stays within the established bounded
+  context. Every unverified path SHALL receive bounded diff evidence as a
+  complete or truthfully excerpt-marked patch or an explicit no-patch note
+  (binary or API-omitted). When the complete inventory or per-path evidence
+  cannot be held within the established bounds, or path metadata contains
+  control characters, Paid SHALL fail closed before the harness call with an
+  explicit input-coverage reason rather than omit paths the response must
+  classify. Output validation SHALL remain strict: every actual result path
+  must be accounted for, a path outside the base-import range SHALL NOT be
+  accepted as a base import, a mechanically verified base import SHALL NOT be
+  accepted as repair-authored, and malformed or path-incomplete results SHALL
+  classify as unavailable. The existing >= 300-file truncation guard SHALL be
+  preserved, and no approved result SHALL be manufactured or a substantive
+  rejection retried toward approval.
+  *Code:* `app/services/conflict_repairs/assess_scope.rb`,
+  `app/services/conflict_repairs/scope_evidence.rb`,
+  `app/services/github_client.rb` (`#compare_files_payload`).
+  *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
+  `spec/services/github_client_spec.rb`.
 - [x] **AUTO-MERGE-012** — Technical acceptance, integration, and verification
   stops SHALL be bounded internal PR state, independent of GitHub labels.
   Each entry SHALL identify its key, observed head, reason, responsible project

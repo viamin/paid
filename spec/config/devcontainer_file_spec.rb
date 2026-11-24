@@ -84,7 +84,7 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(command).to include("bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup")
   end
 
-  # @spec CONTAINER-RUNTIME-054
+  # @spec CONTAINER-RUNTIME-055
   it "mounts only an empty Docker-root measurement directory after explicit daemon-root configuration" do
     rails_app = compose.fetch("services").fetch("rails-app")
 

@@ -135,11 +135,11 @@ implementation attempt for work the policy had just refused (the #4711
 run-30353 → run-30371 bypass), duplicating observable main-agent work.
 
 `Issue#auto_pick_create_pr_admission_hold` closes that route: when the
-issue's latest failed auto-picked `create_pr` run
-(`#current_failed_auto_pick_create_pr_run`) produced implementation work
-(`AgentRun#implementation_work_produced?` — a pushed revision, a PR or issue
-side effect, or observable main-agent execution) or is awaiting owned
-in-place rate-limit recovery (`#recoverable_rate_limited?`),
+issue has a still-current failed `create_pr` producer, manual or automatic,
+that produced implementation work (`AgentRun#implementation_work_produced?`
+— a pushed revision, a PR or issue side effect, or observable main-agent
+execution), or an automatic producer is awaiting owned in-place rate-limit
+recovery (`#recoverable_rate_limited?`),
 `Issues::EnqueueEligible` refuses to seed a fresh `create_pr` run and logs
 `enqueue_eligible.implementation_work_held`. The hold is bounded by the same
 authorized operator reset window as the failure streak: a failure created
@@ -153,6 +153,18 @@ authorized continuations (`Issues::RequestContinuation`) mint their run
 outside `Issues::EnqueueEligible` and are unaffected, `no_output` sources
 and `analyze_issue` goals keep their existing paths, and manual runs never
 pass through this admission.
+
+The dequeue-time companion
+(`AgentRuns::RecheckIssueEligibility#produced_work_replacement?`) cancels a
+queued automatic replacement that raced the hold before it starts, and its
+cancellation reason distinguishes an in-place rate-limit recovery — whose
+re-queue the parked producer owns — from preserved produced work that should
+be published and reviewed. Both the hold and that cancellation are scoped to
+source-issue replacement implementation: a `create_pr` run scoped to an
+existing pull request (a set `source_pull_request_number`, or an issue row
+that is itself a PR) is an ordinary PR repair with its own retry semantics,
+never replacement coding, and the ordinary dequeue eligibility recheck
+(EAGER-QUEUE-006) continues to apply only to eagerly-seeded auto-pick runs.
 
 When the same goal reaches the effective issue retry cap, Paid parks the issue
 in the retry-limited Inbox instead of scheduling another automatic attempt.

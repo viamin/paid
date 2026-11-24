@@ -257,3 +257,28 @@ the Inbox scopes results to the operator's authorized projects.
 - `docs/intent/queue-priority-tiers/queue-priority-tiers-specs.md` —
   `QUEUE-TIER-006`, which relies on the scan source's exclusion rules
 - `docs/rdrs/RDR-031-focused-agent-runs.md`
+
+## Temporary suspension of PR limits
+
+An authorized project editor may set `pr_escalation_limits_suspended_until`
+to an explicit UTC instant or clear it to end the suspension. While current time
+is strictly before that instant, the ready-phase total follow-up count and
+failure-streak limit, and the automatic PR cumulative token cap, do not stop
+PR work. Scanner admission and execution quality checks share the same policy.
+Draft review rounds, review-goal retries, operational failure breakers, per-run
+limits, approvals and technical merge blockers retain their normal behavior.
+
+The original limits, counts, token history and individual PR allowances remain
+unchanged. At the exact expiry instant the limits apply again to retained
+history, without a restoration job. Expiry never cancels already running work.
+Existing escalations require the normal explicit unblock action; setting a
+suspension does not clear them or grant a token allowance. Project settings and
+the authorized settings tool expose the deadline and audit the actor and
+accepted UTC deadline, including an explicit null when cleared. Malformed
+values, including non-timestamp JSON values and impossible calendar dates,
+are rejected before persistence. The settings form preserves invalid input
+when displaying validation errors so a correction cannot inadvertently clear
+an existing suspension.
+
+Local delivery and running-worker adoption are distinct. A deadline stored in
+the database has no effect on workers that have not loaded this policy.

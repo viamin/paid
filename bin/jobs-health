@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Health probe for the dedicated GoodJob process. Unlike a readiness-file
+# existence check, this requires a fresh self-observed GoodJob heartbeat.
+require_relative "../config/boot"
+require "active_support/core_ext/object/blank"
+require_relative "../lib/paid/good_job_worker"
+require_relative "../lib/paid/worker_readiness"
+
+exit(Paid::WorkerReadiness.healthy? ? 0 : 1)

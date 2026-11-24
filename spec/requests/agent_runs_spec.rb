@@ -2514,39 +2514,19 @@ RSpec.describe "AgentRuns" do
 
       before { sign_in user }
 
-      it "bumps queued auto-continue runs to manual trigger_type and updates updated_at" do
+      it "prioritizes the selected queued retry without converting it to manual" do # @spec QUEUE-TIER-008
         run = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")
-        original_updated_at = run.updated_at
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
         run.reload
-        expect(run.trigger_type).to eq("manual")
-        expect(run.updated_at).to be > original_updated_at
+        expect(run.trigger_type).to eq("automatic")
+        expect(run.operator_coding_priority_requested_at).to be_present
+        expect(account.account_activity_events.where(action: "agent_run.coding_priority_requested", subject: run)).to exist
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
-        expect(response.body).to include("Priority bumped")
-      end
-
-      # @spec AGENT-RUNS-INDEX-002
-      it "invalidates cached account and project filter options after the bulk trigger transition" do
-        original_cache = Rails.cache
-        Rails.cache = ActiveSupport::Cache::MemoryStore.new
-        create(:agent_run, :queued, :automatic, project: project,
-          source_pull_request_number: 77, custom_prompt: "Fix PR")
-        account_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id)
-        project_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
-        scope = project.agent_runs
-        scope.distinct_filter_options(cache_key: account_key)
-        scope.distinct_filter_options(cache_key: project_key)
-
-        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
-
-        expect(scope.distinct_filter_options(cache_key: account_key)[:trigger_type]).to eq([ "manual" ])
-        expect(scope.distinct_filter_options(cache_key: project_key)[:trigger_type]).to eq([ "manual" ])
-      ensure
-        Rails.cache = original_cache
+        expect(response.body).to include("Priority requested")
       end
 
       it "enqueues ProcessRunQueueJob" do
@@ -2558,7 +2538,7 @@ RSpec.describe "AgentRuns" do
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
-      it "bumps queued auto-continue runs only for the selected pull request" do
+      it "prioritizes only one existing retry for the selected pull request" do
         _pr2 = create(:issue, :pull_request, project: project, github_number: 78, title: "Other PR")
         run1 = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR 1")
@@ -2567,8 +2547,22 @@ RSpec.describe "AgentRuns" do
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
-        expect(run1.reload.trigger_type).to eq("manual")
+        expect(run1.reload.operator_coding_priority_requested_at).to be_present
         expect(run2.reload.trigger_type).to eq("automatic")
+        expect(run2.operator_coding_priority_requested_at).to be_nil
+      end
+
+      it "prioritizes a coding retry when an older review run exists for the pull request" do # @spec QUEUE-TIER-008
+        review_run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
+          source_pull_request_number: 77, created_at: 2.minutes.ago)
+        coding_retry = create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          source_pull_request_number: 77, created_at: 1.minute.ago)
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(review_run.reload.operator_coding_priority_requested_at).to be_nil
+        expect(coding_retry.reload.operator_coding_priority_requested_at).to be_present
+        expect(response).to redirect_to(project_path(project))
       end
 
       it "redirects with error when no pull request selected" do

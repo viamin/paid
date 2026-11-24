@@ -96,7 +96,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "verifies a bind source when daemon and kernel mount-root namespaces differ" do
       with_namespace_mapped_probe do
         expect(backend.backing_storage_observation).to include(
@@ -113,7 +113,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       "another container ID" => ->(info) { info["Id"] = "b" * 64 },
       "another container hostname" => ->(info) { info["Config"]["Hostname"] = "b" * 12 }
     }.each do |description, corrupt|
-      # @spec CONTAINER-RUNTIME-054
+      # @spec CONTAINER-RUNTIME-055
       it "rejects #{description} across mount-root namespaces" do
         with_namespace_mapped_probe do |info|
           corrupt.call(info)
@@ -123,7 +123,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "refuses a writable kernel mount even when the daemon reports a read-only bind" do
       with_namespace_mapped_probe do |info|
         allow(File).to receive(:read).with("/proc/self/mountinfo")
@@ -133,7 +133,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "bounds a stalled daemon provenance inspection" do
       with_namespace_mapped_probe do
         stub_const("Containers::Backends::LocalDocker::BACKING_STORE_PROBE_TIMEOUT", 0.02)
@@ -145,7 +145,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "measures a probe whose mount metadata names the selected daemon root child" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n") do |probe_path|
         now = Time.zone.parse("2026-11-21 18:28:00 UTC")
@@ -159,7 +159,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "decodes an octal-escaped daemon root in kernel mount metadata" do
       with_backing_store_probe(
         "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n",
@@ -172,7 +172,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "decodes an octal-escaped target for a probe path that actually contains a space" do
       with_backing_store_probe(
         "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n",
@@ -186,7 +186,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "rejects an existing unrelated probe even when its configured root matches the selected daemon" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n") do |probe_path|
         allow(File).to receive(:read).with("/proc/self/mountinfo").and_return(mountinfo_for(root: "/unrelated/.paid-capacity-probe", target: probe_path))
@@ -195,7 +195,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "rejects an existing configured probe without verified daemon provenance" do
       Dir.mktmpdir do |probe_path|
         original_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
@@ -210,7 +210,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "rejects a configured probe when it names a filesystem other than the selected daemon root" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n", daemon_root: "/srv/docker") do
         allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => "/var/lib/docker" })
@@ -219,7 +219,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "rejects a configured probe for a remote Docker endpoint" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'") do
         allow(Docker).to receive(:url).and_return("tcp://another-host:2376")
@@ -228,7 +228,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "terminates and reaps a hanging df probe within its deadline" do
       with_backing_store_probe("#!/bin/sh\nwhile :; do :; done\n") do
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -240,7 +240,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "does not accept output from a probe that exits after its deadline" do
       with_backing_store_probe(<<~SH) do
           #!/bin/sh
@@ -258,14 +258,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "treats malformed successful probe output as unavailable" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n") do
         expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unavailable")
       end
     end
 
-    # @spec CONTAINER-RUNTIME-054
+    # @spec CONTAINER-RUNTIME-055
     it "does not substitute the application container filesystem when no probe is configured" do
       allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return(nil)
 
@@ -301,6 +301,30 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.get_container("abc123")).to eq(container)
   end
 
+  # @spec LLM-ROUTING-013
+  it "uses a scoped Docker transport deadline when creating a container" do
+    connection = instance_double(Docker::Connection, url: "unix:///var/run/docker.sock", options: { read_timeout: 60 })
+    timed_connection = instance_double(Docker::Connection)
+    allow(Docker).to receive(:connection).and_return(connection)
+    allow(Docker::Connection).to receive(:new)
+      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
+      .and_return(timed_connection)
+    allow(Docker::Container).to receive(:create).and_return(container)
+
+    backend.create_container({ "Image" => "paid-agent:latest" }, deadline: 0.1)
+
+    expect(Docker::Container).to have_received(:create).with({ "Image" => "paid-agent:latest" }, timed_connection)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not require a mutable connection when stopping without a deadline" do
+    allow(container).to receive(:stop).with(timeout: 0)
+
+    backend.stop_container(container, timeout: 0)
+
+    expect(container).to have_received(:stop).with(timeout: 0)
+  end
+
   it "routes upgraded stdin exec to the selected container" do
     input = StringIO.new("hello")
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
@@ -310,6 +334,34 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(result).to eq([ [ "hello" ], [], 0 ])
     expect(Containers::DockerExecWithStdin).to have_received(:call)
       .with(container:, command: [ "cat" ], stdin: input, wait: 5)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "passes the supplied deadline to the upgraded stdin exec sequence" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [], [], 0 ])
+
+    backend.exec_in_container_with_stdin(container, [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
+
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container:, command: [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "scopes network lookup and creation to the supplied deadline" do
+    connection = instance_double(Docker::Connection, url: "unix:///var/run/docker.sock", options: { read_timeout: 60 })
+    timed_connection = instance_double(Docker::Connection)
+    allow(Docker).to receive(:connection).and_return(connection)
+    allow(Docker::Connection).to receive(:new)
+      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
+      .and_return(timed_connection)
+    allow(Docker::Network).to receive_messages(get: network, create: network)
+
+    backend.get_network("paid_agent", deadline: 0.1)
+    backend.create_network("paid_agent", { "Driver" => "bridge" }, deadline: 0.1)
+
+    expect(Docker::Network).to have_received(:get).with("paid_agent", {}, timed_connection)
+    expect(Docker::Network).to have_received(:create).with("paid_agent", { "Driver" => "bridge" }, timed_connection)
   end
 
   it "delegates network and volume access to docker-api" do
