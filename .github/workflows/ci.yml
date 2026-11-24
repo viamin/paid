@@ -348,7 +348,9 @@ jobs:
           # a shared transient outage. A deterministic per-shard delay
           # spreads those requests without extending an attempt's bound.
           sleep "$((RSPEC_SHARD_INDEX * 3))"
-          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
+          # The supervisor gives each setup attempt the TEST-SUITE-023 bound,
+          # retries failures, and reaps its process-group descendants.
+          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -735,7 +737,9 @@ jobs:
         # @spec TEST-SUITE-023
         run: |
           mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
+          # The supervisor gives each setup attempt the TEST-SUITE-023 bound,
+          # retries failures, and reaps its process-group descendants.
+          bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
