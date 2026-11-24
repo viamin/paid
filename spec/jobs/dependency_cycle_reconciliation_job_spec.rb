@@ -34,7 +34,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     accounts = Array.new(3) { create(:account) }
     calls = []
     continuations = []
-    allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id }
+    allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id; [] }
     allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
 
     described_class.perform_now(after_account_id: initial_account_boundary)
@@ -62,6 +62,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     allow(Issues::DependencyCycles).to receive(:call) do |account:|
       calls << account.id
       raise Issues::DependencyCycles::CoverageUnavailable, "database unavailable" if account == unavailable && (attempts += 1) == 1
+      []
     end
     stub_first_retry_delay(continuations)
 
@@ -91,6 +92,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     allow(Issues::DependencyCycles).to receive(:call) do |account:|
       calls << account.id
       raise Issues::DependencyCycles::CoverageUnavailable, "database unavailable" if account == unavailable
+      []
     end
     stub_backoff_delays(continuations, waits)
 
@@ -110,7 +112,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     first, second = Array.new(2) { create(:account) }
     calls = []
     continuations = []
-    allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id }
+    allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id; [] }
     allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
 
     described_class.perform_now(after_account_id: initial_account_boundary)
@@ -125,6 +127,40 @@ RSpec.describe DependencyCycleReconciliationJob do
     described_class.perform_now(**continuations.shift)
 
     expect(calls).to include(added_during_cycle.id)
+  end
+
+  # @spec AUTO-PICK-QUEUE-025
+  it "schedules one automatic cycle analysis for a delegated project's newly detected cycle" do
+    account = create(:account)
+    owner = create(:user, :owner, account: account)
+    project = create(:project, account: account, created_by: owner)
+    delegate_repair(project, selected_by: owner)
+    create_cycle(project)
+
+    described_class.perform_now(after_account_id: initial_account_boundary)
+
+    run = AgentRun.find_by(goal: AgentRun::CYCLE_ANALYSIS_GOAL)
+    expect(run).to have_attributes(project: project, trigger_type: "automatic", status: "queued",
+      initiating_user: owner)
+    expect(run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("occurrence"))
+      .to eq(Issues::DependencyCycles.call(account: account).sole.occurrence)
+  end
+
+  def delegate_repair(project, selected_by:)
+    FeatureFlags.enable!(:automation_phases, project: project)
+    FeatureFlags.enable!(:project_delegation, project: project)
+    project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+      Automation::PhaseSettings::PHASES_KEY => { Automation::Phases::CODING => true }
+    })
+    create(:project_delegation_posture, project: project, level: ProjectDelegation::Posture::BOUNDED_DELIVERY,
+      selected_by: selected_by)
+  end
+
+  def create_cycle(project)
+    first = create(:issue, project: project, github_state: "open")
+    second = create(:issue, project: project, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
   end
 
   def stub_first_retry_delay(continuations)

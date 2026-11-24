@@ -466,6 +466,7 @@ class Project < ApplicationRecord
   validates :pr_target, inclusion: { in: PR_TARGETS }
   # @spec PR-TARGET-005, PR-TARGET-006, PR-TARGET-008
   validate :upstream_pr_target_valid
+  validate :pr_escalation_suspension_deadline_valid
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
@@ -719,6 +720,32 @@ class Project < ApplicationRecord
     overrides = (priority_labels || {}).slice(*PRIORITY_TIERS)
       .reject { |_, v| v.nil? || (v.is_a?(String) && v.strip.empty?) }
     DEFAULT_PRIORITY_LABELS.merge(overrides)
+  end
+
+  # @spec PR-ESCALATION-031
+  def pr_escalation_suspension_deadline_valid
+    raw = pr_escalation_limits_suspended_until_before_type_cast
+    valid = case raw
+    when nil, Time, DateTime, ActiveSupport::TimeWithZone
+      true
+    when String
+      raw.blank? || (pr_escalation_limits_suspended_until.present? && raw.match?(/\A\d{4}-\d{2}-\d{2}T/i) &&
+        raw.match?(/(?:Z|[+-]\d{2}:\d{2})\z/i) &&
+        DateTime.iso8601(raw) && Time.iso8601(raw))
+    else
+      false
+    end
+    return if valid
+
+    errors.add(:pr_escalation_limits_suspended_until, "must be an ISO 8601 timestamp with a time zone")
+  rescue ArgumentError
+    errors.add(:pr_escalation_limits_suspended_until, "must be an ISO 8601 timestamp with a time zone")
+  end
+  private :pr_escalation_suspension_deadline_valid
+
+  # @spec PR-ESCALATION-028 PR-ESCALATION-029
+  def pr_escalation_limits_suspended?
+    pr_escalation_limits_suspended_until.present? && pr_escalation_limits_suspended_until > Time.current
   end
 
   def effective_auto_pick_skip_labels

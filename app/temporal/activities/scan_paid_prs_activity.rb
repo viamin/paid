@@ -1392,7 +1392,10 @@ module Activities
     # resolve the triggering condition (e.g. a CI-fix run that pushes a commit
     # but leaves CI red). This gate provides a hard backstop that bounds the
     # loop regardless (#3271).
+    # @spec PR-ESCALATION-028
     def total_followup_limit_reached?(project, issue)
+      return false if project.pr_escalation_limits_suspended?
+
       return false unless issue.pr_review_phase.in?(%w[ready escalated])
       limit = project.max_pr_followup_runs
       return false if limit <= 0
@@ -2043,6 +2046,8 @@ module Activities
     end
 
     def pr_auto_continue_token_limit_breach(project, issue, budget: pr_auto_continue_token_limit_budget(project, issue))
+      return if project.pr_escalation_limits_suspended?
+
       budget if budget[:used] >= budget[:limit]
     end
 
@@ -2165,6 +2170,8 @@ module Activities
     # use max_pr_followup_runs. This keeps phase-specific retry semantics
     # intact even though the streak itself is phase-agnostic.
     def pr_failure_limit(project, issue)
+      return 0 if !issue.pr_review_phase.in?(%w[draft restarted]) && project.pr_escalation_limits_suspended?
+
       limit = if issue.pr_review_phase.in?(%w[draft restarted])
         project.max_draft_review_rounds
       else

@@ -498,6 +498,15 @@
             <p class="mt-1 text-xs text-gray-500">Maximum recorded tokens automatic PR follow-ups may spend on one pull request before escalation pauses them.</p>
           </div>
 
+          <%# @spec PR-ESCALATION-030 PR-ESCALATION-031 %>
+          <div>
+            <%= form.label :pr_escalation_limits_suspended_until, "Suspend PR follow-up and token limits until (UTC)", class: "block text-sm font-medium leading-6 text-gray-900" %>
+            <div class="mt-2">
+              <%= form.text_field :pr_escalation_limits_suspended_until, value: @project.errors[:pr_escalation_limits_suspended_until].any? ? @project.pr_escalation_limits_suspended_until_before_type_cast : @project.pr_escalation_limits_suspended_until&.utc&.iso8601, placeholder: "YYYY-MM-DDTHH:MM:SSZ", class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">Use an ISO 8601 timestamp with a time zone. Leave blank to enforce limits. Usage continues to accumulate, and existing limits resume at expiry. Review holds and other safeguards still apply.</p>
+          </div>
+
           <fieldset class="space-y-3 rounded-md border border-gray-200 p-4">
             <legend class="text-sm font-semibold leading-6 text-gray-900">Facet Confidence Readiness</legend>
             <p class="text-xs text-gray-500">Each mapped prerequisite must independently meet both thresholds. Assessments remain shadow-only until confidence-driven delivery is fully wired.</p>

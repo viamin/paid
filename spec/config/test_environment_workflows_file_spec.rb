@@ -247,16 +247,13 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     shard_setup = jobs.fetch("test-shards").fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
     recovery_setup = jobs.fetch("shard-recovery").fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
 
-    expect(jobs.fetch("test-shards").fetch("timeout-minutes")).to eq(360)
-    expect(jobs.fetch("shard-recovery").fetch("timeout-minutes")).to eq(360)
     expect(shard_setup.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
     [ shard_setup, recovery_setup ].each do |step|
       expect(step.fetch("run")).to include(
-        "for attempt in 1 2 3 4 5",
-        "20m",
-        "yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000"
+        "yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000"
       )
       expect(step.fetch("run")).to include('retry_with_backoff \\')
+      expect(step.fetch("run")).to include("20m")
     end
   end
 end

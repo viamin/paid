@@ -50,6 +50,48 @@ An explicit `worktree_path` is still accepted as a legacy compatibility input
 for bind-mount and maintenance flows, but host-created worktrees are no longer
 the default execution workspace for normal agent runs.
 
+Execution preparation may temporarily replace provider settings in an agent
+checkout. Its snapshots live in a private container-temporary directory rather
+than beside the target, and the runtime adds a run-local Git exclusion for the
+temporary target. If the target was tracked, the runtime also marks that index
+entry assume-unchanged for the preparation lifetime. This prevents ordinary
+agent `git add`/commit/push operations from publishing Paid's generated
+settings or their backups while retaining the original file bytes, mode, and
+symlink target for restoration. Cleanup restores the original target first,
+then removes the run-local Git protection; restoration failures remain explicit
+execution-preparation cleanup failures.
+
+The protection applies to any target that physically resolves inside the
+checkout, including relative paths and paths through symlinked directories,
+which are resolved to an absolute physical path before the checkout comparison.
+Only a plain cached index entry may be flagged; skip-worktree, already-flagged,
+or unmerged entries are recorded as unprotected and left untouched, so an
+unmerged or otherwise non-plain entry never fails preparation. The Git undo
+state is recorded before the exclusion entry is appended, and the append keeps
+the marker on its own line regardless of the exclude file's trailing byte, so
+a partially applied exclusion always stays restorable and never corrupts the
+user's last rule. Cleanup undoes the flag only for a recorded cached entry that
+still carries it — a target renamed during execution is left alone rather than
+failing the restore — and exclusion removal and flag restoration are
+independent steps: either failing records an explicit cleanup failure instead
+of short-circuiting the other, and an exclusion append that never completed
+needs no rewrite. A multi-step preparation runs every step's restore even when
+an earlier step's cleanup failed; only the first error is surfaced.
+
+Applying a preparation write is transactional. The materialize script can fail
+after it already replaced the target or applied part of the Git protection
+(for example, a read-only `info/exclude` failing the exclusion append after the
+snapshot removed the original). Because the failed write never reaches the
+caller's accumulated cleanup steps, the runtime rolls the partial write back
+itself before re-raising: the original target is restored from the snapshot,
+partially applied exclusion entries and index flags are removed, and the
+snapshot state directory is deleted. An unknown snapshot state means the script
+failed before mutating anything, so the rollback treats it as a no-op rather
+than a restore failure. A rollback that cannot restore invalidates the
+container — its preparation state cannot be trusted for reuse — without
+replacing the original preparation failure, including when the rollback exec
+itself fails at the connection level.
+
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices
