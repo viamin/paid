@@ -5,8 +5,11 @@ require "json"
 module ConflictRepairs
   # Makes the semantic boundary decision after the agent has produced a repair.
   # Git comparisons provide the evidence, but only the harness may judge whether
-  # an author-side edit belongs to the already-approved PR task.
-  # @spec AUTO-MERGE-010
+  # an author-side edit belongs to the already-approved PR task. The prompt
+  # carries the complete bounded path inventory with mechanically verified base
+  # imports separated from paths needing classification, so the validator never
+  # demands classification of evidence it did not supply (#5312).
+  # @spec AUTO-MERGE-010 @spec AUTO-MERGE-011
   class AssessScope
     TIMEOUT = 45
     MAX_COMPARE_FILES = 300
@@ -34,18 +37,31 @@ module ConflictRepairs
       Existing PR task:
       %{task}
 
-      Paths introduced by the base branch:
-      %{base_import}
+      Complete result-path inventory (%{result_count} paths; no other path
+      changed between the pre-run commit and the result head). Markers:
+      [verified-base-import] means Git blob SHAs prove the result content is
+      byte-identical to the base-branch import, so the path carries no
+      repair-authored content; [base-import-modified] means the base branch
+      changed the path and the result content differs; [authored-candidate]
+      means the base-import range did not change the path.
 
-      Paths in the pre-run-to-result range, with diff evidence:
-      %{result}
+      %{result_inventory}
+
+      Diff evidence for the %{candidate_count} unverified path(s). Every patch
+      is complete or truthfully excerpt-marked; binary or compare-API-omitted
+      diffs are named explicitly:
+
+      %{candidate_evidence}
 
       Return exactly one JSON object with:
       - approved: true only when every repair-authored change is in scope
       - explanation: concise evidence-based reason
-      - base_imported_paths: every applicable base-import path
+      - base_imported_paths: every applicable base-import path, including every
+        [verified-base-import] path
       - repair_authored_paths: every author-side repair or conflict-edit path
-      Every result path must appear in at least one of the two path arrays.
+      Every inventory path must appear in at least one of the two path arrays,
+      and a [verified-base-import] path must never be classified as
+      repair-authored.
     PROMPT
 
     def self.call(...) = new(...).call
@@ -58,6 +74,9 @@ module ConflictRepairs
 
     def call
       return unavailable("Repair comparison may be truncated") if comparisons_may_be_truncated?
+
+      coverage_failure = evidence.coverage_failure
+      return unavailable(coverage_failure) if coverage_failure
 
       response = Llm::Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
       return unavailable("Scope assessment did not complete") unless response.success?
@@ -72,18 +91,16 @@ module ConflictRepairs
 
     attr_reader :agent_run, :base_comparison, :result_comparison
 
+    def evidence
+      @evidence ||= ScopeEvidence.new(base_comparison: base_comparison, result_comparison: result_comparison)
+    end
+
     def prompt
-      format(PROMPT, task: task_evidence, base_import: comparison_evidence(base_comparison), result: comparison_evidence(result_comparison))
+      format(PROMPT, task: task_evidence, **evidence.prompt_variables)
     end
 
     def task_evidence
       [ agent_run.issue&.title, agent_run.issue&.body, agent_run.custom_prompt ].compact.join("\n").truncate(10_000)
-    end
-
-    def comparison_evidence(comparison)
-      Array(comparison[:files] || comparison["files"]).map do |file|
-        "#{file[:filename] || file["filename"]}\n#{file[:patch] || file["patch"]}".truncate(4_000)
-      end.join("\n\n").truncate(30_000)
     end
 
     def result_from(output)
@@ -113,16 +130,9 @@ module ConflictRepairs
     def paths_complete?(base_paths, repair_paths)
       return false unless base_paths && repair_paths
 
-      base_paths.all? { |path| base_import_paths.include?(path) } &&
-        (base_paths | repair_paths).sort == result_paths
-    end
-
-    def base_import_paths = paths_for(base_comparison)
-
-    def result_paths = paths_for(result_comparison)
-
-    def paths_for(comparison)
-      Array(comparison[:files] || comparison["files"]).filter_map { |file| (file[:filename] || file["filename"]).to_s.presence }.uniq.sort
+      base_paths.all? { |path| evidence.base_import_paths.include?(path) } &&
+        (repair_paths & evidence.verified_base_import_paths).empty? &&
+        (base_paths | repair_paths).sort == evidence.result_paths
     end
 
     def comparisons_may_be_truncated?
