@@ -31,6 +31,20 @@ RSpec.describe IntentConformance::ShadowEvaluation::FreezeLabels do
     expect(evaluation.labels_frozen_at).to be_present
   end
 
+  it "finishes an uncertain review without fabricated requirement citations" do # @spec INTENT-CONFORMANCE-ROLLOUT-012
+    cases.each do |item|
+      IntentConformance::ShadowEvaluation::RecordLabel.call(evaluation:, actor: owner,
+        case_id: item.fetch("id"), outcome: "uncertain")
+    end
+
+    expect(call).to be_success
+    expect(evaluation.reload).to be_frozen
+    entry = { "operator" => owner.email, "verdict" => "uncertain",
+              "recorded_at" => Time.current.iso8601 }
+    expect(IntentConformance::ShadowEvaluationPolicy.adjudication_fields_complete?(entry)).to be(true)
+    expect(IntentConformance::ShadowEvaluationPolicy.adjudication_fields_complete?(entry.merge("verdict" => "within_scope"))).to be(false)
+  end
+
   it "refuses to freeze while a case is unlabeled" do
     IntentConformance::ShadowEvaluation::RecordLabel.call(evaluation: evaluation, actor: owner, case_id: "A-01",
       outcome: "within_scope", cited_design_claim: "claim", reason: "reason")

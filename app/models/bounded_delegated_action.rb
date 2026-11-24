@@ -18,7 +18,7 @@ class BoundedDelegatedAction < ApplicationRecord
   RESERVED_ACTIONS = %w[
     product_decision feature_approval release deployment setting_enablement
   ].freeze
-  STATUSES = %w[active revoked completed].freeze
+  STATUSES = %w[active reassessment_required revoked completed].freeze
   INTENT_DIGEST_FORMAT = /\Asha256:[a-f0-9]{64}\z/
   LINEAGE_KEY = "lineage"
 
@@ -61,6 +61,10 @@ class BoundedDelegatedAction < ApplicationRecord
 
   def active?
     status == "active" && expires_at > Time.current
+  end
+
+  def reassessment_required?
+    status == "reassessment_required"
   end
 
   def revoked?
@@ -140,7 +144,7 @@ class BoundedDelegatedAction < ApplicationRecord
   # cross-account revokers via revoker_belongs_to_account.
   def revoke!(user:)
     with_lock do
-      return false unless status == "active"
+      return false unless status.in?(%w[active reassessment_required])
 
       update!(status: "revoked", revoked_at: Time.current, revoked_by: user)
       Audit::RecordEvent.call(
@@ -151,6 +155,34 @@ class BoundedDelegatedAction < ApplicationRecord
       )
     end
     true
+  end
+
+  # A scope/policy invalidator pauses future admissions. The transition is
+  # deliberately idempotent: repeated boundary checks retain the first
+  # auditable decision instead of creating an event storm.
+  # @spec BOUNDED-PHASE-AUTHORIZATION-005
+  def require_reassessment!(reasons:)
+    with_lock do
+      return false unless status == "active"
+
+      update!(status: "reassessment_required", reassessment_required_at: Time.current,
+        reassessment_reasons: Array(reasons).map(&:to_s).uniq.sort)
+      Audit::RecordEvent.call(
+        action: "bounded_action.reassessment_required",
+        subject: self,
+        metadata: { "action" => action, "reasons" => reassessment_reasons }
+      )
+      true
+    end
+  end
+
+  def resume_reassessment!
+    with_lock do
+      return false unless reassessment_required?
+
+      update!(status: "active", reassessment_required_at: nil, reassessment_reasons: [])
+      true
+    end
   end
 
   private

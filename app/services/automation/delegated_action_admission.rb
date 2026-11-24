@@ -17,6 +17,7 @@ module Automation
   #
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
   # @spec BOUNDED-PHASE-AUTHORIZATION-001 @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-005 @spec BOUNDED-PHASE-AUTHORIZATION-006
   class DelegatedActionAdmission
     # Run goals whose delegated action class is bounded by a
     # BoundedDelegatedAction. Goals absent here (create_pr, enhance_issue,
@@ -147,13 +148,22 @@ module Automation
     # Returns a DelegatedWorkBoundary::Result, or nil when the work item is
     # not governed by a bounded authorization for this action.
     def call
-      return nil if authorization.nil?
+      assessed_authorization = authorization
+      return nil if assessed_authorization.nil?
 
-      authorization.with_lock do
-        boundary_decision = DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+      scope_assessment = assess_scope(assessed_authorization)
+      current_authorization = authorization
+      return authorization_changed_result if current_authorization != assessed_authorization
+
+      current_authorization.with_lock do
+        return authorization_changed_result if authorization != assessed_authorization
+
+        boundary_decision = DelegatedWorkBoundary.call(
+          authorization: current_authorization, boundary:, snapshot: scope_snapshot(authorization: current_authorization, scope_assessment:)
+        )
         return boundary_decision if boundary_decision.blocked?
 
-        action_decision
+        action_decision(authorization: current_authorization)
       end
     end
 
@@ -167,9 +177,9 @@ module Automation
 
     attr_reader :work_item, :action, :action_evidence, :boundary, :trigger
 
-    def action_decision
+    def action_decision(authorization:)
       decision = ProjectDelegation::ActionPlan.call(
-        project:, work_item:, action: ACTION_CLASSES.fetch(action), evidence: action_plan_evidence
+        project:, work_item:, action: ACTION_CLASSES.fetch(action), evidence: action_plan_evidence(authorization:)
       )
       return delegated_result(decision, notification: nil) if decision.permitted?
 
@@ -194,7 +204,7 @@ module Automation
       )
     end
 
-    def action_plan_evidence
+    def action_plan_evidence(authorization:)
       authorization.admission_snapshot.slice(
         "intent_revision", "acceptance_revision", "evidence_revision", BoundedDelegatedAction::LINEAGE_KEY
       ).merge(
@@ -225,7 +235,7 @@ module Automation
     # falls through to project defaults for that lineage).
     # @spec BOUNDED-PHASE-AUTHORIZATION-002
     def authorization
-      @authorization ||= BoundedDelegatedAction
+      BoundedDelegatedAction
         .for_lineage_of(work_item)
         .where(action: action)
         .find { |candidate| candidate.covers_issue_id?(work_item.id) }
@@ -237,13 +247,13 @@ module Automation
       authorization.stop_before_phase.to_s == STOP_BEFORE_PHASES.fetch(action)
     end
 
-    def snapshot
-      current_assessment = assessment
+    def scope_snapshot(authorization:, scope_assessment:)
+      current_assessment = assessment(authorization:)
       {
         account_id: project.account_id,
         project_id: project.id,
         issue_id: work_item.id,
-        **self.class.revision_tokens(issue: pinned_work_item, assessment: current_assessment)
+        **self.class.revision_tokens(issue: pinned_work_item(authorization:), assessment: current_assessment)
           .transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
@@ -255,7 +265,7 @@ module Automation
         repository_controls: project.github_installation&.active? == true,
         assessment_available: !current_assessment.stale?,
         explicit_hold: work_item.held_for_review?
-      }
+      }.merge(scope_assessment_snapshot(scope_assessment:))
     end
 
     # The work item whose pinned revisions the boundary recheck compares
@@ -264,12 +274,12 @@ module Automation
     # authorization) rechecks the pinned root's intent and acceptance, not
     # its own.
     # @spec BOUNDED-PHASE-AUTHORIZATION-002
-    def pinned_work_item
+    def pinned_work_item(authorization:)
       authorization.issue
     end
 
-    def assessment
-      @assessment ||= PartialCloseouts::Assessment.call(pinned_work_item)
+    def assessment(authorization:)
+      PartialCloseouts::Assessment.call(pinned_work_item(authorization:))
     end
 
     # Pilot admissions retain their existing security controls. Expansion
@@ -279,6 +289,31 @@ module Automation
       return true unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
 
       nil
+    end
+
+    # Semantic assessment is intentionally completed before the authorization
+    # lock. The locked snapshot below re-derives every deterministic admission
+    # fact, so a revoke or any other lifecycle change during the remote request
+    # still blocks admission.
+    def assess_scope(authorization)
+      return unless action == "repair"
+
+      AssessBoundedScope.call(authorization:, proposed_evidence: normalized_action_evidence)
+    end
+
+    # A newer explicit authorization changes the pinned scope that the remote
+    # assessment evaluated. Do not let the caller fall through to project
+    # defaults while it retries at a later boundary with the current authority.
+    def authorization_changed_result
+      DelegatedWorkBoundary::Result.new(
+        permitted: false, boundary:, reasons: [ :authorization_changed ], notification: nil
+      )
+    end
+
+    def scope_assessment_snapshot(scope_assessment:)
+      return { scope_correspondence: true, new_risk: false } unless action == "repair"
+
+      { scope_correspondence: scope_assessment.in_scope?, new_risk: normalized_action_evidence["new_risk"] == true }
     end
   end
 end

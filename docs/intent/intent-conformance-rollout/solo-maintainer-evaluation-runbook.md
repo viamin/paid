@@ -59,15 +59,21 @@ Both paths use the same shared policy validation
 
 Work one case at a time: the pinned diff references (base…head), the
 approved design revision and its documents, and supporting context. Record
-`within_scope`, `material_drift`, or `uncertain` with a cited approved claim
-and a reason. Save/resume is durable; a case may be skipped and a skipped
+`within_scope`, `material_drift`, or `uncertain` with the approved requirement
+and an optional explanation. The screen explains each choice in plain language and
+loads the PR summary and approved documents automatically, with file diffs
+collapsed until expanded. Select the requirement document that informed your
+decision. If the available documents do not establish the requirement, choose
+Not enough information and explain what is missing; the document is optional
+for that choice. Cases without accessible baseline documents must be prepared
+before a decision can be recorded. Save/resume is durable; a case may be skipped and a skipped
 case is never counted as completed. Reviewer outputs and strata stay hidden
 until freeze — the screen cannot show them, and execution is refused.
 
 ## 4. Freeze the reference set
 
-The explicit **Finish labeling** action refuses while any case is unlabeled
-or skipped. Freezing stamps the reference labels; from that point answers
+The explicit **Finish my review** action refuses while any case is unlabeled
+or skipped. Finishing locks the original decisions; from that point answers
 become visible and execution is allowed.
 
 ## 5. Execute the real reviewer (documented command)

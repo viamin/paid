@@ -148,3 +148,12 @@ at the decision to escalate.
   change container/review/issue-creation flows.
 - **Not per-project configurable weights.** Focus weight maps are
   hard-coded today; per-account tuning is deferred until validated.
+
+## Temporary escalation limit suspension
+
+The project deadline defined by `PR-ESCALATION-028` suspends ready-phase
+follow-up count/failure-streak limits and the cumulative automatic PR token
+cap. Both scanner and execution admission consult the same deadline.
+Expiry restores enforcement against retained usage; per-run execution limits,
+draft review limits, review retry limits and operational failure breakers
+remain authoritative throughout.

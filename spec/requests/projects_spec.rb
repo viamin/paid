@@ -2436,6 +2436,40 @@ RSpec.describe "Projects" do
         )
       end
 
+      # @spec PR-ESCALATION-030
+      it "preserves an invalid suspension input and the stored deadline on validation failure" do
+        deadline = 1.week.from_now.utc.change(usec: 0)
+        project = create(:project, account: account, github_token: github_token,
+          pr_escalation_limits_suspended_until: deadline)
+
+        patch project_path(project), params: { project: { pr_escalation_limits_suspended_until: "tomorrow" } }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        input = Nokogiri::HTML(response.body).at_css("input[name='project[pr_escalation_limits_suspended_until]']")
+        expect(input["value"]).to eq("tomorrow")
+        expect(project.reload.pr_escalation_limits_suspended_until).to eq(deadline)
+      end
+
+      # @spec PR-ESCALATION-030
+      it "sets and clears the PR escalation suspension deadline" do
+        project = create(:project, account: account, github_token: github_token)
+        deadline = 1.week.from_now.utc.change(usec: 0)
+
+        patch project_path(project), params: { project: { pr_escalation_limits_suspended_until: deadline.iso8601 } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.pr_escalation_limits_suspended_until).to eq(deadline)
+        event = account.account_activity_events.where(action: "project.updated", subject: project).last
+        expect(event.metadata.fetch("pr_escalation_limits_suspended_until")).to eq(deadline.iso8601(6))
+        expect(event.actor_id).to eq(user.id)
+
+        patch project_path(project), params: { project: { pr_escalation_limits_suspended_until: "" } }
+
+        expect(project.reload.pr_escalation_limits_suspended_until).to be_nil
+        event = account.account_activity_events.where(action: "project.updated", subject: project).last
+        expect(event.metadata.fetch("pr_escalation_limits_suspended_until")).to be_nil
+      end
+
       it "updates the project" do
         project = create(:project, account: account, github_token: github_token, name: "Old Name")
         patch project_path(project), params: { project: { name: "New Name" } }
