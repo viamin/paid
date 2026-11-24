@@ -53,6 +53,19 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.metadata).to include("released_by" => "external_prerequisite")
   end
 
+  it "keeps an open completed PR prerequisite active" do # @spec DEPENDENCY-DECLARATIONS-011
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
+    dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
+    target = create(:issue, :pull_request, :completed, project: target_project, github_number: 517, github_state: "open")
+    create(:issue_dependency, issue:, depends_on_issue: nil, **dependency_attributes(dependency))
+    notification = notification_for(dependency)
+
+    described_class.call(target)
+
+    expect(notification.reload).to be_active
+    expect(notification.metadata.fetch("external_prerequisite_states").values.sole).to include("state" => "open")
+  end
+
   it "keeps stale external state held with a recheck path" do # @spec PARTIAL-CLOSEOUT-038
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
     notification = notification_for(dependency)

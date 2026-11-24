@@ -5,8 +5,6 @@ module PartialCloseouts
   # account-scoped issue mirror. Human evidence is intentionally not inferred
   # from an external transition.
   class ExternalPrerequisites
-    RESOLVED_PAID_STATES = Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES.freeze
-
     def self.call(...) = new(...).call
 
     def self.status_for(issue, dependency)
@@ -223,7 +221,7 @@ module PartialCloseouts
     end
 
     def resolved?(issue)
-      issue.github_state != "open" || issue.paid_state.in?(RESOLVED_PAID_STATES)
+      Issue.prerequisite_resolved?(issue)
     end
 
     def reference_for(dependency)

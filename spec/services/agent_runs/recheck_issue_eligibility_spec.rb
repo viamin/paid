@@ -160,6 +160,16 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.reload.status).to eq("cancelled")
   end
 
+  it "cancels a queued run when an open completed PR becomes a prerequisite" do # @spec DEPENDENCY-DECLARATIONS-011
+    dependent = create(:issue, project: project, github_state: "open")
+    run = queued_auto_pick_run(issue: dependent)
+    pr = create(:issue, :pull_request, :completed, project: project, github_state: "open")
+    create(:issue_dependency, issue: dependent, depends_on_issue: pr)
+
+    expect(described_class.call(run)).to be(true)
+    expect(run.reload.status).to eq("cancelled")
+  end
+
   it "cancels the run when the issue is closed on GitHub" do
     issue = create(:issue, project: project, github_state: "closed")
     run = queued_auto_pick_run(issue: issue)

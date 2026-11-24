@@ -67,6 +67,17 @@ state, completed runs, or a sibling relationship never substitute for that
 provider result. Missing tracking, inaccessible sources, open issues,
 closed-unmerged pull requests, and provider errors remain blocked.
 
+Automatic issue admission uses the same typed prerequisite boundary over the
+account-scoped mirror. An open ordinary issue may retain the established
+completed or recommend-close exception, but that local workflow state never
+resolves a pull request. A pull-request prerequisite resolves only when its
+recorded provider lifecycle is closed and merged; open, draft, ready,
+closed-unmerged, and incomplete merge evidence remain blocking. Deployment
+requirements remain an additional condition after a PR is merged. The shared
+contract is consumed by readiness, queue admission and dequeue rechecks,
+lifecycle reporting, partial-closeout prerequisite state, and root ranking so
+that presentation cannot contradict admission.
+
 ## Blocking graph invariant
 
 Every `IssueDependency` local-edge write validates the proposed account-scoped
@@ -85,6 +96,7 @@ batch is evaluated against earlier additions.
 | Consumer contract | One shared extractor | Separate Auto-Pick and Auto-Merge parsers | Both gates must interpret the same declaration text identically. |
 | Comma subject attribution | Recognize only an immediately preceding numbered subject followed by a comma and a supported directive | Suppress directives after any earlier issue reference | The bounded punctuation shape captures appositive related-work status without hiding an actual declaration merely because the prose mentions another issue. |
 | Cross-project Auto-Merge verification | Resolve only an exact same-account tracked project through its provider identity | Treat a local completed state, arbitrary remote access, or a sibling project as proof | Account-scoped tracking establishes the trusted source; the provider supplies the current lifecycle state and failures fail closed. |
+| PR prerequisite fulfillment | Require recorded closed-and-merged evidence for a PR | Treat local Paid completion, recommendation, producer completion, or closed-unmerged state as resolution | A PR is a review artifact whose merge is a separate provider fact; issue workflow states cannot prove it. |
 
 ## References
 
