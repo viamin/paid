@@ -10536,10 +10536,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_133739) do
   WHERE ((projects.id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
    FROM (issues
      JOIN projects ON ((projects.id = issues.project_id)))
-  WHERE ((issues.id = shared_delivery_evidence_associations.issue_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+  WHERE ((issues.id = shared_delivery_evidence_associations.issue_id) AND (issues.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
    FROM (issues pull_requests
      JOIN projects ON ((projects.id = pull_requests.project_id)))
-  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (pull_requests.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = shared_delivery_evidence_associations.authorized_by_id) AND (users.account_id = paid_current_account_id())))))));
   SQL

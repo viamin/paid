@@ -23,12 +23,14 @@ class EnableTenantRlsOnSharedDeliveryEvidenceAssociations < ActiveRecord::Migrat
                 SELECT 1 FROM issues
                 INNER JOIN projects ON projects.id = issues.project_id
                 WHERE issues.id = shared_delivery_evidence_associations.issue_id
+                  AND issues.project_id = shared_delivery_evidence_associations.project_id
                   AND projects.account_id = paid_current_account_id()
               )
               AND EXISTS (
                 SELECT 1 FROM issues pull_requests
                 INNER JOIN projects ON projects.id = pull_requests.project_id
                 WHERE pull_requests.id = shared_delivery_evidence_associations.pull_request_id
+                  AND pull_requests.project_id = shared_delivery_evidence_associations.project_id
                   AND projects.account_id = paid_current_account_id()
               )
               AND EXISTS (

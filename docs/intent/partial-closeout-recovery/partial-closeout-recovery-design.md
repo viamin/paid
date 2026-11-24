@@ -67,6 +67,11 @@ or revoked pull request fails closed. This evidence prevents replacement coding
 and permits the existing bounded report-only acceptance audit, but does not
 assert criterion satisfaction or authorize GitHub closure.
 
+The SQL admission policy binds both referenced issue rows to the association's
+project, even when another project belongs to the same tenant. Model freshness
+and evidence consumption independently reject legacy project mismatches;
+model validation alone is not the persisted evidence boundary.
+
 One value object computes the *closeout evidence* for an issue and a stable
 *outcome-generation digest*:
 

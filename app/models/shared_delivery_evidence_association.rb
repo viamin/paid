@@ -24,7 +24,9 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   validate :canonical_pull_request_identity
 
   def current?
-    revoked_at.nil? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged" &&
+    [ issue, pull_request ].all? { |record| record.project_id == project_id } &&
+      project.account_id == account_id && authorized_by.account_id == account_id &&
+      revoked_at.nil? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged" &&
       pull_request.github_html_url == canonical_pull_request_url &&
       canonical_pull_request_url == pull_request_url && pull_request.merged_commit_sha == revision
   end
