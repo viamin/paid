@@ -7,6 +7,8 @@ class AccountActivityEvent < ApplicationRecord
     bounded_action.authorized
     bounded_action.revoked
     bounded_action.completed
+    bounded_action.reassessment_required
+    bounded_action.reassessment_resumed
     project_delegation.action_evaluated
   ].freeze
 
@@ -32,6 +34,8 @@ class AccountActivityEvent < ApplicationRecord
     "issue.reopened" => "project",
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
+    "pull_request.technical_blocker_recorded" => "project",
+    "pull_request.technical_blocker_resolved" => "project",
     "issue.continuation_requested" => "project",
     "issue.closeout_resolved" => "project",
     "issue.closeout_revalidation_failed" => "project",
@@ -52,6 +56,7 @@ class AccountActivityEvent < ApplicationRecord
     "execution_control.disabled" => "settings",
     "agent_run.created" => "run",
     "agent_run.audit_priority_requested" => "run",
+    "agent_run.coding_priority_requested" => "run",
     "agent_run.cancelled" => "run",
     "agent_run.execution_parked" => "run",
     "agent_run.retried" => "run",
@@ -69,6 +74,8 @@ class AccountActivityEvent < ApplicationRecord
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
     "bounded_action.completed" => "approval",
+    "bounded_action.reassessment_required" => "approval",
+    "bounded_action.reassessment_resumed" => "approval",
     "project_delegation.posture_selected" => "project",
     "project_delegation.rollback" => "project",
     "project_delegation.action_evaluated" => "project",

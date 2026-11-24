@@ -245,6 +245,11 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).not_to include("CI Status: FAILING")
     end
 
+    # @spec AUTO-MERGE-012
+    it "routes technical stops to internal state rather than human-intervention labels" do
+      expect(prompt).to include("update_technical_merge_blocker", "responsible issue", "does not approve or merge")
+    end
+
     it "omits code review section when no unresolved threads" do
       expect(prompt).not_to include("Code Review Comments")
     end

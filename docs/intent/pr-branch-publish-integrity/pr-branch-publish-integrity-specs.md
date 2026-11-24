@@ -26,6 +26,11 @@
 
 - [x] **PR-BRANCH-PUBLISH-011**: The expected-remote-head identity and lease expectation shall be read from the publishing `AgentRun` only; a push for one agent run's branch shall never read or be affected by another agent run's `expected_remote_head_sha` or `result_commit_sha`.
 
+## Parked producer review handoff
+
+- [x] **PR-BRANCH-PUBLISH-013**: When a review run has checked out an open PR and captured its current head, the system shall atomically reclaim an active branch-worktree record from a `waiting_recovery` create-PR producer only when that producer has no live execution, container, runner, or in-progress source-closure-recovery claim; a completed historical Temporal workflow ID shall not block handoff, and the system shall not reclaim a live coding writer or recovery workflow.
+- [x] **PR-BRANCH-PUBLISH-014**: The handoff shall require the producer's successfully published result SHA to equal the review run's captured remote head SHA, and shall preserve the producer's status, result SHA, PR lineage, and recovery history; a changed or unverified head shall remain blocked by normal ownership conflict handling.
+
 ## Rejected local result retention
 
 - [x] **PR-BRANCH-PUBLISH-012**: Before attempting a publish, the system shall persist the local HEAD as `AgentRun#unpublished_result_commit_sha`; if publication is rejected after a recovery rebase, it shall persist the rebased local HEAD before the retry so that exact rejected revision remains available for recovery, while a successful publish shall move the published HEAD to `result_commit_sha` and clear the unpublished value.

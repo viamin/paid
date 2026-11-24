@@ -84,7 +84,31 @@ therefore declare the **solo-maintainer policy**, which must be:
   rationale, or free-text notes/context that could reveal an outcome. Evidence
   navigation validates repository access, every requested SHA, and each
   declared artifact before redirecting to a revision-bound GitHub URL.
-  Navigation is refused outright when the manifest no longer matches the
+  The review page opens with an attributed change overview from the PR whose
+  merge commit or exact base/head pair matches the case. If no matching PR is
+  available, it shows the pinned commit titles and file counts, explicitly
+  attributed to Git history. It never substitutes corpus selection notes or
+  reviewer judgments for a summary and makes no new LLM call for this context.
+  File diffs are collapsed by default beneath the overview and requirements.
+  Expanding a file shows bounded escaped patch text; omitted patches and a
+  complete pinned comparison link remain explicit. Evidence links open in a
+  new tab. Repository content never executes in the application origin.
+  Requirement documents come first from the case or manifest declarations.
+  Legacy cases without those links can recover changed intent-document paths
+  only by reading their content at the recorded approved revision; a baseline
+  overview is identified separately when no case-specific document is found.
+  The human page and reviewer use the same recovered baseline documents.
+  A case without accessible baseline evidence displays an evidence-preparation
+  state instead of an impossible citation form. It can be left for later but
+  cannot silently satisfy the completed evaluation.
+  Plain-language verdicts explain whether the change meets the approved
+  requirements, changes them, or lacks enough evidence to judge. The form asks
+  which approved requirement informed the decision and why, with examples and
+  the purpose of retaining each input. Explanations are optional for initial
+  decisions; uncertainty also permits an omitted requirement citation.
+  Finishing locks the human judgments
+  before showing AI results; running the reviewer remains a separate action.
+  Navigation and inline evidence are refused outright when the manifest no longer matches the
   digest recorded at evaluation creation, so replacement evidence under an
   edited corpus cannot be inspected through an existing evaluation. It
   never falls back to a branch or moving default revision; missing, forbidden,
@@ -124,7 +148,7 @@ Paid's project authorization and presentation patterns:
    approved-design paths remains unavailable for design evidence and cannot
    be represented as independently assessed acceptance. Each label records
    `within_scope`, `material_drift`, or `uncertain`, with a cited approved
-   claim and a reason. Saves are durable and resumable; any case may be
+   claim (optional for uncertainty) and an optional explanation. Saves are durable and resumable; any case may be
    skipped, and a skipped case is never counted as completed.
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers

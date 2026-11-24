@@ -146,6 +146,27 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "update_technical_merge_blocker",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> {
+          {
+            project_id: project.id,
+            issue_id: pull_request.id,
+            action: "record",
+            key: "ci",
+            head_sha: "a" * 40,
+            confirmed: true
+          }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "start_cycle_analysis",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, occurrence: "state:dependency_cycle:test", confirmed: true } },
@@ -211,6 +232,18 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
           project_record.issues.find(issue.id)
+        }
+      },
+      {
+        tool_name: "prioritize_coding_retry",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, agent_run_id: 1, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
         }
       },
       {

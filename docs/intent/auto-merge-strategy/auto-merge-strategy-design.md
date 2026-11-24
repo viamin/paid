@@ -39,6 +39,25 @@ in the Inbox's merge-approval lane with a human-review summary, even if
 ordinary approval/check signals have not yet been evaluated. A human releases
 the hold by removing the label.
 
+Technical merge blockers are Paid state on the pull request, independent of
+GitHub labels and label integration mode. Each bounded entry identifies a stable
+key, the observed PR head, reason, responsible project issue and release
+condition. Confirmed writes require project issue-management authorization.
+Resolution records evidence and matches the exact entry version, preventing a
+stale request from erasing a newer stop. Both actions are audited; semantic
+judgment belongs to the authorized operator or delegated agent. Neither action
+grants merge approval or bypasses the normal checks.
+
+Unresolved technical blockers prevent scan-time auto-merge and every final
+merge execution, including dependency-update and credential-fallback paths.
+Final executors reload the internal state before merge I/O. A push, clean
+review, policy change or green CI does not implicitly resolve a separate stop.
+PR diagnostics expose technical work with its owner and release condition;
+that state does not create a human-approval Inbox item. Agents use this path for
+technical acceptance/integration stops instead of `paid-hold-review`. Existing
+labels are never automatically reclassified from prose. Converting a verified
+technical hold requires enforcing its internal replacement before label removal.
+
 This segment captures the shipped behavior rather than the abandoned umbrella
 PR strategy discussed in RDR-022.
 
@@ -101,6 +120,31 @@ comment can make that distinction legible to reviewers. A repair does not carry
 an approval across substantive conflict-resolution content and does not change the separate auto-merge policy:
 the existing fail-closed first-parent freshness classifier remains the sole
 authority for whether current-head review is required.
+
+The assessment input itself is complete-or-explicit, never silently partial
+(#5312). The prompt carries the complete immutable result-path inventory —
+every path changed in the pre-run-to-result range is listed — and the evidence
+formatter may no longer drop paths invisibly when joined patch text exceeds the
+prompt bound. Git blob SHAs from the compare API mechanically separate the two
+sides of the evidence: a result path whose blob SHA equals the base-import
+range's blob SHA for the same path is a verified base import (byte-identical
+content, no repair-authored delta) and needs no diff text in the prompt, which
+is what keeps the normal large-base-import/small-repair case inside the
+existing bounded context, time, and spend. Every unverified path receives
+bounded diff evidence: a complete or truthfully marked patch excerpt, or an
+explicit no-patch note for binary and API-omitted diffs. When the complete
+inventory or the per-path evidence cannot be held within the established
+bounds, or when path metadata contains control characters that could forge
+inventory lines, the assessment fails closed before the harness call with an
+explicit input-coverage reason rather than sending hidden or truncated
+evidence. Output validation stays strict and mechanical: every actual result
+path must be accounted for, a path outside the base-import range cannot be
+claimed as a base import, a blob-verified import cannot be classified as
+repair-authored, and malformed or path-incomplete results classify as
+unavailable. Semantic scope judgments — whether an authored edit belongs to
+the PR task — remain with `agent_harness`; Ruby only verifies structure and
+blob identity. The pre-existing file-count truncation guard (>= 300 compare
+files) is preserved unchanged.
 
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the

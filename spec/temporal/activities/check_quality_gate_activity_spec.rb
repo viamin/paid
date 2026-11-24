@@ -137,6 +137,19 @@ RSpec.describe Activities::CheckQualityGateActivity do # @spec QUALITY-LOOPS-005
     expect(result[:breaches]).to include(hash_including(current: 50_000, threshold: 50_000))
   end
 
+  # @spec PR-ESCALATION-028
+  it "keeps ordinary quality gates active during the PR limit suspension" do
+    project.update!(pr_escalation_limits_suspended_until: 1.week.from_now)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42, labels: [])
+    create_metric(0.1)
+    create_metric(0.1)
+    create_metric(0.1)
+
+    result = activity.execute(project_id: project.id, issue_id: pull_request.id, source_pull_request_number: 42)
+
+    expect(result).to include(allowed: false, blocked: true, reason: "quality_gate_breached")
+  end
+
   it "blocks automatic runs when the rolling average breaches the threshold" do
     create_metric(0.4)
     create_metric(0.5)

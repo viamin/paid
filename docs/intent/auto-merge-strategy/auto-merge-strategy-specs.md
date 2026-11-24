@@ -203,3 +203,44 @@
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+
+- [x] **AUTO-MERGE-011** — When a merge-conflict repair is scope-assessed with
+  fewer than the file-count truncation guard's compare files, the assessment
+  input SHALL carry the complete immutable result-path inventory: every path
+  changed in the pre-run-to-result range SHALL be listed, and a path whose
+  result blob SHA equals the base-import range's blob SHA SHALL be supplied as
+  a mechanically verified base import requiring no diff text, so a normal
+  large-base-import/small-repair case stays within the established bounded
+  context. Every unverified path SHALL receive bounded diff evidence as a
+  complete or truthfully excerpt-marked patch or an explicit no-patch note
+  (binary or API-omitted). When the complete inventory or per-path evidence
+  cannot be held within the established bounds, or path metadata contains
+  control characters, Paid SHALL fail closed before the harness call with an
+  explicit input-coverage reason rather than omit paths the response must
+  classify. Output validation SHALL remain strict: every actual result path
+  must be accounted for, a path outside the base-import range SHALL NOT be
+  accepted as a base import, a mechanically verified base import SHALL NOT be
+  accepted as repair-authored, and malformed or path-incomplete results SHALL
+  classify as unavailable. The existing >= 300-file truncation guard SHALL be
+  preserved, and no approved result SHALL be manufactured or a substantive
+  rejection retried toward approval.
+  *Code:* `app/services/conflict_repairs/assess_scope.rb`,
+  `app/services/conflict_repairs/scope_evidence.rb`,
+  `app/services/github_client.rb` (`#compare_files_payload`).
+  *Test:* `spec/services/conflict_repairs/assess_scope_spec.rb`,
+  `spec/services/github_client_spec.rb`.
+
+- [x] **AUTO-MERGE-012** — Technical acceptance, integration, and verification
+  stops SHALL be bounded internal PR state, independent of GitHub labels.
+  Each entry SHALL identify its key, observed head, reason, responsible project
+  issue, release condition and recorder. Confirmed project-authorized writes
+  SHALL record or resolve entries with audit history; resolution SHALL name
+  evidence and match the exact entry version. Unresolved or malformed state
+  SHALL block scan-time and final automatic merge paths, including dependency
+  updates and credential fallbacks. PR UI and tools SHALL show technical work
+  and its release condition separately from human approval. Technical state
+  SHALL NOT create a human-approval Inbox item, grant approval, or change labels.
+  Existing human holds SHALL remain enforced until explicitly released.
+  *Code:* `app/services/pull_requests/technical_merge_blockers.rb`.
+  *Test:* `spec/services/pull_requests/technical_merge_blockers_spec.rb`,
+  `spec/mcp/tools/update_technical_merge_blocker_spec.rb`.

@@ -793,6 +793,39 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
     end
 
+    it "dispatches an operator-prioritized coding retry with its Temporal priority" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+        operator_coding_priority_requested_at: Time.current)
+      priority = Temporalio::Priority.new(priority_key: 2, fairness_key: queued_run.project.account_id.to_s)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(priority:)
+      ).and_return(workflow_handle)
+
+      job.perform
+    end
+
+    it "selects an explicit prerequisite before an ordinary PR in the same fair-share cohort" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      prerequisite_issue = create(:issue, project:, github_state: "open")
+      ordinary_issue = create(:issue, project:, github_state: "open")
+      prerequisite = create(:agent_run, :queued, :automatic, project:, issue: prerequisite_issue,
+        goal: "create_pr", auto_pick: true, operator_coding_priority_requested_at: Time.current)
+      ordinary_pr = create(:agent_run, :queued, :automatic, :existing_pr, project:, issue: ordinary_issue,
+        goal: "create_pr", created_at: 1.minute.ago)
+
+      job.perform
+
+      expect(prerequisite.reload).to have_attributes(status: "running")
+      expect(prerequisite.temporal_workflow_id).to be_present
+      expect(ordinary_pr.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+    end
+
     it "keeps the account id as the Temporal fairness key for strict-priority accounts" do
       queued_run = create(:agent_run, :queued)
       queued_run.project.account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
@@ -1602,6 +1635,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      it "does not dispatch an operator-prioritized coding retry while its project is paused" do # @spec QUEUE-TIER-009
+        project = create(:project, auto_pick_enabled: true, paused: true)
+        issue = create(:issue, project:, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+          operator_coding_priority_requested_at: Time.current)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+      end
+
       # Delegated-work boundary recheck at dequeue: a bounded authorization
       # that was revoked after the run was queued must not begin a new
       # action, no matter which path queued the run (retries included).
@@ -1654,6 +1700,22 @@ RSpec.describe ProcessRunQueueJob do
           notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
           expect(notification.metadata).to include("boundary" => "dequeue")
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+        end
+
+        it "passes persisted proposed repair evidence into the dequeue recheck" do # @spec BOUNDED-PHASE-AUTHORIZATION-006
+          project = create(:project, :with_github_installation, auto_pick_enabled: true)
+          audit = create(:agent_run, :completed, project: project, goal: "layered_verification_audit")
+          evidence = { "cycle_evidence" => [ "failed_check" ], "proposed_repair" => "Repair the failed check" }
+          run = create(:agent_run, :queued, :automatic, project: project, goal: "layered_verification_repair",
+            originating_audit_run: audit, external_metadata: { "action_evidence" => evidence })
+          blocked_recheck = instance_double(Automation::DelegatedWorkBoundary::Result,
+            permitted?: false, boundary: :dequeue, reasons: [ :scope_correspondence ])
+          allow(Automation::DelegatedActionAdmission).to receive(:call).and_return(blocked_recheck)
+
+          expect(job.send(:delegated_boundary_blocked?, run)).to be(true)
+          expect(Automation::DelegatedActionAdmission).to have_received(:call).with(
+            hash_including(goal: "layered_verification_repair", action_evidence: evidence)
+          )
         end
 
         it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
@@ -2929,8 +2991,9 @@ RSpec.describe ProcessRunQueueJob do
     let(:expected_temporal_keys) do
       {
         manual: 1,
-        pr_p1: 2,
-        pr_p2: 2,
+        operator_coding: 2,
+        pr_p1: 3,
+        pr_p2: 3,
         pr_p3: 3,
         pr_continue: 3,
         issue_p1: 4,
@@ -2953,6 +3016,8 @@ RSpec.describe ProcessRunQueueJob do
     def runs_by_tier
       {
         manual: create(:agent_run, :queued, project: project, trigger_type: "manual"),
+        operator_coding: create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          auto_pick: true, operator_coding_priority_requested_at: Time.current),
         pr_p1: pr_run(github_number: 101, label: "P1"),
         pr_p2: pr_run(github_number: 102, label: "P2"),
         pr_p3: pr_run(github_number: 103, label: "P3"),

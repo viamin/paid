@@ -1,0 +1,13 @@
+{
+  "findings": [
+    {
+      "category": "queue_starvation",
+      "severity": "warning",
+      "affected_project_ids": [101],
+      "target_ids": { "project_ids": [101] },
+      "evidence": { "metric_names": ["queue_starvation"] },
+      "recommendation": "inspect_queue_capacity",
+      "raw_error": "customer stack trace: sk-super-secret-token"
+    }
+  ]
+}

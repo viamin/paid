@@ -421,9 +421,15 @@ class GithubClient
   # @param options [Hash] Additional options passed to Octokit
   # @return [Array<Sawyer::Resource>] List of issues
   def issues(repo, labels: nil, state: "open", **options)
-    opts = { state: state, **options }
-    opts[:labels] = Array(labels).join(",") if labels
-    handle_errors { client.issues(repo, opts) }
+    handle_errors { client.issues(repo, issue_options(labels:, state:, options:)) }
+  end
+
+  # Lists every issue matching the requested filters.
+  #
+  # @return [Array<Sawyer::Resource>] List of issues across all pages
+  def all_issues(repo, labels: nil, state: "open", **options)
+    opts = issue_options(labels:, state:, options:)
+    handle_errors { with_auto_paginate { client.issues(repo, opts) } }
   end
 
   # Lists files changed in a pull request.
@@ -1980,6 +1986,10 @@ class GithubClient
     client.auto_paginate = original
   end
 
+  def issue_options(labels:, state:, options:)
+    options.merge(state: state).tap { |opts| opts[:labels] = Array(labels).join(",") if labels }
+  end
+
   def graphql_request(query, **variables)
     # Mutations are not idempotent — retrying them after a transient failure
     # (where the server may have applied the mutation before returning 5xx)
@@ -2286,15 +2296,20 @@ class GithubClient
     end
   end
 
+  # Blob SHAs and rename provenance ride along so downstream consumers can
+  # mechanically verify byte-identical imports without re-fetching diffs
+  # (@spec AUTO-MERGE-011).
   def compare_files_payload(files)
     files.map do |file|
       {
         filename: file.filename.to_s,
+        sha: file.sha.to_s,
         status: file.status.to_s,
         additions: file.additions.to_i,
         deletions: file.deletions.to_i,
         changes: file.changes.to_i,
-        patch: file.patch.to_s
+        patch: file.patch.to_s,
+        previous_filename: file.previous_filename.to_s
       }
     end
   end
