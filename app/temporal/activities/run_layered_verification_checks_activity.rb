@@ -121,8 +121,10 @@ module Activities
     end
 
     def input_revision(obligation)
+      scope = LayeredVerification::ScopeSnapshot.call(obligation)
       { "target_revision" => audit_metadata["target_revision"], "code" => audit_metadata["target_revision"],
         "external_revision" => obligation.external_revision,
+        "scope_paths" => (scope.paths if scope.complete),
         "dependencies" => audit_metadata.fetch("dependencies", {}) }.compact
     end
   end

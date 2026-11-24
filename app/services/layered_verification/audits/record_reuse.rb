@@ -66,8 +66,10 @@ module LayeredVerification
       end
 
       def input_revision
+        scope = ScopeSnapshot.call(obligation)
         { "target_revision" => metadata["target_revision"], "code" => metadata["target_revision"],
           "external_revision" => metadata.fetch("input_revisions").fetch(obligation.id.to_s),
+          "scope_paths" => (scope.paths if scope.complete),
           "dependencies" => metadata.fetch("dependencies", {}) }.compact
       end
     end

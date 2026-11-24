@@ -38,8 +38,10 @@ module LayeredVerification
     end
 
     def input_revision
+      scope = ScopeSnapshot.call(obligation)
       { "code" => agent_run.external_metadata.dig("layered_verification", "target_revision"),
         "external_revision" => obligation.external_revision,
+        "scope_paths" => (scope.paths if scope.complete),
         "dependencies" => agent_run.external_metadata.dig("layered_verification", "dependencies") || {} }.compact
     end
   end

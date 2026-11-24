@@ -10,10 +10,12 @@ module LayeredVerification
 
     def self.call(...) = new(...).call
 
-    def initialize(obligations:, target_revision:, dependencies: {})
+    def initialize(obligations:, target_revision:, dependencies: {}, github_client: nil)
       @obligations = obligations
       @target_revision = target_revision.to_s
       @dependencies = dependencies.to_h.deep_stringify_keys
+      @github_client = github_client
+      @changed_paths = {}
     end
 
     def call
@@ -23,17 +25,45 @@ module LayeredVerification
 
     def reusable?(result)
       revision = result.input_revision.to_h.deep_stringify_keys
-      complete_dependency_basis?(revision) && revision["code"] == target_revision &&
+      complete_dependency_basis?(revision) && code_unaffected?(result, revision) &&
         revision["external_revision"] == result.obligation.external_revision &&
         revision.fetch("dependencies") == dependencies
     end
 
     private
 
-    attr_reader :dependencies, :obligations, :target_revision
+    attr_reader :dependencies, :github_client, :obligations, :target_revision
 
     def results
-      LayeredVerificationCheckResult.where(obligation: obligations).includes(:obligation).order(:id).to_a
+      LayeredVerificationCheckResult.where(obligation: obligations)
+        .includes(obligation: :correspondence_claims).order(:id).to_a
+    end
+
+    def code_unaffected?(result, revision)
+      return true if revision["code"] == target_revision
+
+      scope = ScopeSnapshot.call(result.obligation)
+      recorded_scope = Array(revision["scope_paths"]).map(&:to_s).uniq.sort
+      return false unless scope.complete && recorded_scope == scope.paths
+
+      changed = changed_paths(result.obligation.project, revision["code"])
+      changed && (changed & recorded_scope).empty?
+    end
+
+    def changed_paths(project, prior_revision)
+      key = [ project.id, prior_revision ]
+      @changed_paths.fetch(key) do
+        @changed_paths[key] = compare_paths(project, prior_revision)
+      end
+    end
+
+    def compare_paths(project, prior_revision)
+      files = (github_client || project.client).compare(project.full_name, prior_revision, target_revision).files
+      return if files.nil? || files.size >= 300
+
+      files.map { |file| file.filename.to_s }.reject(&:blank?).uniq
+    rescue GithubClient::Error, Faraday::Error
+      nil
     end
 
     def complete_dependency_basis?(revision)
@@ -59,7 +89,7 @@ module LayeredVerification
     def limitations(invalidated)
       return [] if invalidated.empty?
 
-      [ "Evidence without a complete dependency basis was invalidated conservatively; content hashes alone do not establish dependency completeness." ]
+      [ "Evidence without a complete dependency and scope-impact basis was invalidated conservatively; content hashes alone do not establish dependency completeness." ]
     end
   end
 end
