@@ -1099,7 +1099,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
   def create_conflict_scope_evidence(account)
     project = create(:project, account:)
     issue = create(:issue, :pull_request, project:)
-    run = create(:agent_run, project:, issue:)
+    run = create(:agent_run, project:, issue:, external_metadata: { "pre_run_head_sha" => "pre" })
     ConflictRepairScopeEvidence.create!(agent_run: run, account:, project:, issue:, pre_run_sha: "pre",
       integration_base_sha: "base", result_sha: "head", provider_head_sha: "head",
       status: "approved", explanation: "bounded", base_imported_paths: [], repair_authored_paths: [])
