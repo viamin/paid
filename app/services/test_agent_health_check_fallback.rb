@@ -6,6 +6,8 @@
 # Including classes must implement:
 #   - #harness_health_check_key  — the harness provider/runner key Symbol to
 #       pass to AgentHarness.check_provider
+#   - #container_authentication_runner_key — the configured runner key whose
+#       credential materialization is being tested
 #   - #harness_fallback_log_prefix — log message prefix (e.g. "runners.test_agent")
 #   - #harness_fallback_log_context — Hash of extra log attributes (e.g. { runner_key: "codex" })
 #
@@ -18,7 +20,10 @@ module TestAgentHealthCheckFallback
   private
 
   def execute_harness_health_check_with_fallback
-    process_harness_result(maybe_fallback_harness_result(execute_harness_health_check))
+    result = maybe_fallback_harness_result(execute_harness_health_check)
+    process_harness_result(result,
+      execution_source: @container_smoke_test_used ? :container_smoke_test : :host_harness,
+      authentication_source: @container_smoke_test_used ? @container_authentication_source : :unconfirmed)
   rescue StandardError => e
     raise unless fallback_to_container_smoke_test?(e.message)
 
@@ -30,6 +35,7 @@ module TestAgentHealthCheckFallback
     return result unless fallback_to_container_smoke_test?(result[:message], result[:output])
 
     log_harness_fallback(error_message: [ result[:message], result[:output] ].compact.join("\n"))
+    @container_smoke_test_used = true
     execute_container_smoke_test_raw
   end
 
@@ -40,7 +46,11 @@ module TestAgentHealthCheckFallback
       test_run.with_container do |run|
         executor = Containers::HarnessExecutor.new(run)
         prepare_kilocode_config!(run) if kilocode_direct_outbound?
-        container_health_check(run, executor)
+        container_health_check(run, executor).tap do
+          @container_authentication_source = container_authentication_source(
+            run, runner_key: container_authentication_runner_key
+          )
+        end
       end
     ensure
       test_run.destroy! if test_run&.persisted?
@@ -62,7 +72,16 @@ module TestAgentHealthCheckFallback
   # Instead of building provider-specific CLI commands locally, this delegates
   # to the harness provider's smoke_test method with a container-backed executor.
   def execute_container_smoke_test
-    process_harness_result(execute_container_smoke_test_raw)
+    @container_smoke_test_used = true
+    process_harness_result(execute_container_smoke_test_raw,
+      execution_source: :container_smoke_test,
+      authentication_source: @container_authentication_source)
+  end
+
+  # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+  def container_authentication_source(run, runner_key:)
+    RunnerAuthAttempt.where(agent_run: run, attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION)
+      .for_runner_key(runner_key).recent.pick(:auth_source)&.to_sym || :unconfirmed
   end
 
   def fallback_to_container_smoke_test?(*messages)

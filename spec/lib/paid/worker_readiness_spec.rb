@@ -69,6 +69,19 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
+    # @spec RAILS-CONTROL-PLANE-030
+    it "records a fresh health heartbeat without changing boot readiness" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      ready_at = JSON.parse(File.read(file_path)).fetch("ready_at")
+
+      described_class.heartbeat!(env, health: "healthy", runnable_jobs: 0)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload).to include("ready_at" => ready_at, "health" => "healthy", "runnable_jobs" => 0)
+      expect(payload.fetch("heartbeat_at")).to match(/\d{4}-\d{2}-\d{2}T/)
+    end
+
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
     it "publishes a coarse active activity count without exposing activity data" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -249,6 +262,20 @@ RSpec.describe Paid::WorkerReadiness do
     it "returns false when no file exists" do
       env = { "WORKER_READINESS_FILE" => file_path }
       expect(described_class.ready?(env)).to be false
+    end
+  end
+
+  describe ".healthy?" do
+    # @spec RAILS-CONTROL-PLANE-030
+    it "distinguishes a fresh worker heartbeat from mere readiness-file existence" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+
+      expect(described_class.healthy?(env)).to be(false)
+
+      described_class.heartbeat!(env, health: "healthy")
+      expect(described_class.healthy?(env)).to be(true)
+      expect(described_class.healthy?(env, timeout: 0, now: Time.now.utc + 1)).to be(false)
     end
   end
 

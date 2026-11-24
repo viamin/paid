@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# frozen_string_literal: true
+
+set -euo pipefail
+
+attempt_limit="${DEPENDENCY_SETUP_MAX_ATTEMPTS:-5}"
+attempt_timeout="${DEPENDENCY_SETUP_TIMEOUT:-20m}"
+termination_grace="${DEPENDENCY_SETUP_TERMINATION_GRACE:-30s}"
+backoff_seconds="${DEPENDENCY_SETUP_BACKOFF_SECONDS:-10}"
+active_group_leader=""
+active_timeout_marker=""
+active_watchdog=""
+active_watchdog_group_leader=""
+active_watchdog_ready=""
+active_timer=""
+active_timer_group_leader=""
+
+group_has_live_processes() {
+  ps -eo pgid=,stat= |
+    awk -v group_leader="$1" '$1 == group_leader && $2 !~ /^Z/ { found = 1 } END { exit !found }'
+}
+
+process_is_live() {
+  ps -o stat= -p "$1" 2>/dev/null |
+    awk '$1 !~ /^Z/ { found = 1 } END { exit !found }'
+}
+
+terminate_group() {
+  local group_leader="$1"
+  local killer killer_group_leader killer_ready
+
+  # The direct signal covers a process between fork and setsid; once setsid
+  # succeeds, the group signal covers every owned descendant. A bare `wait`
+  # here would block forever against a TERM-resistant descendant, so a
+  # bounded grace-period killer races the natural exit instead.
+  kill -TERM -- "$group_leader" 2>/dev/null || true
+  kill -TERM -- "-$group_leader" 2>/dev/null || true
+  killer_ready="$(mktemp)"
+  rm -f "$killer_ready"
+  # shellcheck disable=SC2016 # single-quoted so $1.. expand inside the setsid'd subshell, not here
+  setsid bash -c '
+    timer=""
+    stop_timer() {
+      kill "$timer" 2>/dev/null || true
+      wait "$timer" 2>/dev/null || true
+    }
+    trap "stop_timer; exit 0" TERM INT
+    printf "%s\n" "$$" > "$3"
+    sleep "$1" &
+    timer=$!
+    wait "$timer" || exit 0
+    kill -KILL -- "-$2" 2>/dev/null || true
+  ' -- "$termination_grace" "$group_leader" "$killer_ready" &
+  killer=$!
+  active_timer="$killer"
+  while [[ ! -e "$killer_ready" ]]; do
+    if ! kill -0 "$killer" 2>/dev/null; then
+      wait "$killer" || true
+      active_timer=""
+      rm -f "$killer_ready"
+      return
+    fi
+    sleep 0.01
+  done
+  killer_group_leader="$(<"$killer_ready")"
+  active_timer_group_leader="$killer_group_leader"
+  wait "$group_leader" 2>/dev/null || true
+  # A session leader can exit before its descendants. Do not let the caller
+  # begin another attempt while an owned process remains live. Ignore zombies:
+  # this script cannot reap children adopted by its container init process.
+  while group_has_live_processes "$group_leader"; do
+    sleep 0.01
+  done
+  kill -TERM -- "$killer_group_leader" 2>/dev/null || true
+  kill -TERM -- "-$killer_group_leader" 2>/dev/null || true
+  wait "$killer" 2>/dev/null || true
+  while group_has_live_processes "$killer_group_leader"; do
+    kill -KILL -- "-$killer_group_leader" 2>/dev/null || true
+    sleep 0.01
+  done
+  active_timer=""
+  active_timer_group_leader=""
+  rm -f "$killer_ready"
+}
+
+terminate_watchdog() {
+  local watchdog="$1"
+  local watchdog_group_leader="$2"
+
+  # The process ID is owned as soon as the watchdog is forked, before its
+  # setsid wrapper has acknowledged a group identity. Signal that exact child
+  # first so cancellation cannot wait out the attempt timer during startup.
+  kill -TERM -- "$watchdog" 2>/dev/null || true
+  if [[ -n "$watchdog_group_leader" ]]; then
+    terminate_group "$watchdog_group_leader"
+  fi
+  wait "$watchdog" 2>/dev/null || true
+}
+
+wait_for_backoff() {
+  local duration="$1"
+
+  sleep "$duration" &
+  active_timer=$!
+  wait "$active_timer"
+  active_timer=""
+}
+
+cleanup_active_attempt() {
+  if [[ -n "$active_watchdog" ]]; then
+    terminate_watchdog "$active_watchdog" "$active_watchdog_group_leader"
+  fi
+  if [[ -n "$active_group_leader" ]] && (process_is_live "$active_group_leader" || group_has_live_processes "$active_group_leader"); then
+    terminate_group "$active_group_leader"
+  fi
+  rm -f "$active_timeout_marker"
+  rm -f "$active_watchdog_ready"
+  if [[ -n "$active_timer" ]]; then
+    kill "$active_timer" 2>/dev/null || true
+    kill -TERM -- "-$active_timer_group_leader" 2>/dev/null || true
+    wait "$active_timer" 2>/dev/null || true
+    while [[ -n "$active_timer_group_leader" ]] && group_has_live_processes "$active_timer_group_leader"; do
+      kill -KILL -- "-$active_timer_group_leader" 2>/dev/null || true
+      sleep 0.01
+    done
+  fi
+  active_group_leader=""
+  active_timeout_marker=""
+  active_watchdog=""
+  active_watchdog_group_leader=""
+  active_watchdog_ready=""
+  active_timer=""
+  active_timer_group_leader=""
+}
+
+# shellcheck disable=SC2317,SC2329 # invoked indirectly via `trap ... EXIT` below (SC2317 through ShellCheck 0.10, SC2329 from 0.11)
+on_exit() {
+  local status=$?
+
+  trap - EXIT
+  cleanup_active_attempt
+  exit "$status"
+}
+
+# shellcheck disable=SC2317,SC2329 # invoked indirectly via `trap ... TERM/INT` below
+on_signal() {
+  local signal="$1"
+
+  trap - EXIT TERM INT
+  cleanup_active_attempt
+  kill -s "$signal" "$$"
+}
+
+trap 'on_exit' EXIT
+trap 'on_signal TERM' TERM
+trap 'on_signal INT' INT
+
+run_attempt() {
+  local timeout_marker watchdog_ready group_leader watchdog watchdog_group_leader status
+  timeout_marker="$(mktemp)"
+  rm -f "$timeout_marker"
+  active_timeout_marker="$timeout_marker"
+  watchdog_ready="$(mktemp)"
+  rm -f "$watchdog_ready"
+  active_watchdog_ready="$watchdog_ready"
+  setsid "$@" &
+  group_leader=$!
+  active_group_leader="$group_leader"
+  # @spec TEST-SUITE-023
+  # Keep the watchdog's timer and grace delay in its own session so stopping
+  # the watchdog also closes inherited output descriptors before we return.
+  # shellcheck disable=SC2016 # single-quoted so $1.. expand inside the setsid'd subshell, not here
+  setsid bash -c '
+    timer=""
+    stop_timer() {
+      kill "$timer" 2>/dev/null || true
+      wait "$timer" 2>/dev/null || true
+    }
+    trap "stop_timer; exit 0" TERM INT
+    printf "%s\n" "$$" > "$5"
+    sleep "$1" &
+    timer=$!
+    wait "$timer" || exit 0
+    : > "$2"
+    kill -TERM -- "-$3" 2>/dev/null || true
+    sleep "$4" &
+    timer=$!
+    wait "$timer" || exit 0
+    kill -KILL -- "-$3" 2>/dev/null || true
+  ' -- "$attempt_timeout" "$timeout_marker" "$group_leader" "$termination_grace" "$watchdog_ready" &
+  watchdog=$!
+  active_watchdog="$watchdog"
+
+  # A delayed setsid leaves no process group at -$watchdog. Wait for the
+  # watchdog to acknowledge session ownership before cleanup can signal it.
+  while [[ ! -e "$watchdog_ready" ]]; do
+    if ! kill -0 "$watchdog" 2>/dev/null; then
+      wait "$watchdog" || true
+      cleanup_active_attempt
+      return 1
+    fi
+    sleep 0.01
+  done
+  watchdog_group_leader="$(<"$watchdog_ready")"
+  active_watchdog_group_leader="$watchdog_group_leader"
+
+  # `wait` defers our TERM trap while the setup process is still live. Poll
+  # the exact owned leader instead so cancellation can enter cleanup promptly;
+  # once the leader has exited, `wait` only reaps its already-terminal status.
+  while process_is_live "$group_leader"; do
+    sleep 0.01
+  done
+  set +e
+  wait "$group_leader"
+  status=$?
+  set -e
+
+  if [[ -e "$timeout_marker" ]]; then
+    wait "$watchdog" || true
+    rm -f "$timeout_marker"
+    rm -f "$watchdog_ready"
+    active_group_leader=""
+    active_timeout_marker=""
+    active_watchdog=""
+    active_watchdog_group_leader=""
+    active_watchdog_ready=""
+    return 124
+  fi
+
+  terminate_watchdog "$watchdog" "$watchdog_group_leader"
+  if kill -0 -- "-$group_leader" 2>/dev/null; then
+    terminate_group "$group_leader"
+    rm -f "$timeout_marker"
+    rm -f "$watchdog_ready"
+    active_group_leader=""
+    active_timeout_marker=""
+    active_watchdog=""
+    active_watchdog_group_leader=""
+    active_watchdog_ready=""
+    return 1
+  fi
+
+  rm -f "$timeout_marker"
+  rm -f "$watchdog_ready"
+  active_group_leader=""
+  active_timeout_marker=""
+  active_watchdog=""
+  active_watchdog_group_leader=""
+  active_watchdog_ready=""
+  return "$status"
+}
+
+for attempt in $(seq 1 "$attempt_limit"); do
+  if run_attempt "$@"; then
+    exit 0
+  fi
+
+  if [[ "$attempt" -lt "$attempt_limit" ]]; then
+    echo "::warning::JavaScript dependency install timed out or failed (attempt $attempt/$attempt_limit); retrying"
+    wait_for_backoff "$((attempt * backoff_seconds))"
+  fi
+done
+
+exit 1

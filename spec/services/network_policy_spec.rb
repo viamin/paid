@@ -38,6 +38,15 @@ RSpec.describe NetworkPolicy, :no_db do
         described_class.ensure_network!
       end
 
+      # @spec LLM-ROUTING-013
+      it "forwards a caller deadline to the network lookup" do
+        allow(backend).to receive(:get_network).with(described_class::NETWORK_NAME, deadline: 0.1).and_return(mock_network)
+
+        described_class.ensure_network!(deadline: 0.1)
+
+        expect(backend).to have_received(:get_network).with(described_class::NETWORK_NAME, deadline: 0.1)
+      end
+
       context "when the existing network is Docker-internal on a remote backend" do
         # @spec CONTAINER-RUNTIME-047
         let(:internal_network) do
@@ -211,6 +220,18 @@ RSpec.describe NetworkPolicy, :no_db do
       it "returns the newly created network" do
         result = described_class.ensure_network!
         expect(result).to eq(mock_network)
+      end
+
+      # @spec LLM-ROUTING-013
+      it "forwards a caller deadline to network creation" do
+        allow(backend).to receive(:get_network).with(described_class::NETWORK_NAME, deadline: 0.1)
+          .and_raise(Docker::Error::NotFoundError)
+
+        described_class.ensure_network!(deadline: 0.1)
+
+        expect(backend).to have_received(:create_network).with(
+          described_class::NETWORK_NAME, anything, deadline: 0.1
+        )
       end
     end
 

@@ -92,6 +92,17 @@ Host-forwarded rotation remains intentionally separate: it is not imported
 into a managed record unless an existing authorized identity/writeback boundary
 already establishes equivalence.
 
+Test Runner reports the path it actually exercised. A host health check does
+not establish which authentication source the harness used, so it reports that
+source as unconfirmed. A container smoke test reads only its in-run,
+secret-free materialization telemetry before the ephemeral run is deleted and
+reports the recorded managed, host-forwarded, or proxy source when available.
+Separately, the Test Runner queries the shared managed-credential lifecycle
+without attempting refresh, so its response makes clear whether a canonical
+managed credential is fresh, refreshable, or requires reconnection for an
+isolated acceptance audit. This status never imports host credentials or turns
+a successful host smoke test into standalone-audit authorization.
+
 Codex recovery adapts the published harness's explicit native-store contract.
 While holding the canonical row lease, Paid writes only the selected managed
 record into a private temporary `auth.json` with mode `0600`. The public harness
