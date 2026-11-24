@@ -92,6 +92,41 @@
   `spec/jobs/process_run_queue_job_spec.rb`
   *Code:* `Capacity::RunAdmission`
 
+- [x] **CONTAINER-RUNTIME-055** — When a supported execution backend supplies
+  a fresh, bounded physical backing-storage observation at or below the
+  documented 5 GiB reserve, normal execution admission (including provisioning
+  and image-build consumers) SHALL defer new work with the named
+  `backing_storage_reserve_exhausted` reason, a one-minute recheck, safe scope,
+  available-byte and timestamp evidence, and an operator action. The local
+  backend SHALL measure only an explicitly configured probe whose supported
+  mount metadata identifies the selected daemon root's empty measurement child
+  as the source for that probe path, after matching its configured daemon root
+  to that daemon's `DockerRootDir`. When kernel and daemon root namespaces
+  differ, the backend SHALL require the selected daemon's inspection of this
+  container to attest the exact bind source, target and read-only mode, plus
+  a read-only kernel mount at that target. Container identity and hostname
+  SHALL match; absent or mismatched inspection SHALL not authorize a probe.
+  Provenance reads SHALL be bounded. It SHALL decode single-backslash octal path
+  escapes from kernel mountinfo before matching the source or target; supported
+  local deployment configuration
+  SHALL mount only that child directory read-only, not the Docker data-root
+  tree, and configure the probe to use it. Absent, unverified,
+  wrong-filesystem, remote-mismatched, unavailable, and stale observations SHALL
+  remain explicitly distinguishable and SHALL NOT be mistaken for local
+  control-plane disk capacity. The guard
+  SHALL not change requested-resource
+  ceilings or cleanup authority, and SHALL leave cancellation and cleanup
+  admission paths available. A local probe SHALL terminate and reap its
+  process group within its deadline. Only a nonnegative integer byte
+  measurement is known headroom; missing, malformed, or negative measurements,
+  including cached evidence, SHALL remain unavailable.
+  *Tests:* `spec/services/containers/backends/local_docker_spec.rb`,
+  `spec/services/capacity/docker_snapshot_spec.rb`,
+  `spec/services/capacity/run_admission_spec.rb`.
+  *Code:* `Containers::Backends::Base#backing_storage_observation`,
+  `Containers::Backends::LocalDocker#backing_storage_observation`,
+  `Capacity::DockerSnapshot`, `Capacity::RunAdmission`.
+
 - [x] **CONTAINER-RUNTIME-007** — The system SHALL define a provider-neutral
   runner interface (`ExecutionRunners::Base`: `provision`, `start`, `running?`,
   `reconnect`, `status`, `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and

@@ -9,6 +9,10 @@ services:
 
     volumes:
     - ../../paid:/workspaces/paid:cached
+    # Docker info DockerRootDir must name this host root. Mount only the empty
+    # measurement directory, never the daemon data tree: admission can measure
+    # the selected daemon filesystem without receiving Docker-data read access.
+    - "${PAID_DOCKER_BACKING_STORE_DAEMON_ROOT:?Set this to Docker info DockerRootDir}/.paid-capacity-probe:/mnt/paid-docker-backing-store:ro"
     # Agent CLI tool state lives in named volumes: container-local (never shared
     # with the host) but persisted across container rebuilds. Auth is no longer
     # bind-mounted from the host — the upstream browser-based login flows now
@@ -47,6 +51,8 @@ services:
       # Prune unused Docker images and build cache with seven-day retention.
       PAID_DOCKER_DISK_CLEANUP_ENABLED: "${PAID_DOCKER_DISK_CLEANUP_ENABLED:-true}"
       PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
+      PAID_DOCKER_BACKING_STORE_PROBE_PATH: "/mnt/paid-docker-backing-store"
+      PAID_DOCKER_BACKING_STORE_DAEMON_ROOT: "${PAID_DOCKER_BACKING_STORE_DAEMON_ROOT:?Set this to Docker info DockerRootDir}"
 
     depends_on:
       postgres:
