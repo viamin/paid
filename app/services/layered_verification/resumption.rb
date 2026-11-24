@@ -19,7 +19,7 @@ module LayeredVerification
 
     def call
       AuditAccess.authorize!(user:, project: agent_run.project)
-      authorize_repair! if agent_run.layered_verification_repair?
+      authorize_repair! if agent_run.goal == "layered_verification_repair"
       raise ArgumentError, "only interrupted layered-verification runs can resume" unless interrupted_run?
       raise ArgumentError, "all obligations require current approval before resumption" unless obligations.all? { |obligation| obligation.approval_state == "approved" }
 

@@ -82,16 +82,18 @@ module LayeredVerification
       # remaining verification executes; never copy its mutation prompt.
       # @spec LAYERED-VERIFY-020
       def resumed_goal
-        agent_run.layered_verification_repair? ? "layered_verification_audit" : agent_run.goal
+        repair? ? "layered_verification_audit" : agent_run.goal
       end
 
       def resumed_prompt
-        agent_run.custom_prompt unless agent_run.layered_verification_repair?
+        agent_run.custom_prompt unless repair?
       end
 
       def resumed_originating_audit_run_id
-        agent_run.originating_audit_run_id unless agent_run.layered_verification_repair?
+        agent_run.originating_audit_run_id unless repair?
       end
+
+      def repair? = agent_run.goal == "layered_verification_repair"
     end
   end
 end
