@@ -28,7 +28,7 @@
 
 ## Parked producer review handoff
 
-- [x] **PR-BRANCH-PUBLISH-013**: When a review run has checked out an open PR and captured its current head, the system shall reclaim an active branch-worktree record from a `waiting_recovery` create-PR producer only when that producer has no persisted execution, container, runner, or in-progress source-closure-recovery claim; it shall not reclaim a live coding writer or recovery workflow.
+- [x] **PR-BRANCH-PUBLISH-013**: When a review run has checked out an open PR and captured its current head, the system shall atomically reclaim an active branch-worktree record from a `waiting_recovery` create-PR producer only when that producer has no live execution, container, runner, or in-progress source-closure-recovery claim; a completed historical Temporal workflow ID shall not block handoff, and the system shall not reclaim a live coding writer or recovery workflow.
 - [x] **PR-BRANCH-PUBLISH-014**: The handoff shall require the producer's successfully published result SHA to equal the review run's captured remote head SHA, and shall preserve the producer's status, result SHA, PR lineage, and recovery history; a changed or unverified head shall remain blocked by normal ownership conflict handling.
 
 ## Rejected local result retention

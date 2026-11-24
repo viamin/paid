@@ -79,9 +79,13 @@ its post-push source-closeout work is bookkeeping, not coding, and it can remain
 parked after its container and workflow references are gone. A review run does
 not bypass the ownership guard. After it has checked out the open PR and
 captured its own immutable remote-head SHA, it may reclaim that record only when
-the producer is a `create_pr` run on the same branch, has no execution,
-container, runner, or active source-closure claim, and its published result SHA
-equals the captured review head. The reassignment is metadata cleanup only:
+the producer is a `create_pr` run on the same branch, has no live container,
+runner, execution resource, or active source-closure claim, and its published
+result SHA equals the captured review head. A retained completed Temporal
+workflow ID is historical provenance, not a live execution resource. The
+producer and worktree rows are locked through the eligibility check and
+reassignment, so recovery cannot claim between those operations. The
+reassignment is metadata cleanup only:
 it neither cancels nor marks successful the producer, changes source closure,
 nor gives the review run write authority. Any live writer, active recovery,
 unpublished result, or concurrent head change remains a normal conflict.

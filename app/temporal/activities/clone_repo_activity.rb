@@ -129,11 +129,11 @@ module Activities
       elsif existing.active? && existing.agent_run_id == agent_run.id
         # Temporal retry — the previous attempt already created this record.
         existing
-      elsif existing.active? && reclaimable_for_review_handoff?(existing, agent_run)
+      elsif existing.active? && reclaim_for_review_handoff!(existing, agent_run)
         # A producer parked after a verified push owns no live execution
         # resource. A read-only review of that exact PR tip may take over its
         # metadata lease; this does not change the producer's recovery state.
-        reclaim_worktree!(existing, agent_run)
+        existing
       elsif existing.active? && existing.agent_run&.finished?
         # The owning agent run finished (failed/completed) but cleanup never
         # marked the worktree as cleaned. Reclaim the stale record.
@@ -174,26 +174,30 @@ module Activities
     end
 
     # A waiting source-closeout producer remains unfinished for bookkeeping,
-    # but it is not a writer once its execution references are empty. Review
-    # may reuse its branch lease only after checkout has atomically captured
-    # the current remote tip for the review run. This keeps a late producer
-    # resume, an unverified push, and a changed PR head on the normal conflict
-    # path instead of making stale review look current. @spec PR-BRANCH-PUBLISH-013 PR-BRANCH-PUBLISH-014
-    def reclaimable_for_review_handoff?(worktree, review_run)
-      producer = worktree.agent_run
+    # but it is not a writer once its execution references are empty. A
+    # completed Temporal workflow ID is historical provenance, not a live
+    # execution reference. Locking the producer and worktree together makes
+    # the recovery-claim check and lease reassignment one atomic handoff.
+    # @spec PR-BRANCH-PUBLISH-013 PR-BRANCH-PUBLISH-014
+    def reclaim_for_review_handoff!(worktree, review_run)
+      producer = AgentRun.find_by(id: worktree.agent_run_id)
       return false unless review_run.review_goal? && review_run.existing_pr?
       return false unless producer
 
       producer.with_lock do
         producer.reload
+        worktree.lock!
+        return false unless worktree.active? && worktree.agent_run_id == producer.id
         return false unless producer.waiting_recovery? && producer.create_pr_goal?
         return false unless producer.branch_name == review_run.branch_name
-        return false if producer.temporal_workflow_id.present? || producer.container_id.present? || producer.runner_handle.present?
+        return false if producer.container_id.present? || producer.runner_handle.present?
         return false if producer.service_container_ids.present?
         return false if producer.reconciliation.to_h.dig("source_closure_recovery", "claimed_at").present?
 
         verified_delivery = producer.result_commit_sha
-        verified_delivery.present? && verified_delivery == review_run.expected_remote_head_sha
+        return false unless verified_delivery.present? && verified_delivery == review_run.expected_remote_head_sha
+
+        reclaim_worktree!(worktree, review_run)
       end
     end
 
