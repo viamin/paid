@@ -109,12 +109,7 @@ module LayeredVerification
       end
 
       def dependency_snapshot
-        @dependency_snapshot ||= begin
-          runtime = Containers::RuntimeImageSelector.select(project:).metadata
-          { "environment" => runtime, "policy" => "layered-verification-v1",
-            "producer_versions" => { "paid" => ENV.fetch("APP_VERSION", "unversioned") },
-            "tool_versions" => { "tlc_runtime_image_digest" => runtime["digest"] } }
-        end
+        @dependency_snapshot ||= DependencySnapshot.call(project:)
       end
 
       def obligation_input_revisions

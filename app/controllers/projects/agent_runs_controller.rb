@@ -409,6 +409,7 @@ module Projects
            LayeredVerification::Audits::Request::EmptyScopeError,
            LayeredVerification::Audits::Request::InvalidBudgetError,
            LayeredVerification::Audits::Request::InvalidTargetRevisionError,
+           LayeredVerification::Audits::Request::DuplicateAuditError,
            ActiveRecord::RecordInvalid,
            ArgumentError => error
       redirect_to project_path(@project), alert: error.message

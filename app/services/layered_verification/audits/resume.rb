@@ -27,7 +27,8 @@ module LayeredVerification
           raise Request::DuplicateAuditError, "an audit for this scope and revision is already active" if duplicate_audit?
 
           lock_obligations!
-          @decision = Resumption.call(agent_run:, user:)
+          @dependency_snapshot = DependencySnapshot.call(project:)
+          @decision = Resumption.call(agent_run:, user:, dependencies: dependency_snapshot)
           successor = AgentRun.create!(run_attributes(runner_id, agent_type))
         end
         ProcessRunQueueJob.perform_later
@@ -36,7 +37,7 @@ module LayeredVerification
 
       private
 
-      attr_reader :agent_run, :decision, :user
+      attr_reader :agent_run, :decision, :dependency_snapshot, :user
 
       def project
         agent_run.project
@@ -71,6 +72,7 @@ module LayeredVerification
         metadata.merge(
           "budget" => decision.remaining_budget,
           "input_revisions" => obligation_input_revisions,
+          "dependencies" => dependency_snapshot,
           "impact" => {
             "reused_check_result_ids" => decision.reusable_result_ids,
             "invalidated_check_result_ids" => decision.invalidated_result_ids,

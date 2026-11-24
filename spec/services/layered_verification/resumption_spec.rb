@@ -23,6 +23,11 @@ RSpec.describe LayeredVerification::Resumption do
     create(:agent_run, project:, initiating_user: user, goal: "layered_verification_audit", status: "completed")
   end
 
+  def resume(agent_run:, user:)
+    dependencies = agent_run.external_metadata.dig("layered_verification", "dependencies")
+    described_class.call(agent_run:, user:, dependencies:)
+  end
+
   # @spec LAYERED-VERIFY-020
   it "admits an interrupted audit only after current authorization, approval, budget, and freshness checks" do
     user = create(:user, :owner)
@@ -35,7 +40,7 @@ RSpec.describe LayeredVerification::Resumption do
     })
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    decision = described_class.call(agent_run: run, user:)
+    decision = resume(agent_run: run, user:)
 
     expect(decision).to be_admitted
     expect(decision.reusable_result_ids).to eq([ result.id ])
@@ -51,7 +56,7 @@ RSpec.describe LayeredVerification::Resumption do
     run.update!(started_at: 5.minutes.ago, completed_at: Time.current)
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    expect { described_class.call(agent_run: run, user:) }
+    expect { resume(agent_run: run, user:) }
       .to raise_error(LayeredVerification::Audits::Request::InvalidBudgetError, /no budget remains/)
   end
 
@@ -65,7 +70,7 @@ RSpec.describe LayeredVerification::Resumption do
     run.update!(started_at: now - 2.minutes, completed_at: now)
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    expect(described_class.call(agent_run: run, user:).remaining_budget).to eq("max_minutes" => 3)
+    expect(resume(agent_run: run, user:).remaining_budget).to eq("max_minutes" => 3)
   end
 
   # @spec LAYERED-VERIFY-020
@@ -76,7 +81,7 @@ RSpec.describe LayeredVerification::Resumption do
     run = interrupted_run(project:, user:, obligation:, goal: "layered_verification_repair", status: "failed")
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    decision = described_class.call(agent_run: run, user:)
+    decision = resume(agent_run: run, user:)
 
     expect(decision).to be_admitted
     expect(decision.replay_repair_mutation?).to be(false)
@@ -91,7 +96,7 @@ RSpec.describe LayeredVerification::Resumption do
     run = interrupted_run(project:, user: owner, obligation:, goal: "layered_verification_repair", status: "failed")
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    expect { described_class.call(agent_run: run, user: member) }
+    expect { resume(agent_run: run, user: member) }
       .to raise_error(LayeredVerification::AuditAccess::UnauthorizedError, /repair/)
   end
 
@@ -102,7 +107,7 @@ RSpec.describe LayeredVerification::Resumption do
     run = interrupted_run(project:, user:, obligation:, goal: "layered_verification_audit", status: "completed")
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    expect { described_class.call(agent_run: run, user:) }
+    expect { resume(agent_run: run, user:) }
       .to raise_error(ArgumentError, /only interrupted layered-verification runs can resume/)
   end
 
@@ -115,7 +120,7 @@ RSpec.describe LayeredVerification::Resumption do
     obligation.destroy!
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
 
-    expect { described_class.call(agent_run: run, user:) }
+    expect { resume(agent_run: run, user:) }
       .to raise_error(ArgumentError, /scoped obligations no longer exist/)
   end
 end

@@ -36,6 +36,30 @@ RSpec.describe LayeredVerification::Audits::Resume do
     expect(metadata.dig("resumption", "requested_by_id")).to eq(user.id)
   end
 
+  # @spec LAYERED-VERIFY-019 LAYERED-VERIFY-020
+  it "invalidates old evidence and stamps the successor when the execution environment changes" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    audit = failed_audit(project:, obligation:)
+    fresh_dependencies = LayeredVerification::DependencySnapshot.call(project:)
+    old_dependencies = fresh_dependencies.deep_dup
+    old_dependencies["environment"]["digest"] = "sha256:old-runtime"
+    old_dependencies["tool_versions"]["tlc_runtime_image_digest"] = "sha256:old-runtime"
+    audit.external_metadata["layered_verification"]["dependencies"] = old_dependencies
+    audit.save!
+    result = create(:layered_verification_check_result, obligation:, agent_run: audit,
+      input_revision: { "code" => "sha-1", "external_revision" => obligation.external_revision,
+        "dependencies" => old_dependencies })
+
+    successor = described_class.call(agent_run: audit, user:)
+    metadata = successor.external_metadata.fetch("layered_verification")
+
+    expect(metadata.fetch("dependencies")).to eq(fresh_dependencies)
+    expect(metadata.dig("impact", "reused_check_result_ids")).to be_empty
+    expect(metadata.dig("impact", "invalidated_check_result_ids")).to eq([ result.id ])
+  end
+
   # @spec LAYERED-VERIFY-020
   it "continues a repair as verification-only work without replaying its mutation prompt" do
     user = create(:user, :owner)

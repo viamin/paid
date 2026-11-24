@@ -12,9 +12,10 @@ module LayeredVerification
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, user:)
+    def initialize(agent_run:, user:, dependencies:)
       @agent_run = agent_run
       @user = user
+      @dependencies = dependencies
     end
 
     def call
@@ -25,13 +26,13 @@ module LayeredVerification
       raise ArgumentError, "all obligations require current approval before resumption" unless obligations.all? { |obligation| obligation.approval_state == "approved" }
 
       remaining_budget = remaining_budget!
-      impact = Invalidation.call(obligations:, target_revision: metadata.fetch("target_revision"), dependencies: metadata.fetch("dependencies", {}))
+      impact = Invalidation.call(obligations:, target_revision: metadata.fetch("target_revision"), dependencies:)
       Decision.new(true, impact.reusable_result_ids, impact.invalidated_result_ids, impact.limitations, remaining_budget)
     end
 
     private
 
-    attr_reader :agent_run, :user
+    attr_reader :agent_run, :dependencies, :user
 
     def authorize_repair!
       return if ProjectPolicy.new(user, agent_run.project).update?
