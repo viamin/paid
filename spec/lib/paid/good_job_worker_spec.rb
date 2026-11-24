@@ -7,7 +7,10 @@ RSpec.describe Paid::GoodJobWorker do
   # @spec RAILS-CONTROL-PLANE-030
   describe Paid::GoodJobWorker::HealthMonitor do
     let(:now) { Time.utc(2026, 11, 23, 8, 5, 0) }
-    let(:process) { { updated_at: now - 10, schedulers: [ { active_threads: 0, available_threads: 1 } ] } }
+    let(:process) do
+      { updated_at: now - 10, schedulers: [ { queues: "default", active_threads: 0,
+        available_threads: 1, runnable_jobs: 0, total_executions_count: 0 } ] }
+    end
     let(:snapshot) { { process:, runnable_jobs: 0 } }
 
     it "keeps a fresh idle worker healthy" do
@@ -35,13 +38,50 @@ RSpec.describe Paid::GoodJobWorker do
 
     it "degrades boundedly when runnable work waits with an available scheduler thread" do
       monitor = described_class.new(now: -> { now }, progress_timeout: 30)
-      blocked = snapshot.merge(runnable_jobs: 1)
+      blocked = snapshot.merge(process: process.merge(schedulers: [ process[:schedulers].first.merge(runnable_jobs: 1) ]), runnable_jobs: 1)
 
       expect(monitor.observe(blocked)).to be_healthy
       result = monitor.observe(blocked, now: now + 31)
 
       expect(result).to be_degraded
       expect(result.reason).to eq(:stalled_queue_progress)
+    end
+
+    it "keeps mixed scheduler pools healthy when only an occupied pool has waiting work" do
+      monitor = described_class.new(now: -> { now }, progress_timeout: 30)
+      occupied = { queues: "shadow_evaluation", active_threads: 1, available_threads: 0, runnable_jobs: 1 }
+      mixed = snapshot.merge(process: process.merge(schedulers: [ occupied, process[:schedulers].first ]), runnable_jobs: 1)
+
+      expect(monitor.observe(mixed)).to be_healthy
+      expect(monitor.observe(mixed, now: now + 31)).to be_healthy
+    end
+
+    it "keeps scheduler pools healthy when queued work is excluded from every pool" do
+      monitor = described_class.new(now: -> { now }, progress_timeout: 30)
+      excluded = snapshot.merge(runnable_jobs: 1)
+
+      expect(monitor.observe(excluded)).to be_healthy
+      expect(monitor.observe(excluded, now: now + 31)).to be_healthy
+    end
+
+    it "does not let progress in another scheduler pool hide a stalled eligible pool" do
+      monitor = described_class.new(now: -> { now }, progress_timeout: 30)
+      blocked = process[:schedulers].first.merge(runnable_jobs: 1)
+      other = blocked.merge(queues: "maintenance", total_executions_count: 1)
+      before = snapshot.merge(process: process.merge(schedulers: [ blocked, other ]), runnable_jobs: 2, progress_count: 1)
+      after = before.merge(process: process.merge(schedulers: [ blocked, other.merge(total_executions_count: 2) ]), progress_count: 2)
+
+      expect(monitor.observe(before)).to be_healthy
+      expect(monitor.observe(after, now: now + 31)).to have_attributes(degraded?: true, reason: :stalled_queue_progress)
+    end
+
+    it "starts a fresh scheduler pool progress window after waiting work disappears" do
+      monitor = described_class.new(now: -> { now }, progress_timeout: 30)
+      blocked = snapshot.merge(process: process.merge(schedulers: [ process[:schedulers].first.merge(runnable_jobs: 1) ]), runnable_jobs: 1)
+
+      expect(monitor.observe(blocked)).to be_healthy
+      expect(monitor.observe(snapshot, now: now + 20)).to be_healthy
+      expect(monitor.observe(blocked, now: now + 60)).to be_healthy
     end
 
     it "degrades when process visibility is unavailable" do

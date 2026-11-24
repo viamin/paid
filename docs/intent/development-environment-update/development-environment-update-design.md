@@ -86,6 +86,30 @@ compatibility, retained results, bounded retry/budget policies, and
 control-queue routing; the updater never force-kills active owners to speed
 adoption.
 
+The same readiness contract has one read-only recorder consumer: the
+allowlisted worker-adoption measurement. Worker processes publish their own
+readiness identity — PID, boot time, raw boot revision, boot-time deployment
+identity, and a periodic
+heartbeat — as durable per-process-boot observations in the shared application
+database. This preserves overlapping old and new instances during a rolling
+deploy, and the measurement requires every fresh instance of the fixed
+`poll`/`agent` roles to carry the current deployment identity. It does not
+accept a host path, run a host command, or inspect process arguments,
+environment, or credentials, and it never reads another role's filesystem or PID namespace. Its persisted
+collection receipt is owned by the trusted-measurements boundary. The raw boot
+revision remains the updater's commit-adoption contract; the recorder uses the
+separate complete boot-time deployment identity so later same-HEAD source drift
+cannot be accepted. The Temporal worker captures that complete identity before
+Rails loads application code and compares it with a second snapshot after its
+routes, activities, workflows, and worker registrations are constructed. The
+first snapshot uses only Ruby standard-library behavior because Rails and
+Active Support are not loaded yet in development or production. It
+refuses startup before readiness publication or polling when the snapshots
+differ, so a source edit during boot cannot be represented as loaded worker
+code. The readiness facts remain evidence about worker adoption
+only and do not attest
+application-level behavior.
+
 ## Active-Work Drain Before Restart
 
 Before a full update asks Overmind to stop, each Temporal activity holds shared
@@ -116,6 +140,8 @@ terminal or handoff state.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
+| Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
+| Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
 | Active work during update | Acquire and retain exclusive per-worker activity-admission barriers through the stop request, then use the existing graceful restart; fail before stop on a bounded acquisition timeout | Sequential idle snapshots; stop immediately; force a handoff; increase shutdown/activity deadlines | A retained barrier closes the arrival race between roles while existing shared owners drain. An immediate stop can end a live activity's heartbeat and consume its finite retry budget. |
 
 ## References

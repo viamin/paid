@@ -94,14 +94,20 @@
   progress. An idle worker and a worker with only legitimately occupied
   scheduler threads SHALL remain healthy. If the worker loses process-record
   visibility, its heartbeat becomes stale, or runnable work waits beyond the
-  configured progress window while a scheduler thread is available, the worker
+  configured progress window while a thread in that work's eligible scheduler
+  pool is available, the worker
   SHALL withdraw readiness and request the existing graceful GoodJob shutdown;
   it SHALL preserve active job ownership and SHALL not log job payloads or
   credentials.
+  Queue eligibility SHALL honor GoodJob queue expressions, pauses, scheduling,
+  and retained ownership. Progress in an unrelated pool SHALL not reset a
+  stalled pool's window, and idle or occupied intervals SHALL not consume the
+  next continuously waiting window.
   *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
+  `spec/lib/paid/good_job_worker/health_snapshot_spec.rb`,
   `spec/lib/paid/worker_readiness_spec.rb`.
   *Code:* `lib/paid/good_job_worker.rb`, `lib/paid/worker_readiness.rb`,
-  `bin/jobs`.
+  `lib/paid/good_job_worker/health_snapshot.rb`, `bin/jobs`.
 
 - [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,
   its wrapper SHALL restart it with bounded backoff without stopping the

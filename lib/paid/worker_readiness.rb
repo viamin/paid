@@ -110,6 +110,13 @@ module Paid
       File.exist?(file_path(env))
     end
 
+    # The file flag above is an orchestrator-local contract: it cannot cross
+    # the container boundary between the job and worker_* roles. Worker
+    # processes therefore also publish their readiness identity as durable
+    # liveness beats (see WorkerReadiness::Heartbeat and
+    # WorkerReadinessObservation), which the trusted worker-adoption
+    # measurement reads from any role's container.
+
     # A ready marker proves only that a process booted. Health additionally
     # requires the worker's self-observed heartbeat to be recent.
     # @spec RAILS-CONTROL-PLANE-030
@@ -165,7 +172,10 @@ module Paid
     # revision cannot be determined; callers treat that as unknown, never
     # as a verified adoption.
     def boot_revision(env = ENV, root: nil)
-      env[REVISION_ENV_KEY].presence || git_head_revision(root || default_revision_root)
+      revision = env[REVISION_ENV_KEY]
+      return revision unless revision.to_s.strip.empty?
+
+      git_head_revision(root || default_revision_root)
     end
 
     # Rails.root when running under Rails; the process working directory for

@@ -62,8 +62,7 @@ module Paid
         @clock = now
         @heartbeat_timeout = heartbeat_timeout
         @progress_timeout = progress_timeout
-        @progress_count = nil
-        @progress_observed_at = nil
+        @progress_windows = {}
         @missing_process_since = nil
       end
 
@@ -82,12 +81,14 @@ module Paid
       attr_reader :clock, :heartbeat_timeout, :progress_timeout
 
       def observe_progress(snapshot, now)
-        return result(:healthy, snapshot, now) unless waiting_with_available_thread?(snapshot)
+        waiting = schedulers(snapshot).each_with_index.filter_map do |scheduler, index|
+          next unless waiting_with_available_thread?(scheduler)
 
-        reset_progress_window(snapshot, now) if progress_changed?(snapshot)
-        return result(:healthy, snapshot, now) if now - @progress_observed_at <= progress_timeout
-
-        result(:stalled_queue_progress, snapshot, now)
+          [ [ index, scheduler[:queues] || scheduler["queues"] ], scheduler ]
+        end.to_h
+        @progress_windows.keep_if { |key, _window| waiting.key?(key) }
+        stalled = waiting.map { |key, scheduler| progress_stalled?(key, scheduler, now) }.any?
+        result(stalled ? :stalled_queue_progress : :healthy, snapshot, now)
       end
 
       def observe_missing_process(snapshot, now)
@@ -102,18 +103,20 @@ module Paid
         updated_at.nil? || now - updated_at > heartbeat_timeout
       end
 
-      def waiting_with_available_thread?(snapshot)
-        snapshot.fetch(:runnable_jobs, 0).positive? && schedulers(snapshot).any? { |scheduler| available_threads(scheduler).positive? }
+      def waiting_with_available_thread?(scheduler)
+        runnable_jobs = scheduler[:runnable_jobs] || scheduler["runnable_jobs"] || 0
+        runnable_jobs.positive? && available_threads(scheduler).positive?
       end
 
-      def progress_changed?(snapshot)
-        progress_count = snapshot.fetch(:progress_count, 0)
-        @progress_count != progress_count || @progress_observed_at.nil?
-      end
+      def progress_stalled?(key, scheduler, now)
+        count = scheduler[:total_executions_count] || scheduler["total_executions_count"] || 0
+        window = @progress_windows[key]
+        if window.nil? || window[:count] != count
+          @progress_windows[key] = { count:, observed_at: now }
+          return false
+        end
 
-      def reset_progress_window(snapshot, now)
-        @progress_count = snapshot.fetch(:progress_count, 0)
-        @progress_observed_at = now
+        now - window[:observed_at] > progress_timeout
       end
 
       def schedulers(snapshot)
