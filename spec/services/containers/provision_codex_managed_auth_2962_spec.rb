@@ -262,6 +262,23 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     end
 
     # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    it "executes unknown container auth without a current-selection lease or writeback" do
+      svc = build_service(credential: credential)
+      allow(svc).to receive(:with_codex_managed_auth_lock)
+      allow(svc).to receive(:with_codex_host_auth_lock)
+      allow(svc).to receive(:sync_codex_auth_file_to_source!)
+      allow(local_backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+      allow(container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+      svc.execute([ "codex", "exec", "prompt" ])
+
+      expect(svc).not_to have_received(:with_codex_managed_auth_lock)
+      expect(svc).not_to have_received(:with_codex_host_auth_lock)
+      expect(svc).not_to have_received(:sync_codex_auth_file_to_source!)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "lease")).to be_empty
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008
     it "writes an old container harvest only to its materialized credential after selection changes" do
       authorize_harvest(credential)
       newer = create_codex_credential(token: valid_codex_auth)

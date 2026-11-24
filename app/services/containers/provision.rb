@@ -365,12 +365,12 @@ module Containers
       fix_all_ownership!
       seed_opencode_database!
       seed_kilo_database!
-      seed_codex_credentials!
+      seed_codex_credentials! if agent_run
       seed_gemini_credentials!
       seed_copilot_credentials!
       seed_claude_credentials!
-      seed_omp_credentials!
-      seed_opencode_credentials!
+      seed_omp_credentials! if agent_run
+      seed_opencode_credentials! if agent_run
       seed_preview_tunnel_config!
       apply_network_restrictions!
 
@@ -1236,6 +1236,18 @@ module Containers
     end
     public :refresh_omp_managed_credential!, :harvest_omp_managed_credential!
 
+    # Warm pool containers have no run identity, so rotating credentials are
+    # deliberately materialized only after claim, when provenance can bind the
+    # actual container lifecycle to the claiming run.
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008
+    def materialize_claimed_runner_credentials!
+      seed_codex_credentials!
+      seed_omp_credentials!
+      seed_opencode_credentials!
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, "Could not materialize claimed runner credentials: #{e.message}"
+    end
+
     private
 
     def apply_execution_preparation(preparation, env:)
@@ -1887,7 +1899,7 @@ module Containers
     def with_codex_auth_lock(command)
       runner_key = subscription_exec_runner_key(command)
       provenance = materialization_provenance_for(runner_key) if runner_key
-      return with_current_subscription_auth_lock(runner_key) { yield } unless provenance
+      return yield unless provenance
 
       if provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_MANAGED && provenance.runner_credential
         with_subscription_managed_auth_lock(
@@ -1898,21 +1910,6 @@ module Containers
         ) { yield }
       elsif runner_key == "codex" && provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         with_codex_host_auth_lock { yield }
-      else
-        yield
-      end
-    end
-
-    def with_current_subscription_auth_lock(runner_key)
-      case runner_key
-      when "omp"
-        omp_managed_credential_active? ? with_omp_managed_auth_lock { yield } : yield
-      when "opencode"
-        opencode_managed_credential_active? ? with_opencode_managed_auth_lock { yield } : yield
-      when "codex"
-        return yield unless codex_subscription_auth?
-
-        codex_managed_credential_active? ? with_codex_managed_auth_lock { yield } : with_codex_host_auth_lock { yield }
       else
         yield
       end
