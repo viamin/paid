@@ -707,6 +707,55 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(described_class.call(agent_run: agent_run).dig("gaps", 0, "attribution", "coverage")).to eq("unknown")
     end
 
+    it "rejects an ordinary cancellation assessment that invents the specialized facet workflow" do # @spec PARTIAL-CLOSEOUT-062
+      issue.update!(body: "Acceptance: cleanup must precede cancellation.")
+      gap = human_gap("Independent human facet-confidence closeout evaluation").merge(
+        workflow: "facet_confidence_closeout_evaluation",
+        attribution: { coverage: "unknown", reason: "No source criterion owns this evaluation." },
+        references: [ { kind: "evidence", key: "source_issue_intent", revision: "current", label: "Issue intent" } ]
+      )
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect { described_class.call(agent_run:) }.to raise_error(described_class::AssessmentFailure, /invalid fields/)
+    end
+
+    it "accepts a #4323-style specialized evaluation only with source and revision-bound policy provenance" do # @spec PARTIAL-CLOSEOUT-062
+      issue.update!(github_number: 4323, body: "RDR-070 closeout requires blinded human reference judgments.")
+      gap = human_gap("Independent human facet-confidence closeout evaluation").merge(
+        workflow: "facet_confidence_closeout_evaluation",
+        references: [
+          { kind: "evidence", key: "source_issue_intent", revision: "intent-r1", label: "#4323 accepted closeout criterion" },
+          { kind: "policy", key: "rdr-070-facet-confidence-evaluation", revision: "rdr-070-r4", label: "RDR-070 evaluation target" }
+        ]
+      )
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect(described_class.call(agent_run:).dig("gaps", 0, "workflow")).to eq("facet_confidence_closeout_evaluation")
+    end
+
+    it "keeps an explicit team-review prerequisite without treating it as a facet evaluation" do # @spec PARTIAL-CLOSEOUT-062
+      gap = human_gap("Team review of cancellation cleanup").merge(
+        references: [ { kind: "policy", key: "team-review", revision: "v2", label: "Team review v2" } ],
+        policy_selection: { required: true, next_step: "Select the current approved team review policy." }
+      )
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect(described_class.call(agent_run:).dig("gaps", 0)).not_to have_key("workflow")
+    end
+
+    it "keeps missing or stale policy as a bounded unknown rather than substituting a review policy" do # @spec PARTIAL-CLOSEOUT-062
+      gap = human_gap("Select replacement review policy").merge(
+        attribution: { coverage: "unknown", reason: "The supplied policy revision is stale." },
+        references: [ { kind: "policy", key: "team-review", revision: "stale-v1", label: "Superseded team review" } ],
+        policy_selection: { required: true, next_step: "Select an approved current review policy." }
+      )
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run:)
+      expect(result.dig("gaps", 0, "attribution", "coverage")).to eq("unknown")
+      expect(result.dig("gaps", 0, "policy_selection", "required")).to be(true)
+    end
+
     it "requires an advertised policy-selection action when selection is required" do # @spec PARTIAL-CLOSEOUT-031
       branches = described_class::RESPONSE_SCHEMA.dig(
         :properties, :gaps, :items, :properties, :policy_selection, :oneOf
