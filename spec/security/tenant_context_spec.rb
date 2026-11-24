@@ -28,6 +28,7 @@ require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_at
 require Rails.root.join("db/migrate/20261107200000_create_project_delegation_postures")
 require Rails.root.join("db/migrate/20261116080000_create_staged_closeout_adoption")
 require Rails.root.join("db/migrate/20261117100000_create_project_delegation_intent_checkpoints")
+require Rails.root.join("db/migrate/20261124133739_enable_tenant_rls_on_shared_delivery_evidence_associations")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -73,6 +74,26 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     as_restricted_role do
       described_class.with(account_a) do
         expect(AgentRun.all).to contain_exactly(run_a)
+      end
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-001 PARTIAL-CLOSEOUT-060
+  it "forces tenant isolation for shared delivery evidence reads and writes" do
+    evidence_b = described_class.with_system_access { create_shared_delivery_evidence(account_b) }
+    evidence_a = described_class.with_system_access { create_shared_delivery_evidence(account_a) }
+
+    flags = ActiveRecord::Base.connection.select_one(<<~SQL.squish)
+      SELECT relrowsecurity, relforcerowsecurity
+      FROM pg_class
+      WHERE oid = 'shared_delivery_evidence_associations'::regclass
+    SQL
+    expect(flags).to include("relrowsecurity" => true, "relforcerowsecurity" => true)
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(SharedDeliveryEvidenceAssociation.all).to contain_exactly(evidence_a)
+        expect_rls_rejection { insert_shared_delivery_evidence(evidence_b, account_id: account_a.id) }
       end
     end
   end
@@ -450,6 +471,8 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateProjectDelegationPostures.new.enable_tenant_rls
       CreateStagedCloseoutAdoption.new.disable_tenant_rls
       CreateStagedCloseoutAdoption.new.enable_tenant_rls
+      EnableTenantRlsOnSharedDeliveryEvidenceAssociations.new.down if shared_delivery_evidence_has_rls?
+      EnableTenantRlsOnSharedDeliveryEvidenceAssociations.new.up
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -485,6 +508,14 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ActiveRecord::Base.connection.select_value(
       "SELECT COUNT(*) FROM pg_policies WHERE tablename = 'knowledge_recommendations' AND policyname = 'tenant_isolation'"
     ).to_i.positive?
+  end
+
+  def shared_delivery_evidence_has_rls?
+    ActiveRecord::Base.connection.select_value(<<~SQL.squish).to_i.positive?
+      SELECT COUNT(*) FROM pg_policies
+      WHERE tablename = 'shared_delivery_evidence_associations'
+        AND policyname = 'tenant_isolation'
+    SQL
   end
 
   def knowledge_usage_stats_has_rls?
@@ -653,6 +684,31 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       INSERT INTO project_memberships (project_id, user_id, role, created_at, updated_at)
       VALUES (#{project.id}, #{user.id}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     SQL
+  end
+
+  def insert_shared_delivery_evidence(evidence, account_id: evidence.account_id)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO shared_delivery_evidence_associations (
+        account_id, project_id, issue_id, pull_request_id, authorized_by_id,
+        pull_request_url, revision, created_at, updated_at
+      ) VALUES (
+        #{account_id}, #{evidence.project_id}, #{evidence.issue_id},
+        #{evidence.pull_request_id}, #{evidence.authorized_by_id},
+        #{ActiveRecord::Base.connection.quote(evidence.pull_request_url)},
+        #{ActiveRecord::Base.connection.quote(evidence.revision)},
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def create_shared_delivery_evidence(account)
+    actor = create(:user, :member, account:)
+    project = create(:project, account:, owner: "tenant-#{account.id}", repo: "repo")
+    issue = create(:issue, project:)
+    pull_request = create(:issue, :pull_request, project:, pr_review_phase: "merged",
+      github_state: "closed", github_html_url: "#{project.github_url}/pull/99",
+      github_number: 99, merged_commit_sha: "a" * 40)
+    Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request:, actor:)
   end
 
   def insert_inbox_history_event(account, project)

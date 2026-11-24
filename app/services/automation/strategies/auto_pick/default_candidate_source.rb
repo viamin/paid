@@ -454,7 +454,18 @@ module Automation
               Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).pluck(:issue_id) +
               SharedDeliveryEvidenceAssociation.where(project:, revoked_at: nil)
                 .joins("INNER JOIN issues shared_prs ON shared_prs.id = shared_delivery_evidence_associations.pull_request_id")
+                .joins("INNER JOIN projects shared_pr_projects ON shared_pr_projects.id = shared_prs.project_id")
+                .where("shared_prs.project_id = shared_delivery_evidence_associations.project_id")
                 .where("shared_prs.pr_review_phase = 'merged' AND shared_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url AND shared_prs.merged_commit_sha = shared_delivery_evidence_associations.revision")
+                .where(<<~SQL.squish)
+                  shared_delivery_evidence_associations.pull_request_url = CASE
+                    WHEN shared_prs.source = '#{Issue::UPSTREAM_PULL_REQUEST_SOURCE}'
+                      THEN CONCAT('https://github.com/', shared_pr_projects.upstream_full_name,
+                        '/pull/', shared_prs.github_number)
+                    ELSE CONCAT('https://github.com/', shared_pr_projects.owner, '/',
+                      shared_pr_projects.repo, '/pull/', shared_prs.github_number)
+                  END
+                SQL
                 .pluck(:issue_id)
             ).uniq
             return [] if merged_ids.empty?

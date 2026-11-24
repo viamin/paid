@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_125659) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_133739) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -8041,6 +8041,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_125659) do
   SQL
 
   execute <<~SQL
+    ALTER TABLE "public"."shared_delivery_evidence_associations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."shared_delivery_evidence_associations" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     ALTER TABLE "public"."staged_closeout_enrollments" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."staged_closeout_enrollments" FORCE ROW LEVEL SECURITY;
   SQL
@@ -10519,6 +10524,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_125659) do
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
       WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."shared_delivery_evidence_associations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (issues
+     JOIN projects ON ((projects.id = issues.project_id)))
+  WHERE ((issues.id = shared_delivery_evidence_associations.issue_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (issues pull_requests
+     JOIN projects ON ((projects.id = pull_requests.project_id)))
+  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = shared_delivery_evidence_associations.authorized_by_id) AND (users.account_id = paid_current_account_id())))))));
   SQL
 
   execute <<~SQL

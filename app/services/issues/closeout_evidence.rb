@@ -15,7 +15,7 @@ module Issues
   class CloseoutEvidence
     ISSUE_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(issues.body, ''), 'UTF8')), 'hex')")
     MERGED_PR_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(merged_prs.body, ''), 'UTF8')), 'hex')")
-    MergedPullRequest = Struct.new(:number, :url, :terminal_at, :run_id, :body_digest, keyword_init: true)
+    MergedPullRequest = Struct.new(:number, :url, :terminal_at, :run_id, :body_digest, :revision, keyword_init: true)
 
     Result = Struct.new(:merged_prs, :no_code_required_at, :terminal_at, :digest, :pr_body_revision, keyword_init: true) do
       def present?
@@ -40,8 +40,9 @@ module Issues
       shared = shared_linked(issue_ids)
       run_linked = linked_runs(issue_ids)
       merged_prs_by_issue_id = merged_prs_by_issue_id(issues_by_id, linked, run_linked)
-      shared.each do |issue_id, number, url, terminal_at, body_digest|
-        merged_prs_by_issue_id[issue_id][[ number, url ]] ||= MergedPullRequest.new(number:, url:, terminal_at:, run_id: nil, body_digest:)
+      shared.each do |issue_id, number, url, terminal_at, body_digest, revision|
+        merged_prs_by_issue_id[issue_id][[ number, url ]] ||= MergedPullRequest.new(
+          number:, url:, terminal_at:, run_id: nil, body_digest:, revision:)
       end
 
       issues_by_id.transform_values do |issue|
@@ -54,7 +55,8 @@ module Issues
       canonical = [
         merged_prs.map do |pr|
           identity = duplicate_numbers.include?(pr.number) ? "#{pr.number}:#{pr.url}" : pr.number
-          "merged:#{identity}@#{pr.terminal_at&.utc&.iso8601}"
+          revision = pr.revision.present? ? ":#{pr.revision}" : ""
+          "merged:#{identity}@#{pr.terminal_at&.utc&.iso8601}#{revision}"
         end.sort.join("|"),
         "no_code:#{no_code_at&.utc&.iso8601}"
       ].join(";;")
@@ -157,7 +159,10 @@ module Issues
         terminal_at: terminal_at,
         digest: digest_for(merged_prs, no_code_at),
         pr_body_revision: merged_prs.any? ? Digest::SHA256.hexdigest(
-          merged_prs.map { |pr| "#{pr.url}:#{pr.body_digest}" }.sort.join("|")) : nil
+          merged_prs.map do |pr|
+            revision = pr.revision.present? ? ":#{pr.revision}" : ""
+            "#{pr.url}:#{pr.body_digest}#{revision}"
+          end.sort.join("|")) : nil
       )
     end
     private_class_method :build_result
@@ -185,8 +190,19 @@ module Issues
         .joins("INNER JOIN issues merged_prs ON merged_prs.id = shared_delivery_evidence_associations.pull_request_id")
         .where("merged_prs.is_pull_request = TRUE AND merged_prs.pr_review_phase = 'merged'")
         .where("merged_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url")
+        .where(<<~SQL.squish)
+          shared_delivery_evidence_associations.pull_request_url = CASE
+            WHEN merged_prs.source = '#{Issue::UPSTREAM_PULL_REQUEST_SOURCE}'
+              THEN CONCAT('https://github.com/', projects.upstream_full_name,
+                '/pull/', merged_prs.github_number)
+            ELSE CONCAT('https://github.com/', projects.owner, '/', projects.repo,
+              '/pull/', merged_prs.github_number)
+          END
+        SQL
         .where("merged_prs.merged_commit_sha = shared_delivery_evidence_associations.revision")
-        .pluck(:issue_id, "merged_prs.github_number", "merged_prs.github_html_url", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
+        .joins("INNER JOIN projects ON projects.id = merged_prs.project_id")
+        .pluck(:issue_id, "merged_prs.github_number", "merged_prs.github_html_url", "merged_prs.created_at",
+          MERGED_PR_BODY_DIGEST_SQL, "shared_delivery_evidence_associations.revision")
     end
     private_class_method :shared_linked
 

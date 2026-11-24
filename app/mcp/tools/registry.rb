@@ -24,6 +24,7 @@ module Tools
       "Tools::RequestIssueContinuation",
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
+      "Tools::ManageSharedDeliveryEvidence",
       "Tools::ListLayeredVerificationReviewPackages",
       "Tools::GetLayeredVerificationReviewPackage",
       "Tools::ApproveLayeredVerificationReviewPackage",
