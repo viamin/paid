@@ -40,11 +40,10 @@ module LayeredVerification
     end
 
     def code_unaffected?(result, revision)
-      return true if revision["code"] == target_revision
-
       scope = ScopeSnapshot.call(result.obligation)
       recorded_scope = Array(revision["scope_paths"]).map(&:to_s).uniq.sort
       return false unless scope.complete && recorded_scope == scope.paths
+      return true if revision["code"] == target_revision
 
       changed = changed_paths(result.obligation.project, revision["code"])
       changed && (changed & recorded_scope).empty?
@@ -61,7 +60,9 @@ module LayeredVerification
       files = (github_client || project.client).compare(project.full_name, prior_revision, target_revision).files
       return if files.nil? || files.size >= 300
 
-      files.map { |file| file.filename.to_s }.reject(&:blank?).uniq
+      files.flat_map do |file|
+        [ file.filename, (file.previous_filename if file.respond_to?(:previous_filename)) ]
+      end.map(&:to_s).reject(&:blank?).uniq
     rescue GithubClient::Error, Faraday::Error
       nil
     end

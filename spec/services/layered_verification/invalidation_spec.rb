@@ -55,6 +55,23 @@ RSpec.describe LayeredVerification::Invalidation do
   end
 
   # @spec LAYERED-VERIFY-019
+  it "invalidates same-revision evidence when the complete declared scope changed" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    create(:layered_verification_correspondence_claim, obligation:,
+      source_reference: obligation.canonical_source_path, target_reference: "app/models/payment.rb")
+    result = create(:layered_verification_check_result, obligation:, input_revision: {
+      "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies,
+      "scope_paths" => [ obligation.canonical_source_path ]
+    })
+
+    impact = described_class.call(obligations: [ obligation ], target_revision: "code-v2", dependencies:)
+
+    expect(impact.invalidated_result_ids).to eq([ result.id ])
+    expect(impact.reusable_result_ids).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-019
   it "invalidates cross-revision evidence when a scoped path changed or comparison is truncated" do
     project = create(:project)
     github_client = instance_double(GithubClient)
@@ -75,6 +92,28 @@ RSpec.describe LayeredVerification::Invalidation do
 
     expect(impact.invalidated_result_ids).to eq([ result.id ])
     expect(truncated.invalidated_result_ids).to eq([ result.id ])
+  end
+
+  # @spec LAYERED-VERIFY-019
+  it "invalidates cross-revision evidence when a scoped path was renamed" do
+    project = create(:project)
+    github_client = instance_double(GithubClient)
+    obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    create(:layered_verification_correspondence_claim, obligation:,
+      source_reference: obligation.canonical_source_path, target_reference: "app/models/payment.rb")
+    result = create(:layered_verification_check_result, obligation:, input_revision: {
+      "code" => "code-v1", "external_revision" => "intent-v2", "dependencies" => dependencies,
+      "scope_paths" => [ "app/models/payment.rb", obligation.canonical_source_path ]
+    })
+    comparison_file = Struct.new(:filename, :previous_filename)
+      .new("app/models/archived_payment.rb", "app/models/payment.rb")
+    allow(github_client).to receive(:compare)
+      .and_return(Struct.new(:files).new([ comparison_file ]))
+
+    impact = described_class.call(obligations: [ obligation ], target_revision: "code-v2", dependencies:, github_client:)
+
+    expect(impact.invalidated_result_ids).to eq([ result.id ])
+    expect(impact.reusable_result_ids).to be_empty
   end
 
   # @spec LAYERED-VERIFY-019

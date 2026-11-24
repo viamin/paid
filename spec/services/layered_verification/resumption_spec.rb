@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe LayeredVerification::Resumption do
   def approved_obligation(project)
     obligation = create(:layered_verification_obligation, project:)
+    create(:layered_verification_correspondence_claim, obligation:)
     obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payment.md", persisted: true)
     obligation
   end
@@ -36,6 +37,7 @@ RSpec.describe LayeredVerification::Resumption do
     run = interrupted_run(project:, user:, obligation:, goal: "layered_verification_audit", status: "cancelled")
     result = create(:layered_verification_check_result, obligation:, agent_run: run, input_revision: {
       "code" => "code-v1", "external_revision" => "intent-v1",
+      "scope_paths" => LayeredVerification::ScopeSnapshot.call(obligation).paths,
       "dependencies" => run.external_metadata.dig("layered_verification", "dependencies")
     })
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)

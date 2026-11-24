@@ -28,6 +28,7 @@ module LayeredVerification
     NO_CANONICAL_PATH = "Structural discovery could not enumerate the declared scope: " \
       "no canonical source path is recorded for this obligation."
     SEMANTIC_UNAVAILABLE = "Semantic read-through could not execute; linkage freshness was not established."
+    INVALID_SEMANTIC_REFERENCES = "Semantic read-through returned out-of-scope references; those references were discarded."
     NO_ENUMERATED_FILES = "(no scope files could be enumerated mechanically)"
     UNINSPECTED_SCOPE = "Some declared correspondence references were not repository paths and could not be enumerated mechanically."
     TRUNCATED_SCOPE = "Structural and semantic discovery inspected only the first 100 tracked files " \
@@ -108,7 +109,8 @@ module LayeredVerification
 
       material = Array(JSON.parse(response.output.to_s)["unmapped"])
         .filter_map { |reference| reference.to_s.presence }.uniq
-      [ material, nil ]
+      bounded, rejected = material.partition { |reference| semantic_reference_in_scope?(reference, files) }
+      [ bounded, (INVALID_SEMANTIC_REFERENCES if rejected.any?) ]
     rescue AgentHarness::Error => error
       Rails.logger.warn(
         message: "layered_verification.semantic_read_through_failed", agent_run_id: agent_run.id,
@@ -179,6 +181,10 @@ module LayeredVerification
       referenced = files.select { |path| referenced_paths.include?(path) }
       @semantic_files_truncated = referenced.size > SEMANTIC_FILE_LIMIT
       referenced.first(SEMANTIC_FILE_LIMIT)
+    end
+
+    def semantic_reference_in_scope?(reference, files)
+      referenced_files(files).include?(reference_path(reference))
     end
 
     def append_file_evidence(evidence, path)

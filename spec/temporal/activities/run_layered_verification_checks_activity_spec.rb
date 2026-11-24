@@ -34,6 +34,12 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     audit
   end
 
+  def scoped_obligation
+    create(:layered_verification_obligation, external_revision: "intent123").tap do |obligation|
+      create(:layered_verification_correspondence_claim, obligation:)
+    end
+  end
+
   def stub_tlc_violation(audit)
     command_result = Containers::Provision::Result.success(stdout: "Error: Invariant Safety is violated.\n", stderr: "", exit_code: 12)
     allow(audit).to receive(:execute_in_execution_environment).with(
@@ -185,16 +191,17 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
 
   # @spec LAYERED-VERIFY-019
   it "reuses a prior result the admission impact marked reusable instead of rerunning TLC" do
-    obligation = create(:layered_verification_obligation, external_revision: "intent123")
+    obligation = scoped_obligation
     prior_run = create(:agent_run, goal: "layered_verification_audit", status: "completed", project: obligation.project)
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
       execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space",
-      input_revision: { "code" => "code123", "external_revision" => "intent123", "dependencies" => dependencies })
+      input_revision: { "code" => "code123", "external_revision" => "intent123",
+        "scope_paths" => LayeredVerification::ScopeSnapshot.call(obligation).paths, "dependencies" => dependencies })
     audit = formal_audit(obligation,
       "dependencies" => dependencies,
       "input_revisions" => { obligation.id.to_s => "intent123" },
       "impact" => { "reused_check_result_ids" => [ prior.id ] })
-    stub_discovery(audit:)
+    stub_discovery(audit:, scope_directories: [ "app/models", "docs/intent/payments" ])
     allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
 
     result = described_class.new.execute(agent_run_id: audit.id)

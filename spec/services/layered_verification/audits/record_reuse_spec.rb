@@ -19,14 +19,21 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
       } })
   end
 
+  def input_revision(obligation)
+    { "code" => "code-v2", "external_revision" => obligation.external_revision,
+      "scope_paths" => LayeredVerification::ScopeSnapshot.call(obligation).paths,
+      "dependencies" => dependencies }
+  end
+
   # @spec LAYERED-VERIFY-019
   it "carries a reusable prior result forward for this run instead of recomputing it" do
     project = create(:project)
     obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    create(:layered_verification_correspondence_claim, obligation:)
     prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
       execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space",
-      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
+      input_revision: input_revision(obligation))
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
 
     expect(described_class.call(obligation:, agent_run: audit, metadata: audit.external_metadata.fetch("layered_verification"))).to be(true)
@@ -48,7 +55,7 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     prior = create(:layered_verification_check_result, obligation:, correspondence_claim: claim, agent_run: prior_run,
       execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "model-code-drift",
       limitations: "TLC checked only the declared bounds and assumptions",
-      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
+      input_revision: input_revision(obligation))
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
 
     described_class.call(obligation:, agent_run: audit,
@@ -65,7 +72,7 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
     prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
-      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
+      input_revision: input_revision(obligation))
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
     obligation.update!(external_revision: "intent-v3")
 
@@ -86,10 +93,10 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
   it "does not record a second carry-forward row when the run already has one" do
     project = create(:project)
     obligation = create(:layered_verification_obligation, project:)
+    create(:layered_verification_correspondence_claim, obligation:)
     prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
-    prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run, input_revision: {
-      "code" => "code-v2", "external_revision" => obligation.external_revision, "dependencies" => dependencies
-    })
+    prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
+      input_revision: input_revision(obligation))
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
     metadata = audit.external_metadata.fetch("layered_verification")
     described_class.call(obligation:, agent_run: audit, metadata:)

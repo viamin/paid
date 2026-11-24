@@ -130,11 +130,15 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
     project = create(:project)
     obligation = scoped_obligation(project:)
     run = create(:agent_run, goal: "layered_verification_audit")
-    files = Array.new(100) { |index| "docs/intent/payments/file-#{index.to_s.rjust(3, "0")}.md" }
+    files = [ "docs/intent/payments/payment-specs.md" ] +
+      Array.new(99) { |index| "docs/intent/payments/file-#{index.to_s.rjust(3, "0")}.md" }
 
     discovery = described_class.call(obligation:, agent_run: run,
       command_runner: command_runner(scope_output: files.join("\n")),
-      llm: semantic_llm("unmapped" => [ "docs/intent/payments/payment-specs.md#new-clause" ]))
+      llm: semantic_llm("unmapped" => [
+        "docs/intent/payments/payment-specs.md#new-clause",
+        "docs/intent/payments/payment-specs.md#another-clause"
+      ]))
 
     expect(discovery.material).to have_attributes(size: 100)
     expect(discovery.limitations).to include(a_string_matching(/first 100 unmapped material references/))
@@ -153,6 +157,25 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
     expect(discovery.material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
     expect(discovery.structural_material).to be_empty
     expect(discovery.semantic_material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
+  end
+
+  # @spec LAYERED-VERIFY-009
+  it "rejects semantic references outside the files supplied to the bounded read-through" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    semantic_references = [
+      "docs/intent/payments/payment-specs.md:12-20",
+      "README.md#clause",
+      "../../other-project/secret"
+    ]
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: "docs/intent/payments/payment-specs.md\n", cat_output: "Payment terms."),
+      llm: semantic_llm("unmapped" => semantic_references))
+
+    expect(discovery.semantic_material).to eq([ "docs/intent/payments/payment-specs.md:12-20" ])
+    expect(discovery.limitations).to include(a_string_matching(/out-of-scope references/))
   end
 
   # @spec LAYERED-VERIFY-009
