@@ -21,6 +21,15 @@ module IssueEnhancements
       nil
     end
 
+    def self.manual_review_reason(classification)
+      case classification
+      when "parser"
+        "Paid could not validate the enhancement agent's structured output."
+      when "transport"
+        "Paid could not complete the enhancement run because its provider connection was interrupted."
+      end
+    end
+
     def initialize(agent_run:)
       @agent_run = agent_run
     end
@@ -56,12 +65,18 @@ module IssueEnhancements
     def eligible?
       agent_run.automatic? && agent_run.enhance_issue_goal? && agent_run.status == "failed" &&
         issue.github_state == "open" && issue.trusted? && issue.paid_state == "manual_review" &&
+        technical_manual_review? &&
         issue.needs_input_questions.blank? && metadata.fetch("attempt", 0).to_i < MAX_ATTEMPTS &&
         metadata["recovery_claimed_at"].blank? && current_revision? && policy.permitted? && no_active_work?
     end
 
     def metadata
       agent_run.external_metadata.fetch(METADATA_KEY, {})
+    end
+
+    def technical_manual_review?
+      reason = self.class.manual_review_reason(metadata["classification"])
+      reason.present? && issue.manual_review_reason == reason
     end
 
     def current_revision?

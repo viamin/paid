@@ -62,6 +62,30 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
   end
 
   # @spec ISSUE-ENHANCEMENT-021
+  it "does not recover a manual-review stop owned by another producer" do
+    issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+    expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(issue.reload).to have_attributes(
+      paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+    expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  it "does not recover a manual-review stop with unknown technical provenance" do
+    agent_run.update!(external_metadata: {
+      described_class::METADATA_KEY => {
+        "classification" => "unknown", "issue_revision" => issue.github_updated_at.iso8601, "attempt" => 0
+      }
+    })
+    issue.update!(manual_review_reason: nil)
+
+    expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(issue.reload.paid_state).to eq("manual_review")
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
   it "does not retry a successor that exhausted its technical-stop budget" do
     agent_run.update!(external_metadata: {
       described_class::METADATA_KEY => {

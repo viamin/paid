@@ -150,14 +150,8 @@ module Activities
 
       IssueEnhancements::StopForManualReview.call(
         project: agent_run.project, issue: agent_run.issue,
-        reason: technical_enhancement_stop_reason(classification)
+        reason: IssueEnhancements::TechnicalStopRecovery.manual_review_reason(classification)
       )
-    end
-
-    def technical_enhancement_stop_reason(classification)
-      return "Paid could not validate the enhancement agent's structured output." if classification == "parser"
-
-      "Paid could not complete the enhancement run because its provider connection was interrupted."
     end
 
     # @spec ISSUE-ENHANCEMENT-021
