@@ -74,6 +74,7 @@ module AgentRuns
       return cancel_feature_admission_denied_run if feature_admission_denied?
       return recheck_continuation if continuation_run?
       return recheck_automatic_enhancement_hold if automatic_enhancement_recheck?
+      return cancel_produced_work_replacement if produced_work_replacement?
       return false unless recheck_applicable?
       return false if issue_still_eligible?
 
@@ -109,8 +110,31 @@ module AgentRuns
     end
 
     def recheck_applicable? # @spec EAGER-QUEUE-006 ISSUE-ENHANCEMENT-018
-      agent_run.auto_pick? && agent_run.issue_id.present? &&
-        !agent_run.review_goal?
+      agent_run.issue_id.present? && !agent_run.review_goal? &&
+        (agent_run.auto_pick? || automatic_create_pr_run?)
+    end
+
+    # @spec EAGER-QUEUE-018
+    def produced_work_replacement?
+      return false unless automatic_create_pr_run?
+
+      @produced_work_hold = issue.auto_pick_create_pr_admission_hold
+      @produced_work_hold.present? && @produced_work_hold.id != agent_run.id
+    end
+
+    def automatic_create_pr_run?
+      agent_run.automatic? && agent_run.create_pr_goal? && agent_run.issue_id.present?
+    end
+
+    def cancel_produced_work_replacement
+      cancel_run(reason: produced_work_replacement_reason)
+    end
+
+    def produced_work_replacement_reason
+      artifact = @produced_work_hold.result_commit_sha || "observable implementation work"
+      branch = @produced_work_hold.branch_name.presence || "the producer branch"
+      "Automatic replacement was cancelled because create_pr run #{@produced_work_hold.id} preserved #{artifact} on #{branch}. " \
+        "Resume its bounded recovery or publish and review that preserved result; do not start replacement coding."
     end
 
     def automatic_enhancement_recheck?

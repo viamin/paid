@@ -3003,4 +3003,26 @@ RSpec.describe Issue do
       expect(issue.paid_activated_at).to be_nil
     end
   end
+
+  describe "#auto_pick_create_pr_admission_hold" do
+    # @spec EAGER-QUEUE-018
+    it "holds automatic replacement work for this issue when a failed manual producer preserved a pushed result" do
+      issue = create(:issue)
+      producer = create(:agent_run, :failed, project: issue.project, issue:, goal: "create_pr",
+        trigger_type: "manual", auto_pick: false, branch_name: "paid/5273-preserved-result",
+        result_commit_sha: "a" * 40)
+
+      expect(issue.auto_pick_create_pr_admission_hold).to eq(producer)
+    end
+
+    # @spec EAGER-QUEUE-018
+    it "does not hold an issue for produced work attached to another source or tenant" do
+      issue = create(:issue)
+      other_issue = create(:issue, project: create(:project))
+      create(:agent_run, :failed, project: other_issue.project, issue: other_issue, goal: "create_pr",
+        trigger_type: "manual", auto_pick: false, result_commit_sha: "a" * 40)
+
+      expect(issue.auto_pick_create_pr_admission_hold).to be_nil
+    end
+  end
 end

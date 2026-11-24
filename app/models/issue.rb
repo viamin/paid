@@ -1516,24 +1516,14 @@ class Issue < ApplicationRecord
     auto_pick_failure_streak.last
   end
 
-  # The failed auto-picked create_pr run that holds a fresh implementation
-  # attempt out of ordinary issue admission, or nil when admission may mint
-  # one. Mirrors the shared AgentRuns::AutoPickCreatePrRetryPolicy refusals
-  # — produced implementation work and owned in-place rate-limit recovery —
-  # so a sweep, delayed re-enqueue, or sync-driven seeding cannot route
-  # around a shared decision the failure callback already refused (#4989
-  # acceptance bypass). Failures created before the authorized operator
-  # reset window no longer hold admission, matching #auto_pick_failure_streak.
+  # The failed create_pr producer that holds a fresh implementation attempt
+  # out of ordinary issue admission, or nil when admission may mint one.
+  # A manual producer can push a durable result before post-push processing
+  # fails, so the produced-work half is intentionally independent of
+  # +auto_pick+. Rate-limit recovery remains owned by automatic producers.
   # @spec EAGER-QUEUE-018 AGENT-RETRY-017
   def auto_pick_create_pr_admission_hold
-    run = current_failed_auto_pick_create_pr_run
-    return nil unless run
-    return nil if runner_retry_failure_window_reset_at.present? && run.created_at < runner_retry_failure_window_reset_at
-    return run if run.recoverable_rate_limited?
-    return nil if run.partial_closeout_reaudit_failure?
-    return run if run.implementation_work_produced?
-
-    nil
+    failed_create_pr_runs.find { |run| admission_hold?(run) }
   end
 
   # @spec EAGER-QUEUE-010
@@ -1558,6 +1548,24 @@ class Issue < ApplicationRecord
       .pluck(:status)
 
     [ failed_goal, statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count ]
+  end
+
+  private
+
+  def failed_create_pr_runs
+    agent_runs.where(goal: "create_pr", status: AgentRun::FAILURE_STATUSES)
+      .order(created_at: :desc, id: :desc)
+  end
+
+  def admission_hold?(run)
+    return false if retry_window_cleared_for?(run)
+    return false if run.partial_closeout_reaudit_failure?
+
+    run.implementation_work_produced? || (run.auto_pick? && run.recoverable_rate_limited?)
+  end
+
+  def retry_window_cleared_for?(run)
+    runner_retry_failure_window_reset_at.present? && run.created_at < runner_retry_failure_window_reset_at
   end
 
   public
