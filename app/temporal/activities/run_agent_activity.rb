@@ -631,6 +631,7 @@ module Activities
               error_type: "auth_expired",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              diagnostics: e.diagnostics,
               **resolved_run_info
             )
             logger.warn(message: "agent_execution.auth_expired", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
@@ -867,11 +868,12 @@ module Activities
     end
 
     class RunnerAuthExpiredError < StandardError
-      attr_reader :runner
+      attr_reader :runner, :diagnostics
 
-      def initialize(message, runner:)
+      def initialize(message, runner:, diagnostics: nil)
         super(message)
         @runner = runner
+        @diagnostics = diagnostics
       end
     end
 
@@ -1918,9 +1920,7 @@ module Activities
             "Runner model not found error from #{runner}: #{sanitized_output.truncate(500)}"
         end
 
-        if auth_expired_error?(runner, sanitized_output)
-          raise RunnerAuthExpiredError.new(sanitized_output.truncate(500), runner: runner)
-        end
+        raise_auth_expired_if_detected!(runner: runner, stdout: stdout, stderr: stderr, fallback_output: sanitized_output)
 
         output_present = stdout.present? || stderr.present?
         output_chars = stdout.to_s.length + stderr.to_s.length
@@ -1943,9 +1943,7 @@ module Activities
       output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
-      if auth_expired_error?(runner, rate_limit_output)
-        raise RunnerAuthExpiredError.new(output.truncate(500), runner: runner)
-      end
+      raise_auth_expired_if_detected!(runner: runner, stdout: stdout, stderr: stderr, fallback_output: rate_limit_output)
 
       # Check if this is a rate limit error
       if rate_limit_error?(rate_limit_output, runner_key: runner)
@@ -2135,9 +2133,12 @@ module Activities
           )
         end
 
-        if auth_expired_error?(runner, sanitized_output)
-          raise RunnerAuthExpiredError.new(sanitized_output.truncate(500), runner: runner)
-        end
+        raise_auth_expired_if_detected!(
+          runner: runner,
+          stdout: result[:stdout],
+          stderr: result[:stderr],
+          fallback_output: sanitized_output
+        )
 
         return
       end
@@ -2364,6 +2365,88 @@ module Activities
       runner_key = RunnerSupport.runner_key_for_agent_type(runner)
       RunnerSupport.error_classification_patterns_for(runner_key, :auth_expired)
         .any? { |pattern| output.match?(pattern) }
+    end
+
+    # @spec RUNNER-FALLBACK-015
+    # Codex owns the distinction between explicit provider error envelopes and
+    # task-authored transcript data. In particular, MCP result content is not
+    # evidence about the credential used by the Codex process.
+    def raise_auth_expired_if_detected!(runner:, stdout:, stderr:, fallback_output:)
+      classification = provider_auth_classification(
+        runner,
+        stdout: stdout,
+        stderr: stderr,
+        fallback_output: fallback_output
+      )
+      return unless classification
+
+      raise RunnerAuthExpiredError.new(
+        classification.fetch(:terminal_diagnostic),
+        runner: runner,
+        diagnostics: { classification_provenance: classification }
+      )
+    end
+
+    def provider_auth_classification(runner, stdout:, stderr:, fallback_output:)
+      if codex_runner?(runner)
+        codex_provider_auth_classification(stdout: stdout, stderr: stderr)
+      elsif auth_expired_error?(runner, fallback_output)
+        {
+          origin: "combined_output",
+          category: "auth_expired",
+          event_path: "provider_output",
+          terminal_diagnostic: fallback_output.to_s.truncate(500)
+        }
+      end
+    end
+
+    def codex_provider_auth_classification(stdout:, stderr:)
+      stdout_buffer = +""
+      stdout_chunk = stdout.to_s
+      # Execution results are terminal snapshots rather than live chunks. Give
+      # the harness a newline-delimited final fragment so its public JSONL
+      # classifier can inspect a last error envelope without scanning tool data.
+      stdout_chunk += "\n" unless stdout_chunk.end_with?("\n")
+      stdout_result = AgentHarness::Providers::Codex.classify_output_chunk(
+        stdout_chunk,
+        stream: :stdout,
+        stdout_buffer: stdout_buffer
+      )
+      if auth_classification?(stdout_result)
+        return codex_auth_provenance(
+          stdout_result,
+          origin: "stdout",
+          event_path: "error.message",
+          terminal_diagnostic: codex_terminal_diagnostic(stdout)
+        )
+      end
+
+      stderr_result = AgentHarness::Providers::Codex.classify_output_chunk(stderr.to_s, stream: :stderr)
+      return unless auth_classification?(stderr_result)
+
+      codex_auth_provenance(
+        stderr_result,
+        origin: "stderr",
+        event_path: "stderr",
+        terminal_diagnostic: codex_terminal_diagnostic(stderr)
+      )
+    end
+
+    def auth_classification?(classification)
+      classification&.fetch(:reason, nil)&.to_sym == :auth_expired
+    end
+
+    def codex_terminal_diagnostic(output)
+      AgentRun::ErrorMessageSanitizer.call(text: output.to_s.lines.last.to_s).truncate(500)
+    end
+
+    def codex_auth_provenance(classification, origin:, event_path:, terminal_diagnostic: nil)
+      {
+        origin: origin,
+        category: classification.fetch(:reason).to_s,
+        event_path: event_path,
+        terminal_diagnostic: terminal_diagnostic.presence || "Codex reported #{classification.fetch(:reason)} on #{origin}"
+      }
     end
 
     QUOTA_ERROR_MAX_OUTPUT_LENGTH = 500
@@ -2665,7 +2748,8 @@ module Activities
     # errors), mapped to the string fields to blank on that item.
     CODEX_AGENT_AUTHORED_FIELDS = {
       "command_execution" => %w[command aggregated_output],
-      "agent_message" => %w[text]
+      "agent_message" => %w[text],
+      "mcp_tool_call" => %w[arguments result error]
     }.freeze
 
     def redact_codex_jsonl_line(line)

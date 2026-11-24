@@ -2817,6 +2817,39 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def codex_mcp_tool_output(content:, structured_content: nil, error: nil, status: "completed")
+    JSON.generate(
+      type: "item.completed",
+      item: {
+        type: "mcp_tool_call",
+        server: "private-fixture",
+        tool: "inspect_source",
+        arguments: { query: "authentication_error" },
+        result: {
+          content: [ { type: "text", text: content } ],
+          structured_content: structured_content
+        },
+        error: error,
+        status: status
+      }
+    )
+  end
+
+  def codex_command_output(content:)
+    JSON.generate(
+      type: "item.completed",
+      item: {
+        type: "command_execution",
+        command: "rg authentication_error",
+        aggregated_output: content
+      }
+    )
+  end
+
+  def codex_provider_auth_error
+    JSON.generate(type: "error", message: "authentication_error")
+  end
+
   def prepare_verification_fixture(repo_path)
     FileUtils.mkdir_p(File.join(repo_path, ".paid"))
     FileUtils.mkdir_p(File.join(repo_path, "bin"))
@@ -3594,7 +3627,10 @@ expect(container_service).to receive(:execute).with(
 
     context "when agent fails in container" do
       before do
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         allow(container_service).to receive(:execute).and_return(exec_failure)
       end
 
@@ -3617,7 +3653,10 @@ expect(container_service).to receive(:execute).with(
 
     shared_examples "externally cancelled run" do |params|
       before do
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         allow(container_service).to receive(:execute) do
           AgentRun.where(id: agent_run.id).update_all(
             status: "timeout",
@@ -3830,11 +3869,15 @@ expect(container_service).to receive(:execute).with(
         user.runners.find_or_create_by!(runner_key: "cursor")
         user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
         allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         # Re-enable the real preflight method; the shared before stubs it away.
         allow(activity).to receive(:run_runner_preflight!).and_call_original
         # By default harness preflight passes (no-op); individual tests override.
         allow(activity).to receive(:run_harness_preflight!)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
       end
 
       it "falls back when harness preflight detects expired auth" do
@@ -3923,6 +3966,89 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.error_message).to include("refresh_token_reused")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
+        )
+      end
+
+      it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
+      end
+
+      it "keeps nested MCP structured content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "completed",
+            structured_content: { "nested" => [ { "detail" => "authentication_error" } ] }
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "keeps a failed MCP tool's auth-shaped error out of provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "unavailable",
+            error: { "message" => "authentication_error" },
+            status: "failed"
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "preserves command output redaction without classifying it as provider auth" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_command_output(content: "authentication_error in source fixture"),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "classifies a real provider error after malformed and MCP stdout data" do # @spec RUNNER-FALLBACK-015
+        stdout = [
+          "{malformed JSONL",
+          codex_mcp_tool_output(content: "authentication_error in tool result"),
+          codex_provider_auth_error
+        ].join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: stdout, stderr: "", exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        expect(agent_run).to be_auth_expired
+        expect(attempt).to include("error_type" => "auth_expired")
+        expect(attempt.fetch("diagnostics")).to include(
+          "classification_provenance" => include(
+            "origin" => "stdout",
+            "category" => "auth_expired",
+            "event_path" => "error.message",
+            "terminal_diagnostic" => include("authentication_error")
+          )
         )
       end
 

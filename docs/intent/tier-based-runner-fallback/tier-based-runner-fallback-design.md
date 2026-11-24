@@ -159,6 +159,24 @@ metered balance. This contract depends on the public structured rate-limit
 result from `agent-harness`; Paid does not parse provider CLI output or call a
 provider endpoint directly.
 
+## Codex Transcript Classification
+
+Codex stdout is a mixed JSONL transcript: completed MCP calls and their
+arguments, content, and structured content are task data, not provider
+diagnostics. `Activities::RunAgentActivity` delegates Codex stdout and stderr
+classification to the public `AgentHarness::Providers::Codex.classify_output_chunk`
+contract. Stdout keeps a persistent line buffer and flushes its final fragment
+at terminal handling, while stderr remains a distinct provider diagnostic
+stream. A nil classification is only the absence of a recognized provider
+signal; normal exit and outcome checks remain authoritative.
+
+Only a harness-classified explicit provider error envelope or stderr diagnostic
+may change provider state. The attempt records bounded provenance — stream,
+category, classification event path, and a redacted terminal diagnostic — so
+operators can distinguish the real cause from a truncated startup transcript.
+This does not renew credentials, alter budgets or grants, replay work, or
+change retry and cleanup policy.
+
 ## Accepted Divergence
 
 RDR-034 described optional `selector_type: tier_only` and `model_pin` escape

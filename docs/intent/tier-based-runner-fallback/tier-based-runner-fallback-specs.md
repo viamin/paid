@@ -163,3 +163,17 @@
   *Code:* `Activities::RunAgentActivity#run_runner_preflight!`,
   `#eligible_fallback_candidates`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-015** — When a Codex execution transcript contains
+  MCP arguments, results, content, or structured content that mention a
+  provider auth, rate, quota, or model-error pattern, the system SHALL treat
+  that tool-authored data as untrusted task data and SHALL NOT change runner
+  state or a successful execution outcome. The system SHALL use the public
+  `agent-harness` Codex output-classification contract for explicit provider
+  JSONL error envelopes and stderr diagnostics, preserving genuine provider
+  failures even when tool data is mixed into the transcript. A classified
+  authentication failure SHALL retain bounded, secret-free provenance naming
+  the stream, category, event path, and terminal diagnostic instead of a
+  startup transcript prefix.
+  *Code:* `Activities::RunAgentActivity`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
