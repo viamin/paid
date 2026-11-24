@@ -148,14 +148,14 @@ class NetworkPolicy
     #   Docker-internal network on a remote backend would block the
     #   proxy-mode callback to PAID_PROXY_EXTERNAL_URL (issue #3545).
     # @spec CONTAINER-RUNTIME-047
-    def ensure_network!(network: NETWORK_NAME, backend: Containers.backend)
-      existing = backend.get_network(network)
+    def ensure_network!(network: NETWORK_NAME, backend: Containers.backend, deadline: nil)
+      existing = deadline ? backend.get_network(network, deadline:) : backend.get_network(network)
       reject_internal_remote_network!(existing, network_name: network, backend: backend)
       existing
     rescue Docker::Error::NotFoundError
       raise Error, "Docker network #{network} does not exist" unless network == NETWORK_NAME
 
-      create_network(backend: backend)
+      create_network(backend: backend, deadline: deadline)
     end
 
     # Checks whether the agent network exists.
@@ -430,7 +430,7 @@ class NetworkPolicy
     # Docker-internal bridge network blocks that callback. The in-container
     # firewall still provides the egress restriction layer (issue #3545).
     # @spec CONTAINER-RUNTIME-047
-    def create_network(backend:)
+    def create_network(backend:, deadline: nil)
       Rails.logger.info(
         message: "network_policy.create_network",
         network: NETWORK_NAME,
@@ -452,7 +452,7 @@ class NetworkPolicy
         }
       end
 
-      backend.create_network(NETWORK_NAME, config)
+      deadline ? backend.create_network(NETWORK_NAME, config, deadline:) : backend.create_network(NETWORK_NAME, config)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create agent network: #{e.message}"
     end
