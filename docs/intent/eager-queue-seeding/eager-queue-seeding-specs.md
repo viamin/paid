@@ -337,6 +337,11 @@
 
 ## Capacity remains the single gate
 
+- [x] **EAGER-QUEUE-019** — Disabling Auto-Pick SHALL continue to prevent
+  unrelated issue discovery. It SHALL not revoke a prior manual source-issue
+  implementation lineage, which is governed by MANUAL-RUN-RETRY-010 and never
+  enters the eager queue.
+
 - [x] **EAGER-QUEUE-008** — Eager seeding SHALL NOT itself limit concurrency
   or PR attention; `max_concurrent_runs` (with tenant guardrail) SHALL be
   the single capacity gate, and `AgentRun::QUEUE_ORDER` with its project/user
