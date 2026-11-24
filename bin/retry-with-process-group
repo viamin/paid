@@ -110,7 +110,7 @@ cleanup_active_attempt() {
   if [[ -n "$active_watchdog" ]]; then
     terminate_watchdog "$active_watchdog" "$active_watchdog_group_leader"
   fi
-  if [[ -n "$active_group_leader" ]] && process_is_live "$active_group_leader"; then
+  if [[ -n "$active_group_leader" ]] && (process_is_live "$active_group_leader" || group_has_live_processes "$active_group_leader"); then
     terminate_group "$active_group_leader"
   fi
   rm -f "$active_timeout_marker"
