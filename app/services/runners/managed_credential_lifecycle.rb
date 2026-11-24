@@ -51,6 +51,30 @@ module Runners
 
     Result = SubscriptionAuthProviders::Result
 
+    # A lockfile lease can move to a bounded recovery thread after a text
+    # request has captured a native rotation. The receiving thread must release
+    # it, preventing another runner from materializing stale auth meanwhile.
+    class ManagedAuthLease
+      def initialize(file:, acquired:)
+        @file = file
+        @acquired = acquired
+      end
+
+      def transfer!
+        @transferred = true
+      end
+
+      def transferred?
+        @transferred
+      end
+
+      def release!
+        @file.flock(File::LOCK_UN) if @acquired
+      ensure
+        @file.close unless @file.closed?
+      end
+    end
+
     class << self
       def rotating?(runner_key)
         ROTATING_RUNNER_KEYS.include?(runner_key.to_s)
@@ -191,13 +215,15 @@ module Runners
       # Processes raw harvest exec output and persists a valid rotation.
       # Returns the provider Result contract (reasons match the provisioner's
       # telemetry codes) instead of raising for known bad rotations.
-      def persist_rotation!(credential, runner_key:, raw:)
-        case runner_key.to_s
-        when "codex" then persist_codex_rotation!(credential, raw)
-        when "opencode" then persist_opencode_rotation!(credential, raw)
-        when "omp" then persist_omp_rotation!(credential, raw)
-        else
-          raise ArgumentError, "Unsupported managed harvest runner: #{runner_key}"
+      def persist_rotation!(credential, runner_key:, raw:, timeout: nil) # @spec LLM-ROUTING-005 LLM-ROUTING-013
+        with_persistence_timeout(credential, timeout) do
+          case runner_key.to_s
+          when "codex" then persist_codex_rotation!(credential, raw)
+          when "opencode" then persist_opencode_rotation!(credential, raw)
+          when "omp" then persist_omp_rotation!(credential, raw)
+          else
+            raise ArgumentError, "Unsupported managed harvest runner: #{runner_key}"
+          end
         end
       rescue ArgumentError, JSON::ParserError => e
         Rails.logger.warn(message: "runners.managed_credential_lifecycle.rotation_rejected",
@@ -225,19 +251,17 @@ module Runners
       # outcome is surfaced as a warning.
       def with_managed_auth_lease(runner_key:, credential:, timeout: DEFAULT_LOCK_TIMEOUT_SECONDS)
         lockfile = managed_auth_lockfile_path(runner_key: runner_key, credential: credential)
-        File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |file|
-          unless acquire_lock_with_timeout(file, timeout)
-            Rails.logger.warn(message: "runners.managed_credential_lifecycle.lease_timeout",
-              runner_key: runner_key, credential_id: credential&.id, lock_timeout_seconds: timeout)
-            next yield
-          end
-
-          begin
-            yield
-          ensure
-            file.flock(File::LOCK_UN)
-          end
+        file = File.open(lockfile, File::WRONLY | File::CREAT, 0o600)
+        acquired = acquire_lock_with_timeout(file, timeout)
+        unless acquired
+          Rails.logger.warn(message: "runners.managed_credential_lifecycle.lease_timeout",
+            runner_key: runner_key, credential_id: credential&.id, lock_timeout_seconds: timeout)
         end
+
+        lease = ManagedAuthLease.new(file:, acquired:)
+        yield lease
+      ensure
+        lease&.release! unless lease&.transferred?
       end
 
       private
@@ -462,6 +486,16 @@ module Runners
           return false if remaining <= 0
 
           sleep [ remaining, 0.5 ].min
+        end
+      end
+
+      def with_persistence_timeout(credential, timeout)
+        return yield unless timeout
+
+        milliseconds = (timeout.to_f * 1000).ceil.clamp(1, 2_147_483_647)
+        credential.class.transaction do
+          credential.class.connection.execute("SET LOCAL statement_timeout = #{milliseconds}")
+          yield
         end
       end
     end

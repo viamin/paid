@@ -65,6 +65,14 @@ Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container
 rotation back into the canonical credential once before the container is deleted.
+When a native rotation has been read but its canonical write cannot finish by
+the candidate deadline, the executor transfers the captured rotation and its
+lockfile lease to a recovery write. The request returns at its deadline; the
+recovery keeps the lease until the atomic write completes or its fixed database
+statement budget expires, and records a deferred harvest rather than dropping
+or overwriting the captured credential. If recovery-thread admission fails,
+the executor releases the transferred lease deterministically before surfacing
+the admission failure, so no unowned lease can block later materialization.
 The command, preparation, and prompt travel through an upgraded Docker exec
 stdin connection, not as exec environment entries, because a single `execve`
 environment string is capped near 128 KiB. The materializer checks that every
@@ -106,6 +114,24 @@ cancellation, timeout, and worker interruption all remove the disposable
 container. Failed provisioning is terminal for that candidate and never falls
 back to host execution. Timing out an assessment must not stop a live run's
 container or make all retries fail.
+Each route candidate receives an absolute monotonic deadline derived from the
+single request deadline and its allocated slice. Provisioning, including Docker
+network lookup or creation and upgraded exec creation, credential
+materialization and refresh, command execution, and output handling consume
+that same slice; an executor retains the short cleanup margin before it starts
+a command. The command transport and container watchdog share the executable
+allocation; they cannot consume the reserved cleanup time even when output
+keeps streaming. Stop, delete, and credential cleanup retain the original
+candidate deadline. Thus slow setup cannot obtain a fresh command timeout and a
+spent request deadline cannot start another fallback. Cleanup is bounded and
+best-effort: the executor attempts removal during the remaining candidate
+deadline, and its immutable orphan-sweep label recovers a container when a
+Docker cleanup call cannot finish. Managed credential lease acquisition and
+the container read share that deadline; a read that cannot finish is deferred
+and logged without extending the candidate lifetime. Once a native rotation
+has been read, persistence that cannot finish by the candidate deadline moves
+to a bounded recovery write retaining the lease. That handoff never extends
+command execution or the candidate response lifetime.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
@@ -137,4 +163,5 @@ credential mode, provenance, retries, and disposable-container cleanup.
 | --- | --- | --- |
 | Reuse existing runner preferences | Keeps credentials, model policy and provider selection together | Separate provider preference per helper fragments configuration |
 | Validate JSON locally | Subscription runners can perform text assessments | Requiring schema APIs excludes otherwise capable runners |
+| Reserve cleanup from candidate deadline | Prevents setup from receiving a second full execution allocation while retaining bounded removal and orphan-sweep recovery | Give cleanup unbounded time after execution |
 | Explicit failure without ownership | Prevents billing another tenant or silently using host credentials | Global vendor fallback hides incomplete configuration |

@@ -12,11 +12,13 @@ RSpec.describe Containers::HarnessExecutor do
       container_result = Containers::Provision::Result.success(
         stdout: "OK", stderr: "", exit_code: 0
       )
+      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
+      prepared_executor = executor
       allow(Process).to receive(:clock_gettime).and_call_original
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC).and_return(100.0, 100.25)
-      allow(agent_run).to receive(:execute_in_execution_environment).and_return(container_result)
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)).to be_a(Float)
 
-      result = executor.execute(%w[echo hello], timeout: 30, env: { "FOO" => "bar" })
+      result = prepared_executor.execute(%w[echo hello], timeout: 30, env: { "FOO" => "bar" })
 
       expect(result).to be_a(AgentHarness::CommandExecutor::Result)
       expect(result.stdout).to eq("OK")

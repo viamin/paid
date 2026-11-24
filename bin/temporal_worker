@@ -1,9 +1,21 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require_relative "../app/services/trusted_measurements/deployment_signal"
+require_relative "../lib/paid/worker_readiness"
+require_relative "../lib/paid/worker_readiness/startup_identity"
+
+startup_root = File.expand_path("..", __dir__)
+startup_environment = ENV["RAILS_ENV"].to_s
+startup_environment = ENV["RACK_ENV"].to_s if startup_environment.empty?
+startup_environment = "development" if startup_environment.empty?
+startup_identity = Paid::WorkerReadiness::StartupIdentity.capture do
+  TrustedMeasurements::DeploymentSignal.current(root: startup_root, environment: startup_environment)
+end
+startup_boot_revision = Paid::WorkerReadiness.boot_revision(ENV, root: startup_root)
+
 require_relative "../config/environment"
 require_relative "../lib/paid/temporal_observability"
-require_relative "../lib/paid/worker_readiness"
 require_relative "../lib/paid/temporal_worker_shutdown"
 
 # Explicitly load temporalio — the initializer defers it for web process boot
@@ -218,12 +230,53 @@ else
   ]
 end
 
+begin
+  startup_identity.verify!
+rescue Paid::WorkerReadiness::StartupIdentity::SourceChangedError => error
+  warn "FATAL: #{error.message}; retry startup from a stable checkout"
+  exit 1
+end
+
 Paid::TemporalWorkerShutdown.install(request_shutdown:, forced_exit_timeout:)
+
+# Publish this process's readiness identity for cross-role worker-adoption
+# evidence: each role heartbeats its fixed boot and deployment identities into the
+# shared application database, which — unlike the readiness file below —
+# crosses container boundaries (config/deploy.yml runs job and worker_* as
+# independent containers). The trusted worker-adoption measurement reads
+# these beats from the job container. Heartbeats refresh for the whole
+# process lifetime so a long-running worker stays fresh.
+readiness_roles = case worker_mode
+when "poll" then [ "poll" ]
+when "agent" then [ "agent" ]
+else WorkerReadinessObservation::ROLES
+end
+readiness_heartbeat = Paid::WorkerReadiness::Heartbeat.start(
+  roles: readiness_roles,
+  identity: {
+    pid: Process.pid,
+    revision: startup_boot_revision,
+    deployment_revision: startup_identity.revision,
+    environment: Rails.env.to_s
+  },
+  interval: ENV.fetch("WORKER_READINESS_HEARTBEAT_SECONDS", "30").to_f,
+  recorder: lambda { |beat|
+    WorkerReadinessObservation.record!(
+      role: beat.fetch(:role), pid: beat.fetch(:pid), ready_at: beat.fetch(:ready_at),
+      revision: beat.fetch(:revision), deployment_revision: beat.fetch(:deployment_revision),
+      heartbeat_at: beat.fetch(:at), environment: beat.fetch(:environment)
+    )
+  }
+)
 
 # Run the selected worker set in the same process, sharing the cancellation token.
 # Mark readiness just before blocking: the workers are constructed and the client
 # connection is established, so polling will begin immediately inside run_all.
-at_exit { Paid::WorkerReadiness.mark_not_ready! }
+at_exit do
+  readiness_heartbeat.stop
+  Paid::WorkerReadiness.mark_not_ready!
+end
 Paid::WorkerReadiness.mark_ready!
-puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, revision: #{Paid::WorkerReadiness.boot_revision})"
+puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, " \
+     "heartbeat roles: #{readiness_roles.join(", ")}, revision: #{startup_boot_revision})"
 Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)
