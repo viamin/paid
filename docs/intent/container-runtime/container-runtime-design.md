@@ -219,6 +219,12 @@ unavailable observation. It MUST
 NOT treat the control-plane container's root filesystem as the Docker daemon's
 backing store or guess a Docker root. Remote and unsupported backends report an
 explicit unavailable/unsupported reason rather than inspecting local disk.
+Kernel mount roots can name a different namespace path from `DockerRootDir`.
+When those paths differ, bounded inspection through the selected daemon must
+bind the current container's ID and hostname to the exact read-only bind
+source and destination. A read-only kernel mount at that destination is still
+required. An arbitrary matching basename, another container's inspection or
+a writable mount cannot establish provenance.
 The probe executes in a bounded process group that is terminated and reaped at
 its deadline. Only a nonnegative integer byte count is known headroom;
 missing, malformed, negative, or stale observations remain distinguishable

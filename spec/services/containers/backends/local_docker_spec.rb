@@ -68,6 +68,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
         ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
         ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = daemon_root
         allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => daemon_root })
+        allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
         allow(File).to receive(:read).and_call_original
         allow(File).to receive(:read).with("/proc/self/mountinfo").and_return(mountinfo_for(root: File.join(daemon_root, ".paid-capacity-probe"), target: probe_path))
 
@@ -77,6 +78,71 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       ENV["PATH"] = original_path
       ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
       ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = original_daemon_root
+    end
+
+    def with_namespace_mapped_probe
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n") do |probe_path|
+        hostname = "a" * 12
+        allow(Socket).to receive(:gethostname).and_return(hostname)
+        allow(File).to receive(:read).with("/proc/self/mountinfo")
+          .and_return(mountinfo_for(root: "/docker/.paid-capacity-probe", target: probe_path))
+        info = { "Id" => "a" * 64, "Config" => { "Hostname" => hostname }, "Mounts" => [
+          { "Type" => "bind", "Source" => "/var/lib/docker/.paid-capacity-probe", "Destination" => probe_path, "RW" => false }
+        ] }
+        allow(Docker::Container).to receive(:get).with(hostname)
+          .and_return(instance_double(Docker::Container, info:))
+
+        yield info
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "verifies a bind source when daemon and kernel mount-root namespaces differ" do
+      with_namespace_mapped_probe do
+        expect(backend.backing_storage_observation).to include(
+          scope: "verified_docker_backing_store_probe", available_bytes: 90 * 1024)
+      end
+    end
+
+    {
+      "an unrelated bind source" => ->(info) { info["Mounts"].first["Source"] = "/unrelated/.paid-capacity-probe" },
+      "a different bind target" => ->(info) { info["Mounts"].first["Destination"] = "/elsewhere" },
+      "a writable bind" => ->(info) { info["Mounts"].first["RW"] = true },
+      "a volume instead of a bind" => ->(info) { info["Mounts"].first["Type"] = "volume" },
+      "malformed mount metadata" => ->(info) { info["Mounts"] = [ nil ] },
+      "another container ID" => ->(info) { info["Id"] = "b" * 64 },
+      "another container hostname" => ->(info) { info["Config"]["Hostname"] = "b" * 12 }
+    }.each do |description, corrupt|
+      # @spec CONTAINER-RUNTIME-054
+      it "rejects #{description} across mount-root namespaces" do
+        with_namespace_mapped_probe do |info|
+          corrupt.call(info)
+
+          expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unverified")
+        end
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "refuses a writable kernel mount even when the daemon reports a read-only bind" do
+      with_namespace_mapped_probe do |info|
+        allow(File).to receive(:read).with("/proc/self/mountinfo")
+          .and_return(mountinfo_for(root: "/docker/.paid-capacity-probe", target: info["Mounts"].first["Destination"], options: "rw"))
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unverified")
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "bounds a stalled daemon provenance inspection" do
+      with_namespace_mapped_probe do
+        stub_const("Containers::Backends::LocalDocker::BACKING_STORE_PROBE_TIMEOUT", 0.02)
+        allow(Docker::Container).to receive(:get) { sleep 1 }
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unavailable")
+        expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 0.5
+      end
     end
 
     # @spec CONTAINER-RUNTIME-054
@@ -206,8 +272,8 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unconfigured")
     end
 
-    def mountinfo_for(root:, target:)
-      "42 35 0:42 #{escape_mountinfo_path(root)} #{escape_mountinfo_path(target)} ro - ext4 /dev/test ro\n"
+    def mountinfo_for(root:, target:, options: "ro")
+      "42 35 0:42 #{escape_mountinfo_path(root)} #{escape_mountinfo_path(target)} #{options} - ext4 /dev/test ro\n"
     end
 
     def escape_mountinfo_path(path)

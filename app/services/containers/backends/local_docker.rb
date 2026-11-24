@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "socket"
 require "timeout"
 
 module Containers
@@ -39,7 +40,9 @@ module Containers
         return { reason: "backing_storage_probe_unconfigured" } unless probe_path
         return { reason: "backing_storage_probe_invalid" } unless File.directory?(probe_path)
 
-        provenance_reason = backing_store_provenance_reason(probe_path)
+        provenance_reason = Timeout.timeout(BACKING_STORE_PROBE_TIMEOUT) do
+          backing_store_provenance_reason(probe_path)
+        end
         return { reason: provenance_reason } if provenance_reason
 
         available_bytes = backing_store_available_bytes(probe_path)
@@ -50,7 +53,7 @@ module Containers
           available_bytes: available_bytes,
           observed_at: now
         }
-      rescue SystemCallError, IOError, ArgumentError, TypeError, Docker::Error::DockerError, Excon::Error
+      rescue SystemCallError, IOError, ArgumentError, TypeError, Timeout::Error, Docker::Error::DockerError, Excon::Error
         { reason: "backing_storage_probe_unavailable" }
       end
 
@@ -166,9 +169,27 @@ module Containers
         expected_root = File.join(File.expand_path(daemon_root), ".paid-capacity-probe")
         expected_target = File.expand_path(probe_path)
 
-        backing_store_mounts.any? do |root, target, options|
-          root == expected_root && target == expected_target && options.include?("ro")
+        mounts = backing_store_mounts.select { |_root, target, options| target == expected_target && options.include?("ro") }
+        return false if mounts.empty?
+        return true if mounts.any? { |root, _target, _options| root == expected_root }
+
+        daemon_attests_probe_mount?(expected_root, expected_target)
+      end
+
+      def daemon_attests_probe_mount?(expected_root, expected_target)
+        hostname = Socket.gethostname
+        return false unless hostname.match?(/\A[a-f0-9]{12,64}\z/)
+
+        info = get_container(hostname).info
+        return false unless info.is_a?(Hash)
+        return false unless info["Id"].to_s.start_with?(hostname) && info.dig("Config", "Hostname") == hostname
+
+        Array(info["Mounts"]).any? do |mount|
+          mount.is_a?(Hash) && mount["Type"] == "bind" && mount["RW"] == false &&
+            mount["Source"] == expected_root && mount["Destination"] == expected_target
         end
+      rescue Docker::Error::DockerError, Excon::Error
+        false
       end
 
       def backing_store_mounts

@@ -101,7 +101,12 @@
   backend SHALL measure only an explicitly configured probe whose supported
   mount metadata identifies the selected daemon root's empty measurement child
   as the source for that probe path, after matching its configured daemon root
-  to that daemon's `DockerRootDir`. It SHALL decode single-backslash octal path
+  to that daemon's `DockerRootDir`. When kernel and daemon root namespaces
+  differ, the backend SHALL require the selected daemon's inspection of this
+  container to attest the exact bind source, target and read-only mode, plus
+  a read-only kernel mount at that target. Container identity and hostname
+  SHALL match; absent or mismatched inspection SHALL not authorize a probe.
+  Provenance reads SHALL be bounded. It SHALL decode single-backslash octal path
   escapes from kernel mountinfo before matching the source or target; supported
   local deployment configuration
   SHALL mount only that child directory read-only, not the Docker data-root
