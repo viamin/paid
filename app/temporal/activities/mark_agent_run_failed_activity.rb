@@ -139,12 +139,12 @@ module Activities
 
       previous = agent_run.external_metadata.fetch(IssueEnhancements::TechnicalStopRecovery::METADATA_KEY, {})
       agent_run.update!(external_metadata: agent_run.external_metadata.merge(
-        IssueEnhancements::TechnicalStopRecovery::METADATA_KEY => {
+        IssueEnhancements::TechnicalStopRecovery::METADATA_KEY => previous.merge(
           "classification" => classification,
           "issue_revision" => agent_run.issue.github_updated_at&.iso8601,
           "attempt" => previous.fetch("attempt", 0),
           "root_run_id" => previous.fetch("root_run_id", agent_run.id)
-        }
+        )
       ))
       return if agent_run.issue.paid_state == "manual_review"
 

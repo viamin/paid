@@ -67,7 +67,8 @@ module IssueEnhancements
         issue.github_state == "open" && issue.trusted? && issue.paid_state == "manual_review" &&
         technical_manual_review? &&
         issue.needs_input_questions.blank? && metadata.fetch("attempt", 0).to_i < MAX_ATTEMPTS &&
-        metadata["recovery_claimed_at"].blank? && current_revision? && policy.permitted? && no_active_work?
+        metadata["recovery_claimed_at"].blank? && current_revision? && automatic_enhancement_enabled? &&
+        policy.permitted? && no_active_work?
     end
 
     def metadata
@@ -88,6 +89,13 @@ module IssueEnhancements
         project:, phase: Automation::Phases::ISSUE_PREPARATION, work_item: issue, trigger: :automatic,
         delegated_action: "review"
       )
+    end
+
+    # EffectivePolicy retains the legacy phase decision while the rollout is
+    # disabled, but automatic enhancement has always required this project
+    # setting. Recovery is a continuation, not new authority to override it.
+    def automatic_enhancement_enabled?
+      project.auto_enhance_enabled?
     end
 
     def no_active_work?

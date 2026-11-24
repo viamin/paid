@@ -108,4 +108,24 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
     expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
     expect(issue.reload.paid_state).to eq("manual_review")
   end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  it "honors the legacy automatic-enhancement opt-out while phase rollout is off" do
+    FeatureFlags.disable!(:automation_phases, project:)
+    project.update!(auto_enhance_enabled: false)
+
+    expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(issue.reload.paid_state).to eq("manual_review")
+    expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  it "consumes a producer recovery claim across duplicate delivery" do
+    first = described_class.call(agent_run:)
+    second = described_class.call(agent_run:)
+
+    expect(first.outcome).to eq(:recovered)
+    expect(second).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(AgentRun.where(project:, issue:, goal: "enhance_issue").count).to eq(2)
+  end
 end

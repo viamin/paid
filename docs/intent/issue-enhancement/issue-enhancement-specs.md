@@ -325,12 +325,14 @@
 - [x] **ISSUE-ENHANCEMENT-021** — When a failed automatic `enhance_issue`
   run leaves an open trusted issue in `manual_review` with durable parser or
   transient-transport provenance, Paid SHALL perform at most one delayed
-  recovery attempt when current issue revision, effective issue-preparation
-  policy, budget, and active-work checks still admit it. The recovery SHALL
-  preserve the failed run and its error, refuse stale revisions, retained human
-  questions, independent holds, unknown provenance, and policy opt-out, and
-  leave an exhausted or unchanged technical failure in `manual_review` with a
-  specific operator action.
+  recovery attempt when current issue revision, legacy automatic-enhancement
+  authorization, effective issue-preparation policy, budget, and active-work
+  checks still admit it. The producer's consumed recovery claim SHALL survive
+  duplicate activity delivery and terminal-failure bookkeeping. The recovery
+  SHALL preserve the failed run and its error, refuse stale revisions, retained
+  human questions, independent holds, unknown provenance, and either legacy or
+  rollout policy opt-out, and leave an exhausted or unchanged technical failure
+  in `manual_review` with a specific operator action.
   *Tests:* `spec/services/issue_enhancements/technical_stop_recovery_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
   *Code:* `app/services/issue_enhancements/technical_stop_recovery.rb`,
