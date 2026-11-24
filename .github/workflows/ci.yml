@@ -218,6 +218,11 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      # Limit concurrent cold-cache installs across the matrix. Each leg still
+      # retries independently, but this avoids concentrating registry traffic
+      # after a transient package-mirror outage.
+      # @spec TEST-SUITE-023
+      max-parallel: 2
       matrix:
         shard: [0, 1, 2, 3, 4]
     # Separate service containers and workspaces isolate each shard.

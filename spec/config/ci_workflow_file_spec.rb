@@ -318,6 +318,13 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
+  # @spec TEST-SUITE-023
+  it "limits concurrent shard setup requests to keep registry recovery bounded" do
+    strategy = workflow.fetch("jobs").fetch("test-shards").fetch("strategy")
+
+    expect(strategy).to include("max-parallel" => 2)
+  end
+
   # @spec TEST-SUITE-003
   it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
     workflow.fetch("jobs").except("test").each_value do |job|
