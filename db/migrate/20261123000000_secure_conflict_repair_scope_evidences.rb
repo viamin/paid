@@ -26,10 +26,11 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
     safety_assured do
       execute "ALTER TABLE conflict_repair_scope_evidences ENABLE ROW LEVEL SECURITY"
       execute "ALTER TABLE conflict_repair_scope_evidences FORCE ROW LEVEL SECURITY"
+      execute "DROP POLICY IF EXISTS tenant_isolation ON conflict_repair_scope_evidences"
       execute <<~SQL
         CREATE POLICY tenant_isolation ON conflict_repair_scope_evidences
-        FOR ALL USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
-        WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())
+        FOR ALL USING (paid_tenant_bypass() OR (#{evidence_scope_condition}))
+        WITH CHECK (paid_tenant_bypass() OR (#{evidence_scope_condition}))
       SQL
     end
   end
@@ -43,6 +44,36 @@ class SecureConflictRepairScopeEvidences < ActiveRecord::Migration[8.1]
   end
 
   private
+
+  def evidence_scope_condition
+    <<~SQL.squish
+      conflict_repair_scope_evidences.account_id = paid_current_account_id()
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = conflict_repair_scope_evidences.project_id
+          AND projects.account_id = paid_current_account_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM issues
+        WHERE issues.id = conflict_repair_scope_evidences.issue_id
+          AND issues.project_id = conflict_repair_scope_evidences.project_id
+      )
+      AND EXISTS (
+        SELECT 1 FROM agent_runs
+        WHERE agent_runs.id = conflict_repair_scope_evidences.agent_run_id
+          AND agent_runs.project_id = conflict_repair_scope_evidences.project_id
+          AND agent_runs.issue_id = conflict_repair_scope_evidences.issue_id
+      )
+      AND (
+        conflict_repair_scope_evidences.requested_by_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM users
+          WHERE users.id = conflict_repair_scope_evidences.requested_by_id
+            AND users.account_id = paid_current_account_id()
+        )
+      )
+    SQL
+  end
 
   def backfill_account_ids
     with_tenant_bypass do

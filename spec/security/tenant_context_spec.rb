@@ -90,6 +90,29 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     end
   end
 
+  # @spec AUTO-MERGE-011 POSTGRESQL-PERSISTENCE-006
+  it "rejects conflict-repair scope evidence with cross-tenant producer references" do
+    evidence_a = described_class.with_system_access { create_conflict_scope_evidence(account_a) }
+    project_b, issue_b, user_b = described_class.with_system_access do
+      project = create(:project, account: account_b)
+      [ project, create(:issue, :pull_request, project:), create(:user, account: account_b) ]
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect_rls_rejection do
+          insert_conflict_scope_evidence(account_a, evidence_a.agent_run, project_b, evidence_a.issue)
+        end
+        expect_rls_rejection do
+          insert_conflict_scope_evidence(account_a, evidence_a.agent_run, evidence_a.project, issue_b)
+        end
+        expect_rls_rejection do
+          insert_conflict_scope_evidence(account_a, evidence_a.agent_run, evidence_a.project, evidence_a.issue, user_b)
+        end
+      end
+    end
+  end
+
   # @spec POSTGRESQL-PERSISTENCE-001 POSTGRESQL-PERSISTENCE-006 BOUNDED-PHASE-AUTHORIZATION-010
   it "isolates bounded delegated actions and rejects cross-tenant scope references" do
     action_a = described_class.with_system_access do
@@ -475,7 +498,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
       CreateProjectDelegationIntentCheckpoints.new.up unless intent_checkpoint_tables_exist?
-      SecureConflictRepairScopeEvidences.new.enable_tenant_rls unless conflict_repair_scope_evidences_have_rls?
+      SecureConflictRepairScopeEvidences.new.enable_tenant_rls
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -1103,6 +1126,22 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ConflictRepairScopeEvidence.create!(agent_run: run, account:, project:, issue:, pre_run_sha: "pre",
       integration_base_sha: "base", result_sha: "head", provider_head_sha: "head",
       status: "approved", explanation: "bounded", base_imported_paths: [], repair_authored_paths: [])
+  end
+
+  def insert_conflict_scope_evidence(account, agent_run, project, issue, requested_by = nil)
+    suffix = SecureRandom.hex(4)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO conflict_repair_scope_evidences (
+        account_id, agent_run_id, project_id, issue_id, requested_by_id, pre_run_sha,
+        integration_base_sha, result_sha, provider_head_sha, status, explanation,
+        base_imported_paths, repair_authored_paths, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{agent_run.id}, #{project.id}, #{issue.id}, #{sql_value(requested_by&.id)},
+        #{quote("pre-#{suffix}")}, #{quote("base-#{suffix}")}, #{quote("result-#{suffix}")},
+        #{quote("head-#{suffix}")}, 'approved', 'bounded', '[]'::jsonb, '[]'::jsonb,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
   end
 
   def quote(value)

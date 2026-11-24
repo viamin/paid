@@ -8887,8 +8887,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
     CREATE POLICY "tenant_isolation" ON "public"."conflict_repair_scope_evidences"
       AS PERMISSIVE
       FOR ALL
-      USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
-      WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+      USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = conflict_repair_scope_evidences.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM issues
+  WHERE ((issues.id = conflict_repair_scope_evidences.issue_id) AND (issues.project_id = conflict_repair_scope_evidences.project_id)))) AND (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = conflict_repair_scope_evidences.agent_run_id) AND (agent_runs.project_id = conflict_repair_scope_evidences.project_id) AND (agent_runs.issue_id = conflict_repair_scope_evidences.issue_id)))) AND ((requested_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = conflict_repair_scope_evidences.requested_by_id) AND (users.account_id = paid_current_account_id()))))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = conflict_repair_scope_evidences.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM issues
+  WHERE ((issues.id = conflict_repair_scope_evidences.issue_id) AND (issues.project_id = conflict_repair_scope_evidences.project_id)))) AND (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = conflict_repair_scope_evidences.agent_run_id) AND (agent_runs.project_id = conflict_repair_scope_evidences.project_id) AND (agent_runs.issue_id = conflict_repair_scope_evidences.issue_id)))) AND ((requested_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = conflict_repair_scope_evidences.requested_by_id) AND (users.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL
