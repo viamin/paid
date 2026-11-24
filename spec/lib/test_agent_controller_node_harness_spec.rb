@@ -14,11 +14,33 @@ class TestAgentControllerNodeHarness
 
     const TestAgentController = new Function(transformed)();
 
-    function run() {
+    function jsonResponse(data) {
+      return {
+        headers: { get: () => "application/json" },
+        redirected: false,
+        status: 200,
+        ok: true,
+        json: async () => data
+      };
+    }
+
+    async function run() {
       const controller = Object.create(TestAgentController.prototype);
       const message = controller.troubleshootingFor("authentication");
       controller.buttonTarget = { disabled: false, textContent: "" };
       controller.resultTarget = { innerHTML: "" };
+      controller.element = { isConnected: true };
+      controller.urlValue = "/runners/1/test";
+      controller.hasCsrfTokenValue = true;
+      controller.csrfTokenValue = "test-csrf";
+      global.window = { URLSearchParams };
+      global.document = {
+        createElement: () => {
+          const node = { innerHTML: "" };
+          Object.defineProperty(node, "textContent", { set: (value) => { node.innerHTML = value; } });
+          return node;
+        }
+      };
 
       if (message.includes("on this page")) {
         throw new Error(`Expected authentication troubleshooting to avoid page-local setup guidance, got: ${message}`);
@@ -41,14 +63,54 @@ class TestAgentControllerNodeHarness
       if (!controller.resultTarget.innerHTML.includes("Testing runner...")) {
         throw new Error(`Expected showLoading() to render Testing runner..., got: ${controller.resultTarget.innerHTML}`);
       }
+
+      controller.showError("unexpected", "Legacy failure");
+      if (!controller.resultTarget.innerHTML.includes("Test source unconfirmed")) {
+        throw new Error(`Expected legacy showError() callers to retain bounded fallback context, got: ${controller.resultTarget.innerHTML}`);
+      }
+
+      global.fetch = async () => jsonResponse({
+        success: true,
+        message: "Agent is healthy",
+        execution_source: "host_harness",
+        authentication_source: "unconfirmed",
+        standalone_audit_readiness: "unsupported_refresh"
+      });
+      await controller.test();
+      if (!controller.resultTarget.innerHTML.includes("Host health check")) {
+        throw new Error(`Expected successful test() to disclose the test source, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (!controller.resultTarget.innerHTML.includes("Standalone acceptance audits need reconnection")) {
+        throw new Error(`Expected successful test() to distinguish standalone readiness, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (controller.resultTarget.innerHTML.includes("token")) {
+        throw new Error(`Expected successful test() readiness copy to remain secret-free, got: ${controller.resultTarget.innerHTML}`);
+      }
+
+      global.fetch = async () => jsonResponse({
+        success: false,
+        error_type: "authentication",
+        message: "Managed credential expired",
+        execution_source: "container_smoke_test",
+        authentication_source: "managed",
+        standalone_audit_readiness: "refreshable"
+      });
+      await controller.test();
+      if (!controller.resultTarget.innerHTML.includes("Container smoke test")) {
+        throw new Error(`Expected unsuccessful test() to disclose the test source, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (!controller.resultTarget.innerHTML.includes("Standalone acceptance audits can attempt managed credential refresh")) {
+        throw new Error(`Expected unsuccessful test() to distinguish standalone readiness, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (controller.resultTarget.innerHTML.includes("token")) {
+        throw new Error(`Expected unsuccessful test() readiness copy to remain secret-free, got: ${controller.resultTarget.innerHTML}`);
+      }
     }
 
-    try {
-      run();
-    } catch (error) {
+    run().catch((error) => {
       console.error(error.message || error);
       process.exit(1);
-    }
+    });
   JAVASCRIPT
 
   def self.run
@@ -57,8 +119,8 @@ class TestAgentControllerNodeHarness
 end
 
 RSpec.describe TestAgentControllerNodeHarness, :no_db do
-  # @spec RUNNERS-INDEX-007
-  it "keeps Test Runner copy aligned with the remaining runner auth surfaces" do
+  # @spec RUNNERS-INDEX-007, SUBSCRIPTION-RUNNER-AUTH-008
+  it "keeps Test Runner auth copy and source context aligned with the runner auth contract" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

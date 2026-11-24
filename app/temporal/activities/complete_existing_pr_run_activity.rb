@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 module Activities
   # Completes an agent run that pushed to an existing PR's branch.
   # Marks the run as completed with the existing PR's URL/number
@@ -14,6 +16,25 @@ module Activities
     GENERIC_MESSAGE = "Agent pushed updates to this PR."
     SUMMARY_COMMENT_MODE = "summary"
     CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY = "conflict_repair_scope_assessment"
+    # One finite enclosing deadline: the semantic scope assessment and the
+    # bookkeeping around it draw their budgets from the activity's actual
+    # start-to-close deadline, minus a deliberate reserve for PR publication
+    # and a final reserve so the typed review stop itself always fits (#5310).
+    # @spec AUTO-MERGE-011
+    PUBLICATION_RESERVE_SECONDS = 15
+    STOP_RESERVE_SECONDS = 5
+    MINIMUM_REQUEST_SECONDS = 1
+    DEFAULT_ACTIVITY_DEADLINE_SECONDS = 60
+
+    # Raised only by the bounded stop-path publication wrapper so the typed
+    # ConflictRepairScopeRejected stop survives slow or hung publication.
+    class RejectionPublicationDeadlineExceeded < StandardError; end
+
+    # Raised only when a bounded comparison read exceeds its request budget,
+    # so a slow or hung GitHub compare can neither consume the enclosing
+    # deadline nor displace the fail-closed assessment path.
+    # @spec AUTO-MERGE-011
+    class ComparisonDeadlineExceeded < StandardError; end
 
     class << self
       def agent_update_comment?(body)
@@ -38,7 +59,9 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       return result(agent_run) if agent_run.finished?
 
-      track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post", agent_run: agent_run) do
+      @phase_metadata = {}
+      @activity_deadline = activity_deadline
+      track_phase(agent_run_id: agent_run_id, phase_key: "complete_existing_pr_run", phase_group: "post", agent_run: agent_run, metadata: @phase_metadata) do
         project = agent_run.project
         client = project.client
 
@@ -104,6 +127,38 @@ module Activities
 
     private
 
+    # The enclosing deadline is finite: internal budgets derive from the
+    # activity's actual Temporal start-to-close deadline rather than stacking
+    # independent fixed timeouts. Falls back to the workflow's configured
+    # deadline outside a real activity context (e.g. unit tests).
+    # @spec AUTO-MERGE-011 TEMPORAL-ORCHESTRATION-018
+    def activity_deadline
+      info = Temporalio::Activity::Context.current_or_nil&.info
+      return monotonic_now + DEFAULT_ACTIVITY_DEADLINE_SECONDS unless info&.start_to_close_timeout
+
+      monotonic_now + [ (info.started_time + info.start_to_close_timeout - Time.now).to_f, 0 ].max
+    end
+
+    def remaining_activity_seconds
+      [ @activity_deadline - monotonic_now, 0 ].max
+    end
+
+    def assessment_budget_seconds
+      bounded_request_budget(cap: ConflictRepairs::AssessScope::TIMEOUT)
+    end
+
+    def summary_budget_seconds
+      bounded_request_budget(cap: Llm::GenerateAgentUpdateSummary::TIMEOUT)
+    end
+
+    def bounded_request_budget(cap:)
+      [ remaining_activity_seconds - PUBLICATION_RESERVE_SECONDS, cap ].min
+    end
+
+    def publication_budget_seconds
+      remaining_activity_seconds - STOP_RESERVE_SECONDS
+    end
+
     def result(agent_run)
       {
         agent_run_id: agent_run.id,
@@ -128,6 +183,8 @@ module Activities
       return if body.blank?
 
       client.add_comment(project.full_name, pr_number, body)
+    rescue RejectionPublicationDeadlineExceeded
+      raise
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
@@ -184,6 +241,8 @@ module Activities
 
       client.update_pull_request(project.full_name, pr.number, body: updated_body)
       sync_pull_request_record(client, project, pr.number)
+    rescue RejectionPublicationDeadlineExceeded
+      raise
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
@@ -235,7 +294,7 @@ module Activities
       return if base_sha.blank? || head_sha.blank?
 
       assessment = conflict_repair_scope_assessment(agent_run, base_sha:, head_sha:)
-      comparison_url = "#{agent_run.project.github_url}/compare/#{base_sha}...#{head_sha}"
+      comparison_url = conflict_repair_range_url(agent_run)
       <<~MARKDOWN.strip
         ## Automatic conflict repair
 
@@ -245,6 +304,12 @@ module Activities
       MARKDOWN
     end
 
+    # The durable typed stop for a non-approved scope decision. The assessment
+    # and its durable persistence always precede PR publication, and the
+    # publication attempt is bounded by the remaining deadline so slow or hung
+    # GitHub calls can neither consume the activity's attempts nor replace
+    # this actionable classification with a generic timeout (#5310).
+    # @spec AUTO-MERGE-011
     def enforce_conflict_repair_scope!(client, agent_run, pr)
       return unless agent_run.focus == "merge_conflict"
 
@@ -254,8 +319,7 @@ module Activities
       assessment = assess_conflict_repair_scope(client, agent_run, pre_run_sha:, base_sha:, head_sha:)
       return if assessment["status"] == "approved"
 
-      refresh_pull_request_body(client, agent_run.project, pr, agent_run)
-      post_update_comment(client, agent_run.project, pr.number, agent_run)
+      publish_conflict_repair_rejection(client, agent_run, pr)
       raise Temporalio::Error::ApplicationError.new(
         "Automatic conflict repair requires human review: #{assessment.fetch("explanation")}",
         type: "ConflictRepairScopeRejected",
@@ -263,20 +327,170 @@ module Activities
       )
     end
 
+    # An activity retry reuses the persisted assessment bound to the exact
+    # pre-run, integration-base, and pushed head SHAs instead of issuing
+    # another harness request, so retries add no LLM spend (#5310).
+    # @spec AUTO-MERGE-011
     def assess_conflict_repair_scope(client, agent_run, pre_run_sha:, base_sha:, head_sha:)
+      reusable = reusable_conflict_repair_assessment(agent_run, pre_run_sha:, base_sha:, head_sha:)
+      return reusable if reusable
+
+      started = monotonic_now
+      budget = assessment_budget_seconds
       assessment = if pre_run_sha.blank? || base_sha.blank? || head_sha.blank?
         ConflictRepairs::AssessScope::Result.new(status: "unavailable", explanation: "Repair comparison commits were unavailable", base_imported_paths: [], repair_authored_paths: [])
+      elsif budget < MINIMUM_REQUEST_SECONDS
+        ConflictRepairs::AssessScope::Result.new(status: "unavailable", explanation: "Scope assessment exceeded the enclosing activity deadline", base_imported_paths: [], repair_authored_paths: [])
       else
+        # Comparison I/O draws from the same finite enclosing deadline as the
+        # request it feeds: the reads are bounded by the assessment budget so
+        # a hung GitHub compare cannot consume the activity's deadline.
+        base_comparison, result_comparison = Timeout.timeout(budget, ComparisonDeadlineExceeded) do
+          [
+            client.compare_summary(agent_run.project.full_name, pre_run_sha, base_sha),
+            client.compare_summary(agent_run.project.full_name, pre_run_sha, head_sha)
+          ]
+        end
+        # The reads consumed real deadline time: admit the request only
+        # against what actually remains after them (#5316).
+        budget = assessment_budget_seconds
         ConflictRepairs::AssessScope.call(
           agent_run: agent_run,
-          base_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, base_sha),
-          result_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, head_sha)
+          base_comparison: base_comparison,
+          result_comparison: result_comparison,
+          timeout: budget
         )
       end
+      record_assessment_diagnostics(budget:, elapsed_seconds: monotonic_now - started, status: assessment.status)
       persist_conflict_repair_scope_assessment(agent_run, assessment.to_h.merge("base_sha" => pre_run_sha, "integration_base_sha" => base_sha, "head_sha" => head_sha))
-    rescue GithubClient::Error => e
+    rescue GithubClient::Error, ComparisonDeadlineExceeded => e
       logger.warn(message: "agent_execution.conflict_repair_scope_assessment_failed", agent_run_id: agent_run.id, error_class: e.class.name, error: e.message)
+      record_assessment_diagnostics(budget: assessment_budget_seconds, elapsed_seconds: monotonic_now - started, status: "unavailable")
       persist_conflict_repair_scope_assessment(agent_run, unavailable_assessment(pre_run_sha, base_sha, head_sha))
+    end
+
+    def reusable_conflict_repair_assessment(agent_run, pre_run_sha:, base_sha:, head_sha:)
+      stored = agent_run.external_metadata[CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY]
+      return unless stored.is_a?(Hash) &&
+        stored["base_sha"] == pre_run_sha &&
+        stored["integration_base_sha"] == base_sha &&
+        stored["head_sha"] == head_sha &&
+        stored["status"].present?
+
+      logger.info(
+        message: "agent_execution.conflict_repair_scope_assessment_reused",
+        agent_run_id: agent_run.id,
+        scope_status: stored["status"]
+      )
+      @phase_metadata["scope_assessment_reused"] = true
+      @phase_metadata["scope_assessment_status"] = stored["status"]
+      stored
+    end
+
+    # Bounded, best-effort publication of the rejection. Never allowed to
+    # displace the typed stop: the wrapper abandons whatever has not finished
+    # within the remaining publication budget.
+    # @spec AUTO-MERGE-011
+    def publish_conflict_repair_rejection(client, agent_run, pr)
+      started = monotonic_now
+      budget = publication_budget_seconds
+      skipped = budget < MINIMUM_REQUEST_SECONDS
+      if skipped
+        logger.warn(
+          message: "agent_execution.conflict_repair_rejection_publication_skipped",
+          agent_run_id: agent_run.id,
+          pr_number: pr.number,
+          publication_budget_seconds: budget.round(2)
+        )
+      else
+        Timeout.timeout(budget, RejectionPublicationDeadlineExceeded) do
+          refresh_pull_request_body(client, agent_run.project, pr, agent_run)
+          post_conflict_repair_rejection_comment(client, agent_run, pr)
+        end
+      end
+    rescue RejectionPublicationDeadlineExceeded
+      logger.warn(
+        message: "agent_execution.conflict_repair_rejection_publication_timed_out",
+        agent_run_id: agent_run.id,
+        pr_number: pr.number,
+        publication_budget_seconds: budget.round(2)
+      )
+    ensure
+      record_publication_diagnostics(elapsed_seconds: monotonic_now - started, skipped:)
+    end
+
+    # At most one rejection comment per repair range: a retried attempt that
+    # already posted for this exact pre-run..head range must not duplicate it.
+    # @spec AUTO-MERGE-011
+    def post_conflict_repair_rejection_comment(client, agent_run, pr)
+      project = agent_run.project
+      return unless project.upstream_feature_enabled?(:upstream_issue_comments)
+      return if quiet_mode?(project)
+      return if rejection_comment_already_posted?(client, project, pr.number, agent_run)
+
+      body = build_comment_body(client, project, pr.number, agent_run)
+      return if body.blank?
+
+      client.add_comment(project.full_name, pr.number, body)
+    rescue RejectionPublicationDeadlineExceeded
+      raise
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      logger.warn(
+        message: "agent_execution.existing_pr_comment_failed",
+        agent_run_id: agent_run.id,
+        pr_number: pr.number,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def rejection_comment_already_posted?(client, project, pr_number, agent_run)
+      range_url = conflict_repair_range_url(agent_run)
+      return false if range_url.blank?
+
+      client.issue_comments(project.full_name, pr_number).any? do |comment|
+        self.class.agent_update_comment?(comment.body) && comment.body.include?(range_url)
+      end
+    rescue RejectionPublicationDeadlineExceeded
+      raise
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      # A failed duplicate lookup must not suppress the review request: post
+      # rather than silently drop the rejection explanation.
+      logger.warn(
+        message: "agent_execution.existing_pr_comment_lookup_failed",
+        agent_run_id: agent_run.id,
+        pr_number: pr_number,
+        error_class: e.class.name,
+        error: e.message
+      )
+      false
+    end
+
+    def conflict_repair_range_url(agent_run)
+      base_sha = summary_base_sha(agent_run)
+      head_sha = agent_run.result_commit_sha
+      return if base_sha.blank? || head_sha.blank?
+
+      "#{agent_run.project.github_url}/compare/#{base_sha}...#{head_sha}"
+    end
+
+    def record_assessment_diagnostics(budget:, elapsed_seconds:, status:)
+      @phase_metadata.merge!(
+        "scope_assessment_status" => status,
+        "assessment_budget_seconds" => budget.round(2),
+        "assessment_elapsed_ms" => (elapsed_seconds * 1000).round
+      )
+    end
+
+    def record_publication_diagnostics(elapsed_seconds:, skipped: false)
+      @phase_metadata.merge!(
+        "rejection_publication_skipped" => skipped,
+        "publication_elapsed_ms" => (elapsed_seconds * 1000).round
+      )
     end
 
     def conflict_repair_scope_assessment(agent_run, base_sha:, head_sha:)
@@ -331,17 +545,45 @@ module Activities
       summary_base_sha = summary_base_sha(agent_run)
       return if summary_base_sha.blank? || agent_run.result_commit_sha.blank?
 
-      comparison = client.compare_summary(project.full_name, summary_base_sha, agent_run.result_commit_sha)
+      budget = summary_budget_seconds
+      return if budget < MINIMUM_REQUEST_SECONDS
+
+      comparison = summary_comparison(client, project, summary_base_sha, agent_run, bound: budget)
+      # The read consumed real deadline time: admit the request only against
+      # what actually remains after it (#5316).
+      budget = summary_budget_seconds
+      return if comparison.blank? || budget < MINIMUM_REQUEST_SECONDS
+
       result = Llm::GenerateAgentUpdateSummary.call(
         agent_run: agent_run,
         repository: project.full_name,
         pr_number: pr_number,
         base_sha: summary_base_sha,
         head_sha: agent_run.result_commit_sha,
-        comparison: comparison
+        comparison: comparison,
+        timeout: budget
       )
       track_summary_tokens(agent_run, result&.response)
       result&.body
+    end
+
+    # The summary comparison read draws from the same finite enclosing
+    # deadline as the summary request it feeds: bounded by that budget, and
+    # its elapsed time is deducted before the request is admitted. A read
+    # that exceeds the budget degrades to a skipped summary rather than a
+    # failed completion (#5316).
+    # @spec TEMPORAL-ORCHESTRATION-018
+    def summary_comparison(client, project, base_sha, agent_run, bound:)
+      Timeout.timeout(bound, ComparisonDeadlineExceeded) do
+        client.compare_summary(project.full_name, base_sha, agent_run.result_commit_sha)
+      end
+    rescue ComparisonDeadlineExceeded
+      logger.warn(
+        message: "agent_execution.update_summary_comparison_timed_out",
+        agent_run_id: agent_run.id,
+        repository: project.full_name
+      )
+      nil
     end
 
     def summary_base_sha(agent_run)

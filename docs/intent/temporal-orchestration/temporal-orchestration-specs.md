@@ -221,6 +221,31 @@
   `Workflows::SourceClosureRecoveryWorkflow#park_source_closure_recovery`,
   `Workflows::AgentExecutionWorkflow#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-018** — When `AgentExecutionWorkflow`
+  completes a run that pushed to an existing pull request, the
+  `CompleteExistingPrRun` activity SHALL keep its existing agent queue, finite
+  start-to-close deadline, and existing retry policy, and SHALL derive its
+  internal assessment, comparison-read, update-summary, and publication
+  budgets from the activity's actual
+  remaining deadline rather than introducing independent fixed timeouts, with
+  each bounded comparison read's elapsed time deducted from the shared
+  deadline before its model request is admitted. The
+  bounded poll/control queue SHALL continue to carry only established bounded
+  control bookkeeping (failure publication, cleanup-ownership resolution,
+  janitor scheduling); the completion activity's AI and GitHub work SHALL stay
+  on the agent queue. When the activity raises the typed
+  `ConflictRepairScopeRejected` review stop, the workflow SHALL publish that
+  exact failure type on the run (normal PR/run/UI/API/MCP representations)
+  through the existing failure-marking path, SHALL preserve the recorded
+  result-commit SHA and workflow history, and SHALL retain the existing
+  diagnostic container-retention and janitor ownership. A slow or unavailable
+  PR publication SHALL NOT convert the stop into a generic timeout nor
+  trigger rerun of coding/push work (#5310).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#execute`,
+  `Activities::CompleteExistingPrRunActivity`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

@@ -22,13 +22,14 @@ module Llm
       end
     end
 
-    def initialize(repository:, pr_number:, base_sha:, head_sha:, comparison:, agent_run: nil)
+    def initialize(repository:, pr_number:, base_sha:, head_sha:, comparison:, agent_run: nil, timeout: TIMEOUT)
       @agent_run = agent_run
       @repository = repository
       @pr_number = pr_number
       @base_sha = base_sha
       @head_sha = head_sha
       @comparison = comparison
+      @timeout = timeout
     end
 
     def generate
@@ -51,7 +52,7 @@ module Llm
     end
 
     def request_summary
-      Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
+      Request.call(prompt: prompt, agent_run: @agent_run, timeout: @timeout)
     end
 
     def normalize_output(text)
