@@ -10,7 +10,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
   let(:trusted_comment) { { body: "Validate input", author: "viamin" } }
   let(:thread) { { id: "thread_1", is_resolved: false, comments: [ trusted_comment ] } }
   let(:output) do
-    { head_sha: "current-head", resolutions: [ { thread_id: "thread_1", disposition: "repaired", rationale: "The current head validates the missing input." } ] }.to_json
+    { authorized: true, head_sha: "current-head", resolutions: [ { thread_id: "thread_1", disposition: "repaired", rationale: "The current head validates the missing input." } ] }.to_json
   end
 
   before do
@@ -63,7 +63,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     many_files = 100.times.map { |index| { filename: "app/file_#{index}.rb", patch: long_patch } }
     allow(github_client).to receive_messages(review_threads: many_threads, detailed_compare_files: many_files)
     allow(response).to receive(:output).and_return(
-      { head_sha: "current-head", resolutions: [ { thread_id: "thread_0", disposition: "repaired", rationale: "Evidence" } ] }.to_json
+      { authorized: true, head_sha: "current-head", resolutions: [ { thread_id: "thread_0", disposition: "repaired", rationale: "Evidence" } ] }.to_json
     )
 
     described_class.new.execute(agent_run_id: agent_run.id, thread_ids: many_threads.map { |thread| thread[:id] })
@@ -132,9 +132,18 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     expect(described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])).to include(authorized: false)
   end
 
+  # @spec FOCUSED-RUN-011
+  it "fails closed unless the assessment explicitly authorizes resolution" do
+    allow(response).to receive(:output).and_return(
+      { head_sha: "current-head", resolutions: [ { thread_id: "thread_1", disposition: "repaired", rationale: "A reason" } ] }.to_json
+    )
+
+    expect(described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])).to include(authorized: false)
+  end
+
   it "fails closed when the response names an uncaptured thread" do
     allow(response).to receive(:output).and_return(
-      { head_sha: "current-head", resolutions: [ { thread_id: "thread_2", disposition: "repaired", rationale: "A reason" } ] }.to_json
+      { authorized: true, head_sha: "current-head", resolutions: [ { thread_id: "thread_2", disposition: "repaired", rationale: "A reason" } ] }.to_json
     )
 
     expect(described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])).to include(authorized: false)
@@ -161,7 +170,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
       ]
     end
     let(:output) do
-      { head_sha: "current-head", resolutions: [ { thread_id: "thread_2", disposition: "repaired", rationale: "The current head guards the nil case." } ] }.to_json
+      { authorized: true, head_sha: "current-head", resolutions: [ { thread_id: "thread_2", disposition: "repaired", rationale: "The current head guards the nil case." } ] }.to_json
     end
 
     before do
@@ -214,7 +223,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     end
 
     def no_code_disposition_output
-      { head_sha: "current-head", resolutions: [
+      { authorized: true, head_sha: "current-head", resolutions: [
         { thread_id: "thread_1", disposition: "invalid",
           rationale: "The current HTTP evidence disproves the reported pagination failure." }
       ] }.to_json

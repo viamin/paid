@@ -145,7 +145,7 @@
   changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
   captured review thread merely because the run completed, pushed, or reports
   that the feedback was already addressed. A thread remains actionable until a
-  current-head, exact-thread-version-bound assessment supplies explicit
+  current-head, explicitly authorized, exact-thread-version-bound assessment supplies explicit
   supported rationale from evidence that includes the thread's original
   finding. Complete thread evidence SHALL be fetched within finite page,
   request, and evidence-size budgets, rejecting missing, repeated, or cyclic

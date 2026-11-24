@@ -89,9 +89,10 @@ module Activities
         Authorize a resolution only when the current head semantically repairs
         the finding or supports invalid, outdated, or already-fixed disposition.
         Do not infer repair merely from a successful run, setup output, or changed
-        lines. Return only JSON with exactly head_sha and resolutions. head_sha
-        must equal #{head_sha.inspect}. Each resolution must have exactly
-        thread_id, disposition, and rationale. disposition is one of
+        lines. Return only JSON with exactly authorized, head_sha, and
+        resolutions. authorized must be true. head_sha must equal
+        #{head_sha.inspect}. Each resolution must have exactly thread_id,
+        disposition, and rationale. disposition is one of
         repaired, invalid, outdated, already_fixed. rationale must cite the
         current-head evidence and cannot be blank. Omit inconclusive findings.
 
@@ -152,7 +153,8 @@ module Activities
       return unless payload.is_a?(Hash)
 
       payload = payload.deep_stringify_keys
-      return unless payload.keys.sort == %w[head_sha resolutions] && payload["head_sha"] == head_sha
+      return unless payload.keys.sort == %w[authorized head_sha resolutions]
+      return unless payload["authorized"] == true && payload["head_sha"] == head_sha
 
       resolutions = payload["resolutions"]
       return unless resolutions.is_a?(Array) && resolutions.present?

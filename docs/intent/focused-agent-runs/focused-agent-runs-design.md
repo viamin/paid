@@ -68,7 +68,7 @@ follow-up can address the feedback, but capture, successful execution, a push,
 or a rebase are not proof that any particular finding is repaired. Before the
 public GitHub mutation, `AssessFollowupReviewThreadsActivity` obtains a fresh
 agent-harness judgment over the captured threads at the current head. Its exact
-structured response is mechanically checked for captured trusted IDs, a
+structured response is mechanically checked for explicit authorization, captured trusted IDs, a
 supported disposition, explicit rationale, the observed head SHA, and a digest
 of the exact thread content assessed. Complete evidence is paginated only for
 captured threads and is bounded by finite request, page, comment, and byte
