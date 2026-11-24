@@ -348,6 +348,19 @@ module Projects
       redirect_to project_path(@project), notice: "Priority requested for PR ##{pr.github_number}."
     end
 
+    # @spec QUEUE-TIER-010
+    def prioritize_first_implementation
+      authorize @project, :run_agent?
+
+      run = @project.agent_runs.find_by(id: params[:agent_run_id])
+      unless run && AgentRuns::PrioritizeFirstImplementation.call(agent_run: run, actor: current_user)
+        redirect_to project_path(@project), alert: "That first implementation is no longer eligible for priority."
+        return
+      end
+
+      redirect_to project_agent_run_path(@project, run), notice: "Priority requested for this first implementation."
+    end
+
     # Deliberate continuation of an issue stalled behind terminal closeout
     # evidence: persists the scoped authorization (actor, reason, evidence
     # generation) and queues exactly one run. Mirrors the OPERATOR-INBOX

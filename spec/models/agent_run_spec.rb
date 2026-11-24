@@ -4172,6 +4172,17 @@ RSpec.describe AgentRun do
       expect(coding_retry.queue_priority_label).to eq("2 - Operator-requested coding retry")
     end
 
+    it "uses the existing operator coding tier for a prioritized first implementation" do # @spec QUEUE-TIER-010
+      project = create(:project)
+      issue = create(:issue, project:, labels: [ "P1" ])
+      first_attempt = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+        operator_coding_priority_requested_at: Time.current)
+      ordinary = create(:agent_run, :queued, :automatic, project:, issue: create(:issue, project:), goal: "create_pr", auto_pick: true)
+
+      expect(described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)).to eq([ first_attempt.id, ordinary.id ])
+      expect(first_attempt.queue_priority_tier).to eq(:operator_coding)
+    end
+
     it "prioritizes PR-continuation work within the same priority tier" do
       project = create(:project)
       _fresh = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)

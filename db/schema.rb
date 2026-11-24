@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_183350) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -376,6 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_183350) do
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
     t.datetime "operator_coding_priority_requested_at", comment: "Explicit operator scheduling request for an existing coding retry; execution authority remains unchanged."
+    t.datetime "operator_first_implementation_priority_requested_at", comment: "Explicit operator scheduling request for an existing automatic first implementation; execution authority remains unchanged."
     t.datetime "operator_priority_requested_at", comment: "Explicit operator scheduling request for an existing audit; original execution authority remains unchanged."
     t.bigint "originating_audit_run_id"
     t.string "parent_workflow_id", limit: 255

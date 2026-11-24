@@ -23,6 +23,7 @@ module Tools
       "Tools::TriggerReadinessBootstrap",
       "Tools::RequestIssueContinuation",
       "Tools::PrioritizeCodingRetry",
+      "Tools::PrioritizeFirstImplementation",
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
       "Tools::ListLayeredVerificationReviewPackages",

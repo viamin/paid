@@ -83,6 +83,26 @@ an audit record and cannot erase lineage or reset retry state. Dequeue retains
 all ordinary authorization, trust, dependency, phase, pause, cost, capacity,
 and finite-retry checks.
 
+### Explicit operator first-implementation requests
+
+`AgentRuns::PrioritizeFirstImplementation` provides the deliberately separate
+path for an existing automatic first `create_pr` attempt. It accepts only a
+queued, unclaimed, paid-native Auto-Pick source-issue run with no PR,
+continuation, or preceding implementation attempt. Under the run lock it
+rechecks the actor's account/project permission and the shared candidate-source
+eligibility predicate, thereby refusing a closed, untrusted, paused,
+dependency-blocked, or otherwise invalidated source. Rate-limited work and a
+preexisting coding priority request are refused. The service writes the shared
+operator-coding marker plus a first-implementation request timestamp and one
+actor audit event; concurrent/repeated requests preserve the first event.
+
+This marker is intentionally durable. A later revocation or expiry must append
+an audit event and cannot erase request history or change allowance, retry,
+backoff, policy snapshots, runner/model/privacy/billing, admission evidence,
+or run identity. It has no capacity, P0, preemption, or dispatch effect beyond
+the existing queue tier, so all fairness and dequeue guards continue to decide
+whether it may run.
+
 ## Ruby mirror and badges
 
 ### Explicit operator acceptance requests
