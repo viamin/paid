@@ -24,6 +24,7 @@ RSpec.describe Tools::Registry do
       retry_source_closure
       update_technical_merge_blocker
       request_issue_continuation
+      prioritize_coding_retry
       request_acceptance_audit
       request_layered_verification_audit
       approve_layered_verification_review_package
@@ -251,6 +252,8 @@ RSpec.describe Tools::Registry do
       expect(names).to include("list_projects", "get_project", "operator_console_inventory", "start_cycle_analysis")
       # @spec AUTOMATION-PHASES-019
       expect(names).to include("update_project_settings", "revoke_continuation_grant", "extend_continuation_grant")
+      # @spec QUEUE-TIER-008
+      expect(names).to include("prioritize_coding_retry")
       expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end

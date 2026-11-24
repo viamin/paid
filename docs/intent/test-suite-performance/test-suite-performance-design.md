@@ -49,12 +49,14 @@ matrix aggregate reports failure even though no test ran. A lightweight
 `shard-status` job classifies each expected leg from the run's job list after
 the matrix completes: a leg with no job is recoverable, a leg that ran and did
 not succeed is failing, and an unclassifiable run (jobs API unavailable) fails
-closed. A `shard-recovery` job then re-runs exactly the recoverable legs with
-the same services, credentials, coverage command names, and per-leg artifact
-contract as the matrix, keeping one shard identity per coverage report. The
-final check treats recovery as satisfying only the missing legs: a real shard
-failure, a failed re-run, an incomplete classification, or a still-missing
-report still fails the check. Recovery never re-runs legs that executed.
+closed. `shard-recovery` expands only the recoverable leg identifiers into a
+second matrix, so each re-run receives its own services, credentials, 360-minute
+boundary, coverage command name, and artifact contract. This prevents several
+missing legs from serially consuming one shard's bounded allowance while
+keeping one shard identity per coverage report. The final check treats recovery
+as satisfying only the missing legs: a real shard failure, a failed re-run, an
+incomplete classification, or a still-missing report still fails the check.
+Recovery never re-runs legs that executed.
 
 ## System-suite infrastructure recovery
 
