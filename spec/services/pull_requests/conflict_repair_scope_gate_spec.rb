@@ -13,6 +13,7 @@ RSpec.describe PullRequests::ConflictRepairScopeGate do
       project:, issue:, goal: "create_pr", focus: "merge_conflict",
       source_pull_request_number: issue.github_number, result_commit_sha: head,
       external_metadata: assessment || {
+        "pre_run_head_sha" => "pre-repair",
         "conflict_repair_scope_assessment" => {
           "status" => status,
           "explanation" => "Scope #{status}",
@@ -55,6 +56,26 @@ RSpec.describe PullRequests::ConflictRepairScopeGate do
 
     expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).to be_allowed
     expect(run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+  end
+
+  it "blocks a corrupted reassessment whose pre-run SHA differs from its producer" do # @spec AUTO-MERGE-011
+    run = record_repair(status: "unavailable")
+    evidence = ConflictRepairScopeEvidence.create!(agent_run: run, account: project.account, project:, issue:, pre_run_sha: "pre-repair",
+      integration_base_sha: "base", result_sha: head_sha, provider_head_sha: head_sha, status: "approved",
+      explanation: "fresh decision", base_imported_paths: [], repair_authored_paths: [])
+    evidence.update_column(:pre_run_sha, "other-pre-run")
+
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).not_to be_allowed
+  end
+
+  it "rejects reassessment evidence whose pre-run SHA differs from its producer" do # @spec AUTO-MERGE-011
+    run = record_repair(status: "unavailable")
+    evidence = ConflictRepairScopeEvidence.new(agent_run: run, account: project.account, project:, issue:, pre_run_sha: "other-pre-run",
+      integration_base_sha: "base", result_sha: head_sha, provider_head_sha: head_sha, status: "approved",
+      explanation: "fresh decision", base_imported_paths: [], repair_authored_paths: [])
+
+    expect(evidence).not_to be_valid
+    expect(evidence.errors[:pre_run_sha]).to include("must match producer")
   end
 
   it "blocks a prior approval when the current integration base changed" do

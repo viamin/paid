@@ -17,7 +17,10 @@ class ConflictRepairScopeEvidence < ApplicationRecord
   validate :scope_matches_producer
 
   def self.current_for(agent_run:, head_sha:, integration_base_sha:)
-    where(agent_run:, result_sha: head_sha, provider_head_sha: head_sha, integration_base_sha:)
+    pre_run_sha = agent_run.external_metadata["pre_run_head_sha"]
+    return if pre_run_sha.blank?
+
+    where(agent_run:, pre_run_sha:, result_sha: head_sha, provider_head_sha: head_sha, integration_base_sha:)
       .order(created_at: :desc, id: :desc).first
   end
 
@@ -27,5 +30,6 @@ class ConflictRepairScopeEvidence < ApplicationRecord
     errors.add(:account, "must match producer") unless account_id == agent_run&.project&.account_id
     errors.add(:project, "must match producer") unless project_id == agent_run&.project_id
     errors.add(:issue, "must match producer") unless issue_id == agent_run&.issue_id
+    errors.add(:pre_run_sha, "must match producer") unless pre_run_sha == agent_run&.external_metadata&.fetch("pre_run_head_sha", nil)
   end
 end
