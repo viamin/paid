@@ -3719,6 +3719,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008
     context "when codex subscription auth host mount is active" do
       let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
 
@@ -3731,6 +3732,15 @@ RSpec.describe Containers::Provision do
         service.remove_instance_variable(:@codex_subscription_auth_mount) if service.instance_variable_defined?(:@codex_subscription_auth_mount)
         service.remove_instance_variable(:@codex_config_host_path) if service.instance_variable_defined?(:@codex_config_host_path)
         service.remove_instance_variable(:@current_container_mounts) if service.instance_variable_defined?(:@current_container_mounts)
+        RunnerAuthMaterialization.create!(
+          account: project.account,
+          project: project,
+          agent_run: agent_run,
+          runner_key: "codex",
+          auth_source: "host_forwarded",
+          container_id: mock_container.id,
+          materialized_at: Time.current
+        )
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
