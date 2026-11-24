@@ -250,7 +250,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     expect(shard_setup.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
     [ shard_setup, recovery_setup ].each do |step|
       expect(step.fetch("run")).to include(
-        "yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 600000"
+        "yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000"
       )
       expect(step.fetch("run")).to include('retry_with_backoff \\')
       expect(step.fetch("run")).to include("20m")

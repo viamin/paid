@@ -58,6 +58,16 @@ RSpec.describe Issues::ReenqueueEligibleJob do
   end
 
   describe "#perform" do
+    it "does not admit delayed replacement coding after a manual producer pushed a result" do # @spec EAGER-QUEUE-018
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, paid_state: "failed", github_state: "open")
+      producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+        auto_pick: false, branch_name: "paid/5273-preserved-result", result_commit_sha: "a" * 40)
+
+      expect { described_class.perform_now(issue.id) }.not_to change(AgentRun, :count)
+      expect(producer.reload).to have_attributes(status: "failed", result_commit_sha: "a" * 40)
+    end
+
     it "rechecks an eligible issue" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "failed", github_state: "open")

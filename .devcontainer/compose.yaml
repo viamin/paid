@@ -44,6 +44,8 @@ services:
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
       REDIS_URL: "redis://redis:6379/0"
       PAID_ENABLE_DEV_QUERY_STATS: "1"
+      # Prune unused Docker images and build cache with seven-day retention.
+      PAID_DOCKER_DISK_CLEANUP_ENABLED: "${PAID_DOCKER_DISK_CLEANUP_ENABLED:-true}"
       PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
 
     depends_on:
