@@ -15,6 +15,7 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
 
   before do
     agent_run.update!(external_metadata: {
+      "prompt_assembly" => { "model" => "gpt-test" },
       described_class::METADATA_KEY => {
         "classification" => "parser", "issue_revision" => issue.github_updated_at.iso8601, "attempt" => 0
       }
@@ -31,6 +32,17 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
     expect(result.successor).to have_attributes(goal: "enhance_issue", trigger_type: "automatic", status: "queued")
     expect(agent_run.reload.error_message).to include("unparseable structured output")
     expect(issue.reload.paid_state).to eq("in_progress")
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  it "claims the retry without clobbering sibling provenance metadata" do
+    described_class.call(agent_run:)
+
+    reloaded = agent_run.reload.external_metadata
+    expect(reloaded["prompt_assembly"]).to eq({ "model" => "gpt-test" })
+    expect(reloaded[described_class::METADATA_KEY]).to include(
+      "classification" => "parser", "attempt" => 0, "recovery_claimed_at" => String
+    )
   end
 
   # @spec ISSUE-ENHANCEMENT-021

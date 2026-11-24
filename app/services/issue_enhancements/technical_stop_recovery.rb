@@ -33,8 +33,12 @@ module IssueEnhancements
         return skipped(:budget_exhausted) unless CostBudgets::Check.call(project)[:allowed]
 
         successor = AgentRun.create!(successor_attributes)
-        agent_run.update_columns(external_metadata: metadata.merge("recovery_claimed_at" => Time.current.iso8601),
-          updated_at: Time.current)
+        agent_run.update_columns(
+          external_metadata: agent_run.external_metadata.merge(
+            METADATA_KEY => metadata.merge("recovery_claimed_at" => Time.current.iso8601)
+          ),
+          updated_at: Time.current
+        )
         issue.update!(paid_state: "in_progress")
         ProcessRunQueueJob.perform_later
         Result.new(:recovered, :recovered, successor)
