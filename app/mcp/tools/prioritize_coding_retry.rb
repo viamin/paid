@@ -6,6 +6,8 @@ module Tools
 
     def self.tool_name = "prioritize_coding_retry"
     def self.write_operation? = true
+    # @spec QUEUE-TIER-008
+    def self.mcp_available? = true
     def self.description
       "Prioritize one existing unclaimed automatic coding retry without changing its execution authority or retry history. " \
         "All scheduler eligibility and capacity checks remain in force. Requires confirmation."
