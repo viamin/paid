@@ -18,6 +18,7 @@ module LayeredVerification
 
       def call
         AuditAccess.authorize!(user:, project:)
+        @target_revision = resumed_target_revision
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: resumed_goal)
         successor = nil
         AgentRun.transaction do
@@ -28,7 +29,7 @@ module LayeredVerification
 
           lock_obligations!
           @dependency_snapshot = DependencySnapshot.call(project:)
-          @decision = Resumption.call(agent_run:, user:, dependencies: dependency_snapshot)
+          @decision = Resumption.call(agent_run:, user:, dependencies: dependency_snapshot, target_revision:)
           successor = AgentRun.create!(run_attributes(runner_id, agent_type))
         end
         ProcessRunQueueJob.perform_later
@@ -37,7 +38,7 @@ module LayeredVerification
 
       private
 
-      attr_reader :agent_run, :decision, :dependency_snapshot, :user
+      attr_reader :agent_run, :decision, :dependency_snapshot, :target_revision, :user
 
       def project
         agent_run.project
@@ -49,7 +50,7 @@ module LayeredVerification
 
       def duplicate_audit?
         Request.active_run_for_identity?(project:, goal: resumed_goal,
-          obligation_ids: Array(metadata.fetch("obligation_ids")), target_revision: metadata.fetch("target_revision"))
+          obligation_ids: Array(metadata.fetch("obligation_ids")), target_revision:)
       end
 
       def lock_obligations!
@@ -61,7 +62,7 @@ module LayeredVerification
           project:, initiating_user: user, runner_id:, agent_type:, goal: resumed_goal,
           issue_id: agent_run.issue_id, custom_prompt: resumed_prompt,
           source_pull_request_number: agent_run.source_pull_request_number,
-          status: "queued", trigger_type: "manual", base_commit_sha: metadata.fetch("target_revision"),
+          status: "queued", trigger_type: "manual", base_commit_sha: target_revision,
           review_depth_snapshot: agent_run.review_depth_snapshot,
           originating_audit_run_id: resumed_originating_audit_run_id,
           external_metadata: agent_run.external_metadata.merge("layered_verification" => resumed_metadata)
@@ -70,6 +71,7 @@ module LayeredVerification
 
       def resumed_metadata
         metadata.merge(
+          "target_revision" => target_revision,
           "budget" => decision.remaining_budget,
           "input_revisions" => obligation_input_revisions,
           "dependencies" => dependency_snapshot,
@@ -104,6 +106,15 @@ module LayeredVerification
 
       def resumed_originating_audit_run_id
         agent_run.originating_audit_run_id unless repair?
+      end
+
+      def resumed_target_revision
+        return metadata.fetch("target_revision") unless repair?
+
+        revision = agent_run.result_commit_sha
+        return revision if revision&.match?(/\A[0-9a-f]{40}\z/i)
+
+        raise ArgumentError, "a repair requires a recorded post-mutation revision before resumption"
       end
 
       def repair? = agent_run.goal == "layered_verification_repair"

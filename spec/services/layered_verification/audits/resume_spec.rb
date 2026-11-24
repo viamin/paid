@@ -17,6 +17,12 @@ RSpec.describe LayeredVerification::Audits::Resume do
       } })
   end
 
+  def failed_repair(audit:, result_commit_sha:)
+    create(:agent_run, issue: nil, project: audit.project, goal: "layered_verification_repair", status: "failed",
+      custom_prompt: "Repair the audited finding.", originating_audit_run: audit,
+      external_metadata: audit.external_metadata, result_commit_sha:)
+  end
+
   # @spec LAYERED-VERIFY-020
   it "dispatches a successor that preserves the validated metadata and resumption decision" do
     user = create(:user, :owner)
@@ -61,24 +67,41 @@ RSpec.describe LayeredVerification::Audits::Resume do
   end
 
   # @spec LAYERED-VERIFY-020
-  it "continues a repair as verification-only work without replaying its mutation prompt" do
+  it "continues a repair as verification-only work pinned to its produced revision" do
     user = create(:user, :owner)
     project = create(:project, account: user.account)
     obligation = create(:layered_verification_obligation, project:)
     audit = failed_audit(project:, obligation:)
-    repair = create(:agent_run, issue: nil, project:, goal: "layered_verification_repair", status: "failed",
-      custom_prompt: "Repair the audited finding.", originating_audit_run: audit, external_metadata: audit.external_metadata)
+    prior_result = create(:layered_verification_check_result, obligation:, agent_run: audit,
+      input_revision: { "code" => "sha-1", "external_revision" => obligation.external_revision })
+    repaired_revision = "b" * 40
+    repair = failed_repair(audit:, result_commit_sha: repaired_revision)
 
     successor = described_class.call(agent_run: repair, user:)
 
     expect(successor).to have_attributes(
-      goal: "layered_verification_audit", custom_prompt: nil, originating_audit_run: nil
-    )
-    expect(successor.external_metadata.dig("layered_verification", "resumption")).to include(
+      goal: "layered_verification_audit", custom_prompt: nil, originating_audit_run: nil,
+      base_commit_sha: repaired_revision)
+    successor_metadata = successor.external_metadata.fetch("layered_verification")
+    expect(successor_metadata.fetch("target_revision")).to eq(repaired_revision)
+    expect(successor_metadata.dig("impact", "invalidated_check_result_ids")).to include(prior_result.id)
+    expect(successor_metadata.fetch("resumption")).to include(
       "resumed_from_run_id" => repair.id,
       "interrupted_goal" => "layered_verification_repair",
       "originating_audit_run_id" => audit.id
     )
+  end
+
+  # @spec LAYERED-VERIFY-020
+  it "rejects repair resumption when no post-mutation revision was recorded" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    audit = failed_audit(project:, obligation:)
+    repair = failed_repair(audit:, result_commit_sha: nil)
+
+    expect { described_class.call(agent_run: repair, user:) }
+      .to raise_error(ArgumentError, "a repair requires a recorded post-mutation revision before resumption")
   end
 
   it "refuses to admit a successor while an active audit covers the same scope and revision" do
