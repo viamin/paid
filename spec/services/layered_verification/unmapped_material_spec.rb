@@ -70,6 +70,30 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
   end
 
   # @spec LAYERED-VERIFY-009
+  it "enumerates repository-root file references from the repository root" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project:, canonical_source_path: "SPEC.md")
+    obligation.correspondence_claims.create!(
+      claim_type: "business_to_model", source_reference: "SPEC.md#requirement",
+      target_reference: "Makefile", abstraction_boundaries: "Requirement maps to build behavior.",
+      assumptions: "The build entry point remains at the repository root."
+    )
+    run = create(:agent_run, goal: "layered_verification_audit")
+    commands = []
+    runner = lambda do |*command|
+      commands << command
+      [ command.first == "git" ? "SPEC.md\nMakefile\nUNMAPPED.md\n" : "", 0 ]
+    end
+
+    discovery = described_class.call(obligation:, agent_run: run, command_runner: runner,
+      llm: semantic_llm("unmapped" => []))
+
+    expect(commands.first).to eq([ "git", "ls-files", "--", "." ])
+    expect(discovery.material).to eq([ "UNMAPPED.md" ])
+    expect(discovery.limitations).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-009
   it "discloses when structural scope enumeration exceeds its evidence bound" do
     project = create(:project)
     obligation = scoped_obligation(project:)

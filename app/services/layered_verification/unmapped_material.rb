@@ -132,7 +132,7 @@ module LayeredVerification
     def repository_directory(reference)
       path = Pathname.new(reference_path(reference))
       clean = path.cleanpath.to_s
-      return if path.absolute? || clean == "." || clean == ".." || clean.start_with?("../") || !clean.include?("/")
+      return if path.absolute? || clean == "." || clean == ".." || clean.start_with?("../")
 
       File.dirname(clean)
     end

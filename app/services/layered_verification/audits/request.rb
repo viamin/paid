@@ -38,7 +38,7 @@ module LayeredVerification
       # identity. Admission callers must serialize on the project row
       # around this check; the check alone cannot close the create window.
       def self.active_run_for_identity?(project:, goal:, obligation_ids:, target_revision:)
-        scope = project.agent_runs.where(goal:, base_commit_sha: target_revision, status: %w[queued running])
+        scope = project.agent_runs.where(goal:, base_commit_sha: target_revision, status: AgentRun::UNFINISHED_STATUSES)
         wanted_ids = obligation_ids.map(&:to_i).to_set
         scope.find_each.any? do |run|
           active_ids = Array(run.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i).to_set

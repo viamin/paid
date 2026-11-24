@@ -130,6 +130,20 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     expect(linkage.limitations).to include("bounded semantic read-through")
   end
 
+  # @spec LAYERED-VERIFY-009
+  it "does not append duplicate linkage-freshness results when the activity retries" do
+    obligation = create(:layered_verification_obligation, external_revision: "intent123")
+    audit = create(:agent_run, goal: "layered_verification_audit", status: "running", project: obligation.project)
+    audit.update!(external_metadata: { "layered_verification" => { "obligation_ids" => [ obligation.id ],
+      "target_revision" => "code123" } })
+    stub_discovery(audit:, scope_output: "docs/intent/payments/unmapped-spec.md\n")
+    allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
+
+    2.times { described_class.new.execute(agent_run_id: audit.id) }
+
+    expect(obligation.check_results.where(agent_run: audit, producer: "linkage_freshness").count).to eq(1)
+  end
+
   it "discloses that linkage freshness could not be established when structural discovery fails" do
     obligation = create(:layered_verification_obligation)
     audit = create(:agent_run, goal: "layered_verification_audit", status: "running", project: obligation.project)
@@ -169,5 +183,19 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     carried = obligation.check_results.where(agent_run: audit, producer: "formal_verification").sole
     expect(carried).to have_attributes(execution_state: "completed", obligation_coverage: "supported")
     expect(carried.recorder_verified).to eq("reused_result_id" => prior.id)
+  end
+
+  # @spec LAYERED-VERIFY-019
+  it "does not rerun a formal check already recorded before an activity retry" do
+    obligation = create(:layered_verification_obligation, external_revision: "intent123")
+    audit = formal_audit(obligation)
+    stub_discovery(audit:)
+    stub_tlc_violation(audit)
+    allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
+    expect_counterexample_upload(audit, obligation)
+
+    2.times { described_class.new.execute(agent_run_id: audit.id) }
+
+    expect(obligation.check_results.where(agent_run: audit, producer: "formal_verification").count).to eq(1)
   end
 end

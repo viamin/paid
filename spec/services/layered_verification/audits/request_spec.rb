@@ -87,6 +87,30 @@ RSpec.describe LayeredVerification::Audits::Request do
   end
 
   # @spec LAYERED-VERIFY-027
+  it "rejects overlapping paused and recovery-waiting audits" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+    allow(project.client).to receive(:commit).and_return(OpenStruct.new(sha: "resolved-sha"))
+
+    %w[paused waiting_recovery].each do |status|
+      active = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status:,
+        base_commit_sha: "resolved-sha",
+        external_metadata: { "layered_verification" => { "obligation_ids" => [ obligation.id ] } })
+
+      expect {
+        described_class.call(project:, user:, obligation_ids: [ obligation.id ], target_revision: "main",
+          budget: { "max_minutes" => 15 },
+          selections: { obligation.id => { "selected_checks" => [ "implementation_conformance" ],
+            "fit" => "Check the implementation mapping", "exclusions" => [ "No formal model is declared" ] } })
+      }.to raise_error(described_class::DuplicateAuditError)
+
+      active.destroy!
+    end
+  end
+
+  # @spec LAYERED-VERIFY-027
   it "rejects an active audit whose scope overlaps at the same revision" do
     user = create(:user, :owner)
     project = create(:project, account: user.account)

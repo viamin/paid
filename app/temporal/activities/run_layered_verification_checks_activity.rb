@@ -26,6 +26,8 @@ module Activities
     # @spec LAYERED-VERIFY-009
     def record_linkage_freshness
       obligations.each do |obligation|
+        next if recorded_obligation_ids("linkage_freshness").include?(obligation.id)
+
         discovery = LayeredVerification::UnmappedMaterial.call(
           obligation:, agent_run:, command_runner: method(:run_command)
         )
@@ -40,9 +42,16 @@ module Activities
 
     # @spec LAYERED-VERIFY-019
     def run_selected_check(obligation, plan)
+      return if recorded_obligation_ids("formal_verification").include?(obligation.id)
       return if LayeredVerification::Audits::RecordReuse.call(obligation:, agent_run:, metadata: audit_metadata)
 
       run_tlc(obligation, plan)
+    end
+
+    def recorded_obligation_ids(producer)
+      @recorded_obligation_ids ||= {}
+      @recorded_obligation_ids[producer] ||= LayeredVerificationCheckResult
+        .where(agent_run:, producer:).pluck(:obligation_id).to_set
     end
 
     def formal_selections
