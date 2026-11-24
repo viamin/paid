@@ -138,7 +138,10 @@
   trust, dependencies, active ownership, policy, opt-out, and pauses. Partial
   work, changed source, active issue ownership (including a rate-limited sibling
   with any goal that can resume in place), duplicate delivery, or execution
-  budget exhaustion SHALL refuse blind replacement; classifications alone SHALL
+  budget exhaustion SHALL refuse blind replacement. The active-ownership
+  assessment and successor admission SHALL serialize on the source issue so a
+  concurrent different-goal claim cannot bypass the all-goal ownership
+  check; classifications alone SHALL
   not be reported as execution.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
   `RetryFailedManualIssueCreatePrJob`.

@@ -192,6 +192,9 @@ issue, trust, dependencies, active owners, model/phase/privacy policy, retry
 opt-out, and project or issue pause.
 Active ownership covers every goal for the issue. A rate-limited sibling retains
 its slot while waiting to resume, even when its goal differs from `create_pr`.
+The claim holds the source issue lock while reassessing and creating its
+successor, so a concurrent issue mutation cannot pass an earlier ownership
+observation.
 
 Only a no-work, non-exhausted failure may consume the remaining finite manual
 allowance. Pushed/unpublished work, a PR, or main-agent output is a hard blind-

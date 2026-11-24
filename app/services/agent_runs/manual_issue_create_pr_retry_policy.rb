@@ -38,6 +38,13 @@ module AgentRuns
     def duplicate_claim_conflict?(error) = constraint_name(error) == ACTIVE_ISSUE_CONSTRAINT
     def conflict_reason(_error) = :existing_active_run
 
+    # The active-owner check must run while holding the source issue because
+    # the database index permits different goals and excludes parked
+    # rate-limited runs.
+    def with_claim_lock(agent_run)
+      agent_run.issue.with_lock { yield }
+    end
+
     def build_successor!(original, attempt)
       AgentRun.create!(
         project: original.project, issue: original.issue, initiating_user: original.initiating_user,
