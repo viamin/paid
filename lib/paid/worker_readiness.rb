@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "time"
+require "tmpdir"
 
 module Paid
   # File-based readiness signaling for background worker processes.
@@ -80,6 +81,22 @@ module Paid
       warn "Failed to write worker readiness file: #{error.class}: #{error.message}"
     end
 
+    # Records a fresh, bounded operational heartbeat without rewriting the
+    # original boot timestamp or claiming that a worker made progress.
+    # @spec RAILS-CONTROL-PLANE-030
+    def heartbeat!(env = ENV, **metadata)
+      path = file_path(env)
+      return unless File.exist?(path)
+
+      payload = JSON.parse(File.read(path)).merge(
+        "heartbeat_at" => Time.now.utc.iso8601,
+        **metadata.stringify_keys
+      )
+      write_payload(path, payload.to_json)
+    rescue StandardError => error
+      warn "Failed to write worker readiness heartbeat: #{error.class}: #{error.message}"
+    end
+
     # Remove the ready flag, signaling drain/shutdown to the orchestrator.
     def mark_not_ready!(env = ENV)
       path = file_path(env)
@@ -99,6 +116,17 @@ module Paid
     # liveness beats (see WorkerReadiness::Heartbeat and
     # WorkerReadinessObservation), which the trusted worker-adoption
     # measurement reads from any role's container.
+
+    # A ready marker proves only that a process booted. Health additionally
+    # requires the worker's self-observed heartbeat to be recent.
+    # @spec RAILS-CONTROL-PLANE-030
+    def healthy?(env = ENV, timeout: Paid::GoodJobWorker::HealthMonitor::DEFAULT_HEARTBEAT_TIMEOUT, now: Time.now.utc)
+      payload = JSON.parse(File.read(file_path(env)))
+      heartbeat_at = Time.iso8601(payload.fetch("heartbeat_at"))
+      payload["health"] == "healthy" && now - heartbeat_at <= timeout
+    rescue Errno::ENOENT, KeyError, JSON::ParserError, ArgumentError
+      false
+    end
 
     # The updater takes this lock exclusively before stopping workers. Each
     # activity holds shared ownership for its entire execution, making idle

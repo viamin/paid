@@ -483,7 +483,11 @@ module Workflows
           if source_pull_request_number
             resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
 
-            # Existing PR: mark complete with existing PR details
+            # Existing PR: mark complete with existing PR details. The
+            # activity's own deadline discipline bounds the conflict-repair
+            # scope assessment and its publication inside this finite
+            # envelope; queue, deadline, and retry policy are unchanged
+            # (#5310). @spec TEMPORAL-ORCHESTRATION-018
             complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
 

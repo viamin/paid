@@ -568,11 +568,28 @@ scoped per worker by program name plus `TEMPORAL_WORKER_MODE`
 still get independent flags without explicit configuration. Override it per
 process if you run multiple instances of the same role on one host.
 
-An orchestrator or sidecar checks a **specific** role's readiness with:
+An orchestrator or sidecar checks a **specific** role's boot readiness with:
 
 ```bash
 test -f "$WORKER_READINESS_FILE" && exit 0 || exit 1
 ```
+
+For the dedicated GoodJob role, boot readiness is not worker health. The
+worker writes a fresh `heartbeat_at` only after observing its own GoodJob
+process record, running schedulers, and bounded queue progress. Use the
+provided probe for a health/replacement decision:
+
+```bash
+bin/jobs-health
+```
+
+The probe fails when that heartbeat is missing, stale, or degraded. The jobs
+process then withdraws its readiness marker and asks GoodJob to drain through
+its configured graceful shutdown before a supervisor replaces it. This leaves
+active job ownership to GoodJob; it neither unlocks nor re-enqueues a job,
+which prevents a replacement from duplicating owned execution. A healthy idle
+worker and a worker whose scheduler threads are legitimately occupied remain
+healthy. Do not use a readiness rewrite or audit-allowance renewal as a repair.
 
 During a rolling deploy, wait for the new worker's ready flag before removing
 the old worker.

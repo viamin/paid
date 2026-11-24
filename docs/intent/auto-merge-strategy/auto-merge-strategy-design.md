@@ -121,6 +121,26 @@ an approval across substantive conflict-resolution content and does not change t
 the existing fail-closed first-parent freshness classifier remains the sole
 authority for whether current-head review is required.
 
+The completion envelope around that assessment is bounded (#5310): the
+existing-PR completion activity derives one finite deadline from its Temporal
+start-to-close budget, bounds the comparison reads that gather assessment
+evidence by that same envelope, deducts their elapsed time before admitting
+the harness assessment request, and gives that request only what remains
+after a deliberate publication reserve. It reuses the already-persisted
+assessment — bound to the exact pre-run, integration-base, and pushed head
+SHAs — on any activity retry rather than spending another request. The
+assessment plus its durable persistence always precede PR publication; a
+malformed, unavailable, or rejected decision persists the exact pushed commit
+and bound scope status and then raises the typed non-retryable
+`ConflictRepairScopeRejected` review stop. Publication on that stop path runs
+only inside the remaining reserve, deduplicates its comment per repair range,
+and is abandoned with a sanitized warning when the reserve is exhausted, so a
+slow or unavailable GitHub publication can neither consume the activity's
+remaining attempts nor replace the actionable typed classification with a
+generic timeout. The activity records sanitized per-component elapsed
+diagnostics on its phase record (assessment and publication timings, bound
+scope status) without persisting prompts or raw provider output.
+
 The assessment input itself is complete-or-explicit, never silently partial
 (#5312). The prompt carries the complete immutable result-path inventory —
 every path changed in the pre-run-to-result range is listed — and the evidence
