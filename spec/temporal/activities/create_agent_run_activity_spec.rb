@@ -34,6 +34,14 @@ RSpec.describe Activities::CreateAgentRunActivity do
     ]
   end
 
+  def create_execution_policy(rules)
+    create(:coordination_policy, :active,
+      account: project.account, project: project,
+      policy_type: "execution", policy_key: "agent_execution").tap do |policy|
+      policy.current_version.update!(rules: rules)
+    end
+  end
+
   def expected_service_environment_prompt_blocks(prompts)
     prompts.map { |prompt|
       {
@@ -337,6 +345,32 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(diagnostics).to all(satisfy { |log|
         log.metadata.slice("attempt", "account_id", "project_id", "stage", "outcome").values.none?(&:blank?)
       })
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "returns a paused result and stops setup when policy controls pause the queued run" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      create_execution_policy(
+        "approval_rules" => [
+          {
+            "conditions" => {},
+            "workflow" => { "required" => true, "reason" => "Owner approval required" }
+          }
+        ]
+      )
+
+      result = activity.execute(agent_run_id: queued_run.id)
+
+      expect(result).to include(agent_run_id: queued_run.id, paused: true)
+      expect(queued_run.reload).to have_attributes(
+        status: "paused",
+        error_message: "Policy approval required: Owner approval required",
+        configuration_bundle: nil
+      )
+      stages = queued_run.agent_run_logs.where("metadata ->> 'type' = ?", "queued_run_resume_stage")
+        .pluck(Arel.sql("metadata ->> 'stage'"))
+      expect(stages).to include("policy_evaluation")
+      expect(stages).not_to include("configuration_bundle_assignment", "strategy_selection")
     end
 
     # @spec TEMPORAL-ORCHESTRATION-019

@@ -519,7 +519,11 @@ module Activities
           account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
         )
       end
-      policy_evaluation = resume_queued_stage(agent_run, attempt, "policy_evaluation") { apply_policy_controls(agent_run) }
+      policy_evaluation = resume_queued_stage(agent_run, attempt, "policy_evaluation", allow_paused: true) do
+        apply_policy_controls(agent_run)
+      end
+      return paused_resume_result(agent_run) if policy_evaluation.paused
+
       resume_queued_stage(agent_run, attempt, "configuration_bundle_assignment") { assign_configuration_bundle(agent_run) }
       resume_queued_stage(agent_run, attempt, "strategy_selection") { select_and_log_orchestration_strategy(agent_run) }
 
