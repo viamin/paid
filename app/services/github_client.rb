@@ -988,6 +988,7 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Threads with :id, :is_resolved, :comments keys
+  # @spec FOCUSED-RUN-011
   def review_threads(repo, number)
     owner, name = repo.split("/", 2)
     query = <<~GRAPHQL
@@ -1040,6 +1041,7 @@ class GithubClient
       raise IncompleteTreeError, "review thread #{thread["id"]} omitted its original comment" if comment_count.positive? && original_comment_id.nil?
 
       comments = [ original_comment, *recent_comments ].compact.uniq { |comment| comment["id"] }
+      comments = review_thread_comments(thread["id"]) if comments.size != comment_count
       if comments.size != comment_count
         raise IncompleteTreeError, "review thread #{thread["id"]} omitted review comments"
       end
@@ -1490,6 +1492,46 @@ class GithubClient
       pull_request = alert.dig("dependabotUpdate", "pullRequest")
       pull_requests[alert["number"]] = [ dependabot_remediation_pr(pull_request) ] if pull_request
     end
+  end
+
+  def review_thread_comments(thread_id)
+    query = <<~GRAPHQL
+      query($threadId: ID!, $after: String) {
+        node(id: $threadId) {
+          ... on PullRequestReviewThread {
+            comments(first: 100, after: $after) {
+              nodes {
+                id
+                body
+                path
+                line
+                author { login }
+                createdAt
+                originalCommit { oid }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    comments = []
+    after = nil
+    loop do
+      data = graphql_request(query, threadId: thread_id, after:)
+      raise_graphql_errors(data, context: "fetching comments for review thread #{thread_id}")
+      connection = data.dig("data", "node", "comments")
+      raise IncompleteTreeError, "review thread #{thread_id} was unavailable" unless connection
+
+      comments.concat(connection["nodes"] || [])
+      page_info = connection["pageInfo"] || {}
+      break unless page_info["hasNextPage"]
+
+      after = page_info["endCursor"]
+      raise ApiError, "review thread #{thread_id} pagination returned no cursor" if after.blank?
+    end
+    comments.uniq { |comment| comment["id"] }
   end
 
   def dependabot_vulnerability_alerts(owner, name, state)

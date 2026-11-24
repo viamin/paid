@@ -1803,11 +1803,15 @@ RSpec.describe GithubClient do
 
     # @spec FOCUSED-RUN-011
     context "when a thread has more comments than the recent-comment window" do
-      it "fails closed when the original and recent windows omit middle comments" do
+      it "paginates the complete thread instead of treating it as incomplete" do
         stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_review_thread_comment_page(api_base)
 
-        expect { client.review_threads(repo, 42) }
-          .to raise_error(GithubClient::IncompleteTreeError, /omitted review comments/)
+        comments = client.review_threads(repo, 42).first[:comments]
+
+        expect(comments.size).to eq(52)
+        expect(comments.first[:id]).to eq("original")
+        expect(comments.last[:id]).to eq("reply_51")
       end
 
       it "fails closed when GitHub omits the original finding" do
@@ -1828,6 +1832,22 @@ RSpec.describe GithubClient do
           ] } } } } }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
+      end
+
+      def stub_review_thread_comment_page(api_base)
+        comments = [ { id: "original", body: "Original finding" } ] +
+          Array.new(51) { |index| { id: "reply_#{index + 1}", body: "More context" } }
+
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: comments,
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
       end
     end
 
