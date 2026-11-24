@@ -24,7 +24,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   validate :canonical_pull_request_identity
 
   def current?
-    revoked_at.nil? && pull_request.pr_review_phase == "merged" &&
+    revoked_at.nil? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged" &&
       pull_request.github_html_url == canonical_pull_request_url &&
       canonical_pull_request_url == pull_request_url && pull_request.merged_commit_sha == revision
   end
@@ -38,7 +38,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   end
 
   def merged_pull_request
-    return if pull_request.blank? || (pull_request.is_pull_request? && pull_request.pr_review_phase == "merged")
+    return if pull_request.blank? || (pull_request.is_pull_request? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged")
     errors.add(:pull_request, "must be a merged pull request")
   end
 

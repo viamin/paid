@@ -188,7 +188,7 @@ module Issues
     def self.shared_linked(issue_ids)
       SharedDeliveryEvidenceAssociation.where(issue_id: issue_ids, revoked_at: nil)
         .joins("INNER JOIN issues merged_prs ON merged_prs.id = shared_delivery_evidence_associations.pull_request_id")
-        .where("merged_prs.is_pull_request = TRUE AND merged_prs.pr_review_phase = 'merged'")
+        .where("merged_prs.is_pull_request = TRUE AND merged_prs.github_state = 'closed' AND merged_prs.pr_review_phase = 'merged'")
         .where("merged_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url")
         .where(<<~SQL.squish)
           shared_delivery_evidence_associations.pull_request_url = CASE

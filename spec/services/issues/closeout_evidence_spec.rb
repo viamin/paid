@@ -87,6 +87,25 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
   end
 
   # @spec PARTIAL-CLOSEOUT-060
+  it "fails closed when a shared delivery PR is reopened" do
+    pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    pr.update!(github_state: "open")
+
+    expect(described_class.call(issue).present?).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "refuses to associate a reopened PR with a historical merged phase" do
+    pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    pr.update!(github_state: "open")
+
+    expect {
+      Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    }.to raise_error(ActiveRecord::RecordInvalid, /must be a merged pull request/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
   it "rejects a stored PR URL outside the pull request repository" do
     pr = merged_pr(project:, number: 5305,
       github_html_url: "https://github.com/other/repository/pull/5305", merged_commit_sha: "a" * 40)
