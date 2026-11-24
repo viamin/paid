@@ -582,6 +582,7 @@ jobs:
       actions: read
     outputs:
       recoverable: ${{ steps.classify.outputs.recoverable }}
+      recoverable_matrix: ${{ steps.classify.outputs.recoverable_matrix }}
       failing: ${{ steps.classify.outputs.failing }}
     steps:
       - name: Classify shard outcomes
@@ -623,11 +624,13 @@ jobs:
             fi
           done
           echo "recoverable=${recoverable% }" >> "$GITHUB_OUTPUT"
+          printf 'recoverable_matrix=%s\n' "$(printf '%s' "${recoverable% }" | jq -Rc 'split(" ") | map(select(length > 0) | tonumber)')" >> "$GITHUB_OUTPUT"
           echo "failing=${failing% }" >> "$GITHUB_OUTPUT"
 
   # Re-runs exactly the legs the platform never created, using the same
-  # services, credentials, and per-leg artifact contract as the matrix. Legs
-  # that executed are never re-run here: their verdicts stand.
+  # services, credentials, and per-leg artifact contract as the matrix. Each
+  # missing leg has its own bounded job, rather than serially sharing one job's
+  # timeout. Legs that executed are never re-run here: their verdicts stand.
   # @spec TEST-SUITE-018
   shard-recovery:
     name: Recover dropped test shards
@@ -635,9 +638,10 @@ jobs:
     if: >-
       always() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
     runs-on: ubuntu-24.04
-    # One dropped leg costs a normal shard runtime; allow for the worst case
-    # of recovering several legs serially in this single job, including
-    # bounded dependency retries.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.shard-status.outputs.recoverable_matrix) }}
     timeout-minutes: 360
 
     services:
@@ -661,7 +665,7 @@ jobs:
 
     env:
       BUNDLE_FROZEN: "true"
-      RECOVERABLE: ${{ needs.shard-status.outputs.recoverable }}
+      RSPEC_SHARD_INDEX: ${{ matrix.shard }}
       RSPEC_SHARD_COUNT: "5"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
@@ -760,6 +764,7 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
+            sleep "$((RSPEC_SHARD_INDEX * 3))"
             for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
@@ -769,9 +774,8 @@ jobs:
             done
             return 1
           }
-          # Keep recovery's registry tolerance aligned with matrix shards;
-          # serialize requests there too, since recovery can run alongside a
-          # different workflow's package setup. Each complete setup attempt is
+          # Keep recovery's registry tolerance and deterministic per-shard
+          # stagger aligned with matrix shards. Each complete setup attempt is
           # still bounded to twenty minutes.
           retry_with_backoff \
             20m \
@@ -947,81 +951,28 @@ jobs:
         run: |
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
 
-      - name: Run recovered shards
-        # Clear the coverage resultset before each leg so every recovered leg
-        # keeps exactly one shard identity in its own report, then stage the
-        # per-leg artifact layout the matrix job uploads.
+      - name: Run recovered shard
         # @spec TEST-SUITE-018
-        run: |
-          for index in $RECOVERABLE; do
-            export RSPEC_SHARD_INDEX="$index"
-            rm -f coverage/.resultset.json
-            bin/rspec-shard --format progress --format json --out "tmp/rspec-shard-$index.json"
-            mkdir -p "tmp/recovered/rspec-shard-$index/coverage" "tmp/recovered/rspec-shard-$index/tmp"
-            mv coverage/.resultset.json "tmp/recovered/rspec-shard-$index/coverage/.resultset.json"
-            mv "tmp/rspec-shard-$index.json" "tmp/recovered/rspec-shard-$index/tmp/rspec-shard-$index.json"
-            # Shard 0 also owns the query-performance slice.
-            if [ "$index" = "0" ]; then
-              COVERAGE=false bin/rspec spec/performance
-            fi
-          done
+        run: >-
+          bin/rspec-shard
+          --format progress --format json
+          --out tmp/rspec-shard-${{ matrix.shard }}.json
 
-      - name: Upload recovered shard 0 report
-        if: always() && contains(needs.shard-status.outputs.recoverable, '0')
+      # Shard 0 also owns the query-performance slice.
+      - name: Run query performance benchmarks
+        if: matrix.shard == 0
+        run: COVERAGE=false bin/rspec spec/performance
+
+      - name: Upload recovered shard report
+        # Keep the artifact layout exactly aligned with the original matrix.
+        # @spec TEST-SUITE-018
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rspec-shard-0
+          name: rspec-shard-${{ matrix.shard }}
           path: |
-            tmp/recovered/rspec-shard-0/coverage/.resultset.json
-            tmp/recovered/rspec-shard-0/tmp/rspec-shard-0.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload recovered shard 1 report
-        if: always() && contains(needs.shard-status.outputs.recoverable, '1')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rspec-shard-1
-          path: |
-            tmp/recovered/rspec-shard-1/coverage/.resultset.json
-            tmp/recovered/rspec-shard-1/tmp/rspec-shard-1.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload recovered shard 2 report
-        if: always() && contains(needs.shard-status.outputs.recoverable, '2')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rspec-shard-2
-          path: |
-            tmp/recovered/rspec-shard-2/coverage/.resultset.json
-            tmp/recovered/rspec-shard-2/tmp/rspec-shard-2.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload recovered shard 3 report
-        if: always() && contains(needs.shard-status.outputs.recoverable, '3')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rspec-shard-3
-          path: |
-            tmp/recovered/rspec-shard-3/coverage/.resultset.json
-            tmp/recovered/rspec-shard-3/tmp/rspec-shard-3.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload recovered shard 4 report
-        if: always() && contains(needs.shard-status.outputs.recoverable, '4')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: rspec-shard-4
-          path: |
-            tmp/recovered/rspec-shard-4/coverage/.resultset.json
-            tmp/recovered/rspec-shard-4/tmp/rspec-shard-4.json
+            coverage/.resultset.json
+            tmp/rspec-shard-${{ matrix.shard }}.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

@@ -255,4 +255,19 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
       expect(step.fetch("run")).to include("20m")
     end
   end
+
+  # @spec TEST-SUITE-018 @spec TEST-SUITE-020
+  it "gives each recovered shard an independent bounded execution path" do
+    jobs = workflow_config(".github/workflows/ci.yml").fetch("jobs")
+    recovery = jobs.fetch("shard-recovery")
+
+    expect(recovery.fetch("strategy")).to include(
+      "fail-fast" => false,
+      "matrix" => include("shard" => "${{ fromJSON(needs.shard-status.outputs.recoverable_matrix) }}")
+    )
+    expect(recovery.fetch("env")).to include("RSPEC_SHARD_INDEX" => "${{ matrix.shard }}")
+    expect(recovery.fetch("timeout-minutes")).to eq(360)
+    upload = recovery.fetch("steps").find { |step| step["name"] == "Upload recovered shard report" }
+    expect(upload).to include("if" => "always()")
+  end
 end
