@@ -106,8 +106,13 @@ module Issues
     end
 
     def local_dependency_edge_scope(issue_ids = nil)
-      dependency_scope(issue_ids).where(depends_on_issue: { github_state: "open" })
-        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      dependency_scope(issue_ids).where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        (issues.is_pull_request = TRUE AND
+          (issues.github_state IS DISTINCT FROM 'closed' OR
+           issues.pr_review_phase IS DISTINCT FROM 'merged')) OR
+        (issues.is_pull_request = FALSE AND issues.github_state = 'open' AND
+          issues.paid_state NOT IN (?))
+      SQL
         .or(deployment_dependency_scope(issue_ids))
     end
 
@@ -136,8 +141,11 @@ module Issues
     end
 
     def blocking_external_dependency_condition
-      Issue.sanitize_sql_array([ <<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES ])
-        ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN (?)
+      <<~SQL.squish
+        (ext_issue.is_pull_request = TRUE AND
+          (ext_issue.github_state IS DISTINCT FROM 'closed' OR ext_issue.pr_review_phase IS DISTINCT FROM 'merged')) OR
+        (ext_issue.is_pull_request = FALSE AND ext_issue.github_state = 'open' AND
+          ext_issue.paid_state NOT IN ('recommend_close', 'completed'))
       SQL
     end
 
@@ -163,7 +171,7 @@ module Issues
     end
 
     def blocking_prerequisite?(issue)
-      issue.github_state == "open" && !issue.paid_state.in?(Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+      !Issue.prerequisite_resolved?(issue)
     end
 
     def ranking_for(root)

@@ -100,7 +100,7 @@ module FeatureIntents
     end
 
     def dependency_complete?(dependency_issue)
-      dependency_issue.github_state != "open" || dependency_issue.paid_state.in?(Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+      Issue.prerequisite_resolved?(dependency_issue)
     end
 
     def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, code: nil, reason: nil, snapshot: snapshot)
