@@ -550,6 +550,28 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#all_issues" do
+    let(:repo) { "owner/repo" }
+
+    it "follows every page while preserving issue filters" do
+      headers = { "Content-Type" => "application/json" }
+      first_page_headers = headers.merge(
+        "Link" => %(<#{api_base}/repos/#{repo}/issues?state=open&labels=pghero-overview&per_page=100&page=2>; rel="next")
+      )
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues")
+        .with(query: { state: "open", labels: "pghero-overview", per_page: "100" })
+        .to_return(status: 200, body: [ { number: 1 } ].to_json, headers: first_page_headers)
+      stub_request(:get, "#{api_base}/repos/#{repo}/issues")
+        .with(query: { state: "open", labels: "pghero-overview", per_page: "100", page: "2" })
+        .to_return(status: 200, body: [ { number: 101 } ].to_json, headers: headers)
+
+      result = client.all_issues(repo, labels: "pghero-overview")
+
+      expect(result.map(&:number)).to eq([ 1, 101 ])
+      expect(client.client.auto_paginate).to be(false)
+    end
+  end
+
   describe "#issue_events" do
     let(:repo) { "owner/repo" }
 

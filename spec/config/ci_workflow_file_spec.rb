@@ -310,7 +310,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       expect(run).to include("for attempt in 1 2 3 4 5")
       expect(run).to include("20m")
       expect(run).to include(
-        "bash -lc 'yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'"
+        "bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'"
       )
     end
   end

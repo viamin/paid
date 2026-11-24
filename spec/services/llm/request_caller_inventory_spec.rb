@@ -10,6 +10,7 @@ RSpec.describe Llm::Request do
     %w[
     app/services/agent_run_patterns/diagnose.rb
     app/services/agent_runs/diagnose_error.rb
+    app/services/automation/assess_bounded_scope.rb
     app/services/conflict_repairs/assess_scope.rb
     app/services/cycle_analyses/analyze.rb
     app/services/design_amendments/impact_review.rb

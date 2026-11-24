@@ -115,6 +115,73 @@ RSpec.describe CycleAnalysisJob do
       .to include("status" => "resolved", "reason" => "synchronization_confirmed")
   end
 
+  # @spec AUTO-PICK-QUEUE-025
+  it "keeps an ambiguous automatic analysis stopped without a GitHub write" do
+    run = automatic_cycle_run
+    response = AgentHarness::Response.new(output: ambiguous_recommendation(run).to_json, exit_code: 0,
+      duration: 1.0, provider: :codex)
+    allow(Llm::Request).to receive(:call).and_return(response)
+    stub_comments
+    stub_live_issues(run)
+
+    described_class.perform_now(run.id)
+
+    repair = run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair")
+    expect(run.status).to eq("completed")
+    expect(repair).to include("status" => "needs_operator_action", "reason" => "not_obvious")
+  end
+
+  # @spec AUTO-PICK-QUEUE-025 AUTO-PICK-QUEUE-019
+  it "applies a safe automatic repair and waits for synchronization" do
+    run = automatic_cycle_run
+    response = AgentHarness::Response.new(output: recommendation(run).to_json, exit_code: 0,
+      duration: 1.0, provider: :codex)
+    allow(Llm::Request).to receive(:call).and_return(response)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    source_edge = snapshot.fetch("effective_edges").first
+    source = Issue.find(source_edge.fetch("from_issue_id"))
+    target = Issue.find(source_edge.fetch("to_issue_id"))
+    stub_comments
+    stub_live_issues(run)
+    stub_request(:get, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
+      .to_return(status: 200, body: { body: "Depends on ##{target.github_number}\n" }.to_json,
+        headers: { "Content-Type" => "application/json" })
+    stub_request(:patch, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
+      .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
+
+    described_class.perform_now(run.id)
+
+    repair = run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair")
+    expect(run.status).to eq("completed")
+    expect(repair).to include("status" => "pending_sync", "reason" => "awaiting_github_synchronization")
+  end
+
+  # @spec AUTO-PICK-QUEUE-025
+  it "keeps a failed remote write visible for the operator" do
+    run = automatic_cycle_run
+    response = AgentHarness::Response.new(output: recommendation(run).to_json, exit_code: 0,
+      duration: 1.0, provider: :codex)
+    allow(Llm::Request).to receive(:call).and_return(response)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    source_edge = snapshot.fetch("effective_edges").first
+    source = Issue.find(source_edge.fetch("from_issue_id"))
+    target = Issue.find(source_edge.fetch("to_issue_id"))
+    stub_comments
+    stub_live_issues(run)
+    stub_request(:get, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
+      .to_return(status: 200, body: { body: "Depends on ##{target.github_number}\n" }.to_json,
+        headers: { "Content-Type" => "application/json" })
+    stub_request(:patch, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
+      .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
+        headers: { "Content-Type" => "application/json" })
+
+    described_class.perform_now(run.id)
+
+    repair = run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair")
+    expect(run.status).to eq("completed")
+    expect(repair).to include("status" => "needs_operator_action", "reason" => "github_write_failed")
+  end
+
   def recommendation(run)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     remaining_edges = snapshot.fetch("effective_edges").drop(1)
@@ -130,6 +197,37 @@ RSpec.describe CycleAnalysisJob do
         acyclic: true
       } ]
     }
+  end
+
+  def ambiguous_recommendation(run)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    edges = snapshot.fetch("effective_edges")
+    {
+      summary: "Two removals could each break the loop.",
+      candidates: edges.map do |edge|
+        remaining = edges.reject { |candidate| candidate.fetch("id") == edge.fetch("id") }
+          .map { |kept| kept.slice("from_issue_id", "to_issue_id").symbolize_keys }
+        {
+          declaration_changes: [ { edge_id: edge.fetch("id"), action: "remove" } ],
+          evidence: [ "One declaration is obsolete." ],
+          tradeoffs: [ "Either removal keeps the other direction blocked until synchronization." ],
+          missing_or_conflicting_intent: [],
+          resulting_graph: { issue_ids: snapshot.fetch("issues").pluck("id"), edges: remaining },
+          acyclic: true
+        }
+      end
+    }
+  end
+
+  def automatic_cycle_run
+    user = create(:user, :owner)
+    project = create(:project, account: user.account, created_by: user)
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    CycleAnalyses::Start.call(cycle:, actor: user, trigger: :automatic).agent_run
   end
 
   def cycle_run
