@@ -365,7 +365,11 @@ jobs:
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
+            # Hosted-runner registry connections can remain idle while a shared
+            # cache or package mirror is contended. Let one request wait up to
+            # five minutes, while the enclosing twenty-minute attempt remains
+            # the authoritative bound from TEST-SUITE-023.
+            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -769,7 +773,9 @@ jobs:
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 60000 && bin/yarn-postinstall'
+            # Keep recovery's registry tolerance aligned with matrix shards;
+            # each complete setup attempt is still bounded to twenty minutes.
+            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
