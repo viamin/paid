@@ -376,6 +376,9 @@ For a classified parser or transient transport failure, technical-stop recovery
 may claim one delayed successor under the current issue revision, automatic
 enhancement policy, and remaining budget. It retains the failed producer's
 error and consumed claim across duplicate delivery and failure bookkeeping.
+Legacy recovery asks the same issue-level feature activation check as the
+original enhancement path, including trusted per-item labels. Skip labels,
+local-activation mode, and rollout phase denial remain authoritative.
 The shared deduplication statuses define existing work ownership: a rate-limited
 run still owns its work while awaiting recovery and blocks another successor.
 Human questions, independent holds, and exhausted recovery remain actionable

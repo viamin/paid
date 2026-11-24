@@ -46,12 +46,12 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-020
-  it "allows dependency installation twenty minutes per attempt in shard jobs" do
+  it "bounds dependency installation to the external process-group supervisor in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
 
-      expect(install_step.fetch("run")).to include("  20m \\")
+      expect(install_step.fetch("run")).to include("bin/retry-with-process-group")
     end
   end
 
@@ -301,28 +301,25 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-023
-  it "retries transient JavaScript setup failures across shard execution paths" do
+  it "uses the process-group supervisor to retry dependency installation in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
       run = install_step.fetch("run")
 
-      expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("20m")
       expect(run).to include(
-        "bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'"
-      )
-      expect(run).to match(
-        /"JavaScript dependency install timed out or failed" \\\n+\s+bash -lc/
+        "bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 " \
+        "--network-timeout 300000 && bin/yarn-postinstall'"
       )
     end
   end
 
   # @spec TEST-SUITE-023
-  it "limits concurrent shard setup requests to keep registry recovery bounded" do
-    strategy = workflow.fetch("jobs").fetch("test-shards").fetch("strategy")
+  it "staggers the test-shards dependency install by shard index before supervision starts" do
+    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
+      .find { |step| step["name"] == "Install JavaScript dependencies" }
 
-    expect(strategy).to include("max-parallel" => 2)
+    expect(install_step.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
   end
 
   # @spec TEST-SUITE-003

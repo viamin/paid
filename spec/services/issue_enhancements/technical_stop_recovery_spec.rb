@@ -13,6 +13,19 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
       error_message: "EnhanceIssue agent produced unparseable structured output: unexpected token")
   end
 
+  def prepare_legacy_activation(feature:, actor: "viamin")
+    project.update!(auto_enhance_enabled: false)
+    %i[automation_phases project_delegation project_delegation_expansion].each do |flag|
+      FeatureFlags.disable!(flag, project:)
+    end
+    label = project.feature_activation_label_for(feature)
+    issue.update!(labels: [ label ])
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/#{Regexp.escape(project.full_name)}/issues/#{issue.github_number}/events})
+      .to_return(status: 200, headers: { "Content-Type" => "application/json" }, body: [
+        { event: "labeled", label: { name: label }, actor: { login: actor }, created_at: Time.current.iso8601 }
+      ].to_json)
+  end
+
   before do
     agent_run.update!(external_metadata: {
       "prompt_assembly" => { "model" => "gpt-test" },
@@ -117,6 +130,23 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
     expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
     expect(issue.reload.paid_state).to eq("manual_review")
     expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  %w[auto_enhance paid_in_full].each do |feature|
+    it "honors trusted legacy #{feature} activation for this issue" do
+      prepare_legacy_activation(feature:)
+
+      expect(described_class.call(agent_run:).outcome).to eq(:recovered)
+    end
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021
+  it "does not accept a legacy opt-in label added by an untrusted actor" do
+    prepare_legacy_activation(feature: "auto_enhance", actor: "untrusted-user")
+
+    expect(described_class.call(agent_run:)).to have_attributes(outcome: :skipped, reason: :not_eligible)
+    expect(issue.reload.paid_state).to eq("manual_review")
   end
 
   # @spec ISSUE-ENHANCEMENT-021

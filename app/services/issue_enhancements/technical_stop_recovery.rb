@@ -91,11 +91,10 @@ module IssueEnhancements
       )
     end
 
-    # EffectivePolicy retains the legacy phase decision while the rollout is
-    # disabled, but automatic enhancement has always required this project
-    # setting. Recovery is a continuation, not new authority to override it.
+    # Recovery uses the original issue-level activation decision, including
+    # trusted legacy opt-ins and the same phase/local-activation boundaries.
     def automatic_enhancement_enabled?
-      project.auto_enhance_enabled?
+      Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue:)
     end
 
     def no_active_work?
