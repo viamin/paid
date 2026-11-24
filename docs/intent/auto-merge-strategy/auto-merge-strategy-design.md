@@ -121,6 +121,31 @@ an approval across substantive conflict-resolution content and does not change t
 the existing fail-closed first-parent freshness classifier remains the sole
 authority for whether current-head review is required.
 
+The assessment input itself is complete-or-explicit, never silently partial
+(#5312). The prompt carries the complete immutable result-path inventory —
+every path changed in the pre-run-to-result range is listed — and the evidence
+formatter may no longer drop paths invisibly when joined patch text exceeds the
+prompt bound. Git blob SHAs from the compare API mechanically separate the two
+sides of the evidence: a result path whose blob SHA equals the base-import
+range's blob SHA for the same path is a verified base import (byte-identical
+content, no repair-authored delta) and needs no diff text in the prompt, which
+is what keeps the normal large-base-import/small-repair case inside the
+existing bounded context, time, and spend. Every unverified path receives
+bounded diff evidence: a complete or truthfully marked patch excerpt, or an
+explicit no-patch note for binary and API-omitted diffs. When the complete
+inventory or the per-path evidence cannot be held within the established
+bounds, or when path metadata contains control characters that could forge
+inventory lines, the assessment fails closed before the harness call with an
+explicit input-coverage reason rather than sending hidden or truncated
+evidence. Output validation stays strict and mechanical: every actual result
+path must be accounted for, a path outside the base-import range cannot be
+claimed as a base import, a blob-verified import cannot be classified as
+repair-authored, and malformed or path-incomplete results classify as
+unavailable. Semantic scope judgments — whether an authored edit belongs to
+the PR task — remain with `agent_harness`; Ruby only verifies structure and
+blob identity. The pre-existing file-count truncation guard (>= 300 compare
+files) is preserved unchanged.
+
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the
 project to permit dependency auto-merge, a supported executor author, green

@@ -2161,11 +2161,13 @@ RSpec.describe GithubClient do
             files: [
               {
                 filename: "app/models/provider.rb",
+                sha: "d5e2f1a9blobsha01",
                 status: "modified",
                 additions: 3,
                 deletions: 1,
                 changes: 4,
-                patch: "@@ -1 +1\n-old\n+new"
+                patch: "@@ -1 +1\n-old\n+new",
+                previous_filename: "app/models/legacy_provider.rb"
               }
             ]
           }.to_json,
@@ -2183,11 +2185,13 @@ RSpec.describe GithubClient do
       expect(result[:files]).to eq([
         {
           filename: "app/models/provider.rb",
+          sha: "d5e2f1a9blobsha01",
           status: "modified",
           additions: 3,
           deletions: 1,
           changes: 4,
-          patch: "@@ -1 +1\n-old\n+new"
+          patch: "@@ -1 +1\n-old\n+new",
+          previous_filename: "app/models/legacy_provider.rb"
         }
       ])
     end
@@ -2211,8 +2215,19 @@ RSpec.describe GithubClient do
 
     it "returns detailed file metadata bound to the immutable commit range" do
       expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([
-        { filename: "app/models/provider.rb", status: "modified", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+        { filename: "app/models/provider.rb", previous_filename: "", sha: "", status: "modified",
+          additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
       ])
+    end
+
+    it "preserves blob identity and rename provenance for the immutable commit range" do
+      metadata = { filename: "app/models/provider.rb", previous_filename: "app/models/old_provider.rb",
+        sha: "b" * 40, status: "renamed", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([ metadata ])
     end
 
     it "caps the returned entries at max_files" do

@@ -7,6 +7,8 @@ module Containers
   # mounts a checkout or the Rails workspace; credentials arrive only as exec
   # environment for the selected command and disappear with the container.
   class StandaloneTextExecutor
+    class DeadlineExceeded < StandardError; end
+
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
@@ -18,6 +20,7 @@ module Containers
     # "NAME=" prefix and NUL terminator.
     MAX_ENV_ENTRY_BYTES = 64 * 1024
     CLEANUP_MARGIN = 5
+    ROTATION_PERSISTENCE_TIMEOUT = CLEANUP_MARGIN
     STANDALONE_TEXT_MAX_LIFETIME = 10.minutes
     DEFAULTS = {
       image: Containers::ImageResolver::BASE_IMAGE,
@@ -106,7 +109,7 @@ module Containers
       @clock = clock
     end
 
-    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-013
       validate_input_size!(command, env, preparation, stdin_data)
       raise AgentHarness::TimeoutError, "Isolated text request timed out" if deadline_expired?
 
@@ -114,10 +117,17 @@ module Containers
       timeout = bounded_timeout(timeout)
       raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
 
-      with_managed_credential_lease do
-        run(materialized_command, timeout: timeout, env: materialized_env(env),
+      with_managed_credential_lease(timeout: execution_credential_lease_timeout(timeout)) do
+        execution_env = materialized_env(env)
+        timeout = bounded_timeout(timeout)
+        raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
+
+        run(materialized_command, timeout: timeout, env: execution_env,
           input: input_payload(command, preparation, stdin_data), output_observer: output_observer)
       end
+    rescue DeadlineExceeded
+      close
+      raise AgentHarness::TimeoutError, "Isolated text request timed out"
     rescue StandardError
       close
       raise
@@ -190,7 +200,7 @@ module Containers
       wrapped.merge(
         "PAID_CREDENTIAL_URL" => "#{Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: false)}/api/proxy/standalone-text-credential",
         "PAID_CREDENTIAL_IDENTITY" => StandaloneTextCredential.issue(account: account, runner: runner,
-          expires_in: @timeout + CLEANUP_MARGIN, env_keys: credential_keys)
+          expires_in: credential_expires_in, env_keys: credential_keys)
       )
     end
 
@@ -202,23 +212,84 @@ module Containers
       (provider.api_key_env_var_names + env.select { |_, value| value == runner.effective_api_secret }.keys).uniq
     end
 
-    def with_managed_credential_lease
+    def with_managed_credential_lease(timeout: nil)
       credential = rotating_subscription_credential
       return yield unless credential
 
       Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: runner.runner_key,
-        credential: credential) { yield }
+        credential: credential, timeout: timeout || managed_credential_lease_timeout) { |lease| yield lease }
+    end
+
+    def managed_credential_lease_timeout
+      return Runners::ManagedCredentialLifecycle::DEFAULT_LOCK_TIMEOUT_SECONDS unless @deadline
+
+      [ @deadline - monotonic_now, 0 ].max
+    end
+
+    def execution_credential_lease_timeout(timeout)
+      bounded_timeout(timeout) if @deadline
     end
 
     def harvest_managed_credential # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
       credential = rotating_subscription_credential
       return unless credential
 
-      with_managed_credential_lease do
-        result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
-          runner_key: runner.runner_key, backend: Containers.backend, container: @container)
-        log_harvest(result, credential)
+      with_managed_credential_lease(timeout: managed_credential_lease_timeout) do |lease|
+        raw = read_managed_credential_rotation
+        unless raw
+          log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+            performed: false, reason: "harvest_failed"), credential)
+          next
+        end
+
+        persist_captured_rotation(credential, raw, lease)
       end
+    rescue DeadlineExceeded
+      defer_credential_harvest!(credential)
+    rescue Docker::Error::DockerError, SystemCallError
+      log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+        performed: false, reason: "harvest_failed"), credential)
+    end
+
+    def read_managed_credential_rotation
+      stdout, _stderr, status = Containers.backend.exec_in_container(@container,
+        Runners::ManagedCredentialLifecycle.rotation_read_command(runner.runner_key), user: "agent",
+        **backend_deadline)
+      return nil unless status.to_i.zero?
+
+      Array(stdout).join
+    end
+
+    # The request thread never interrupts a database write. It transfers the
+    # captured rotation and its lockfile lease to a recovery thread, waits only
+    # through the candidate deadline, and leaves recovery a fixed write budget.
+    def persist_captured_rotation(credential, raw, lease)
+      return persist_rotation(credential, raw) unless @deadline
+
+      lease.transfer!
+      thread = begin
+        Thread.new do
+          persist_rotation(credential, raw, timeout: ROTATION_PERSISTENCE_TIMEOUT)
+        ensure
+          lease.release!
+        end
+      rescue ThreadError
+        lease.release!
+        raise
+      end
+      thread.join(remaining_deadline)
+      defer_credential_harvest!(credential) if thread.alive?
+    end
+
+    def persist_rotation(credential, raw, timeout: nil)
+      result = TenantContext.with(account) do
+        Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+          runner_key: runner.runner_key, raw: raw, timeout: timeout)
+      end
+      log_harvest(result, credential)
+    rescue StandardError
+      log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+        performed: false, reason: "harvest_failed"), credential)
     end
 
     def rotating_subscription_credential
@@ -237,11 +308,12 @@ module Containers
     end
 
     def provision!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
-      @container = Containers.backend.create_container(container_config)
-      Containers.backend.start_container(@container)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend, **backend_deadline)
+      @container = Containers.backend.create_container(container_config, **backend_deadline)
+      Containers.backend.start_container(@container, **backend_deadline)
       result = Containers.backend.exec_in_container(@container,
-        [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+        [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ],
+        user: "root", **backend_deadline)
       status = Array(result).last
       raise AgentHarness::Error, "Isolated text home preparation exit status unavailable" if status.nil?
       raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless status == 0
@@ -257,16 +329,19 @@ module Containers
     end
 
     def run(command, timeout:, env:, input:, output_observer:)
+      timeout = bounded_timeout(timeout)
+      raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
+
       timed_out = false
       finished = false
       mutex = Mutex.new
       completion = ConditionVariable.new
       watchdog = Thread.new do
         mutex.synchronize do
-          completion.wait(mutex, timeout + CLEANUP_MARGIN) unless finished
+          completion.wait(mutex, timeout) unless finished
           timed_out = !finished
         end
-        Containers.backend.stop_container(@container, timeout: 0) if timed_out
+        Containers.backend.stop_container(@container, timeout: 0, **backend_deadline) if timed_out
       rescue Docker::Error::DockerError
         nil
       end
@@ -274,7 +349,7 @@ module Containers
       stderr = +""
       output_exceeded = false
       result = Containers.backend.exec_in_container_with_stdin(@container, command,
-        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }, **command_backend_deadline(timeout)) do |stream, chunk|
         output_observer&.call(stream, chunk)
         next if output_exceeded
 
@@ -285,8 +360,8 @@ module Containers
 
         output_exceeded = true
         begin
-          Containers.backend.stop_container(@container, timeout: 0)
-        rescue Docker::Error::DockerError
+          Containers.backend.stop_container(@container, timeout: 0, **backend_deadline)
+        rescue Docker::Error::DockerError, DeadlineExceeded
           nil
         end
       end
@@ -319,25 +394,69 @@ module Containers
     def cleanup!
       return unless @container
 
-      Containers.backend.stop_container(@container, timeout: 0)
+      Containers.backend.stop_container(@container, timeout: 0, **backend_deadline)
     rescue Docker::Error::DockerError
       nil
+    rescue DeadlineExceeded
+      defer_cleanup!
     ensure
       begin
-        Containers.backend.delete_container(@container, force: true) if @container
+        Containers.backend.delete_container(@container, force: true, **backend_deadline) if @container
       rescue Docker::Error::DockerError
         nil
+      rescue DeadlineExceeded
+        defer_cleanup!
+      else
+        @container = nil
       end
-      @container = nil
     end
 
     def bounded_timeout(value)
       timeout = [ (value || @timeout).to_f, @timeout ].min
-      @deadline ? [ timeout, @deadline - monotonic_now ].min : timeout
+      @deadline ? [ timeout, @deadline - monotonic_now - CLEANUP_MARGIN ].min : timeout
+    end
+
+    def credential_expires_in
+      return @timeout + CLEANUP_MARGIN unless @deadline
+
+      [ @deadline - monotonic_now, 0 ].max
     end
 
     def deadline_expired?
       @deadline && @deadline <= monotonic_now
+    end
+
+    def backend_deadline
+      return {} unless @deadline
+
+      { deadline: remaining_deadline }
+    end
+
+    def command_backend_deadline(timeout)
+      @deadline ? { deadline: timeout } : {}
+    end
+
+    def remaining_deadline
+      remaining = @deadline - monotonic_now
+      raise DeadlineExceeded unless remaining.positive?
+
+      remaining
+    end
+
+    def defer_cleanup!
+      Rails.logger.warn(
+        message: "containers.standalone_text_executor.cleanup_deferred",
+        container_id: @container.id,
+        account_id: account.id,
+        runner_id: runner.id
+      )
+    end
+
+    def defer_credential_harvest!(credential)
+      Rails.logger.warn(
+        message: "containers.standalone_text_executor.credential_harvest_deferred",
+        runner_key: runner.runner_key, credential_id: credential.id, account_id: account.id
+      )
     end
 
     def monotonic_now

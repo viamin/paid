@@ -86,3 +86,30 @@
   prompt, response, credential, URL, HTTP body, or unbounded error text.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
+- [x] **LLM-ROUTING-013** — An isolated text request SHALL carry one finite
+  monotonic deadline from `Llm::Request` into each candidate executor. Candidate
+  setup (including Docker network lookup or creation and upgraded exec
+  creation), credential materialization or refresh, command execution, output
+  handling, and cleanup SHALL consume that candidate's allocation within the
+  shared request deadline. The executor SHALL reserve a bounded cleanup margin
+  before beginning command execution; command transport and its watchdog SHALL
+  use only the executable allocation while cleanup retains the original
+  candidate deadline. Setup that consumes the executable budget
+  SHALL not receive a new command allocation, and an exhausted shared deadline
+  SHALL not start a fallback. Physical cleanup remains best-effort. Managed
+  credential lease acquisition and the container rotation read SHALL be bounded
+  by the remaining candidate deadline; an incomplete read SHALL be deferred and
+  logged without extending the candidate lifetime. Once a native rotation has
+  been read, persistence that cannot finish by the candidate deadline SHALL
+  transfer the captured rotation and its lease to a bounded recovery write. The
+  request SHALL return at its deadline; recovery SHALL either persist the
+  captured rotation atomically or report a deferred harvest without dropping,
+  overwriting, or exposing the credential. If recovery-thread admission fails,
+  the executor SHALL release the transferred lease before surfacing that
+  failure.
+  *Tests:* `spec/services/llm/request_spec.rb`,
+  `spec/services/containers/standalone_text_executor_spec.rb`,
+  `spec/services/containers/backends/local_docker_spec.rb`,
+  `spec/services/containers/backends/remote_docker_spec.rb`,
+  `spec/services/network_policy_spec.rb`.

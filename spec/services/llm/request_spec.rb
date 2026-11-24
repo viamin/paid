@@ -34,7 +34,7 @@ RSpec.describe Llm::Request do
     described_class.call(project: project, prompt: "Assess", timeout: 30)
 
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: runner, timeout: 30
+      hash_including(account: project.account, runner: runner, timeout: 30, deadline: be_a(Numeric))
     )
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess",
       mode: :text, tools: :none, dangerous_mode: false,
@@ -56,7 +56,7 @@ RSpec.describe Llm::Request do
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
 
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: runner, timeout: 30
+      hash_including(account: project.account, runner: runner, timeout: 30, deadline: be_a(Numeric))
     )
   end
 
@@ -68,6 +68,44 @@ RSpec.describe Llm::Request do
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }.to raise_error(Interrupt)
 
     expect(standalone_executor).to have_received(:close)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "carries one candidate deadline across setup and provider execution" do
+    now = 100.0
+    clock = ->(_) { now }
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    described_class.call(agent_run: run, prompt: "Assess", timeout: 60, per_runner_timeout: 60, clock:)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      hash_including(account: project.account, runner: runner, timeout: 60, deadline: 160.0)
+    )
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not start a fallback after the shared deadline is exhausted" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    now = 100.0
+    clock = ->(_) { now }
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message) do
+      now = 160.0
+      raise AgentHarness::TimeoutError, "runner timed out"
+    end
+
+    expect do
+      described_class.call(agent_run: run, prompt: "Assess", timeout: 60, per_runner_timeout: 60,
+        fallback_runner_identifiers: [ fallback.routing_key ], clock:)
+    end.to raise_error(AgentHarness::TimeoutError)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      hash_including(runner: runner, deadline: 160.0)
+    )
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new).with(hash_including(runner: fallback))
   end
 
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
@@ -111,7 +149,7 @@ RSpec.describe Llm::Request do
 
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: fallback, timeout: 60
+      hash_including(account: project.account, runner: fallback, timeout: 60, deadline: be_a(Numeric))
     )
   end
 
@@ -170,7 +208,7 @@ RSpec.describe Llm::Request do
       fallback_runner_identifiers: [ fallback.routing_key ])).to eq(response)
     expect(provider).to have_received(:send_message).once
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: fallback, timeout: be_between(1, 100)
+      hash_including(account: project.account, runner: fallback, timeout: be_between(1, 100), deadline: be_a(Numeric))
     )
   end
 
@@ -192,7 +230,7 @@ RSpec.describe Llm::Request do
 
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: runner, timeout: be_between(1, 30)
+      hash_including(account: project.account, runner: runner, timeout: be_between(1, 30), deadline: be_a(Numeric))
     )
   end
 
@@ -207,7 +245,7 @@ RSpec.describe Llm::Request do
 
     expect(described_class.call(prompt: "Assess", timeout: 30)).to eq(response)
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: owner.account, runner: runner, timeout: 30
+      hash_including(account: owner.account, runner: runner, timeout: 30, deadline: be_a(Numeric))
     )
   ensure
     Current.account = previous_account
@@ -226,7 +264,7 @@ RSpec.describe Llm::Request do
     expect(described_class.call(account: project.account, prompt: "Assess", timeout: 30)).to eq(response)
 
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: account_runner, timeout: 30
+      hash_including(account: project.account, runner: account_runner, timeout: 30, deadline: be_a(Numeric))
     )
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
@@ -544,7 +582,7 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess"))
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: runner, timeout: 30
+      hash_including(account: project.account, runner: runner, timeout: 30, deadline: be_a(Numeric))
     )
   end
 
@@ -557,7 +595,7 @@ RSpec.describe Llm::Request do
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
 
     expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
-      account: project.account, runner: runner, timeout: 30
+      hash_including(account: project.account, runner: runner, timeout: 30, deadline: be_a(Numeric))
     )
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess"))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)

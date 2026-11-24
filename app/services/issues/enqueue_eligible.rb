@@ -114,8 +114,9 @@ module Issues
 
     # @spec EAGER-QUEUE-018 AGENT-RETRY-017
     # Canonical admission honors the shared produced-work / rate-limit
-    # refusal recorded for the issue's failed auto-picked create_pr source,
-    # so no seeding path can mint a blind replacement implementation attempt.
+    # refusal recorded for the issue's still-current failed create_pr
+    # source, manual or automatic, so no seeding path can mint a blind
+    # replacement implementation attempt.
     def log_implementation_work_held(hold)
       reason = hold.recoverable_rate_limited? ? "rate_limit_recovery_owned" : "implementation_work_produced"
       Rails.logger.info(log_context("enqueue_eligible.implementation_work_held",
