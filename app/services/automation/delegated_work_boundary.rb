@@ -6,6 +6,7 @@ module Automation
   # this service compares them with the authorization and routes a mismatch.
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
   # @spec BOUNDED-PHASE-AUTHORIZATION-002 @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-005
   class DelegatedWorkBoundary
     BOUNDARIES = %i[create queue dequeue retry follow_up repair closeout].freeze
     NOTIFICATION_SOURCE = "delegated_work_boundary_recheck"
@@ -29,6 +30,8 @@ module Automation
       validate_boundary!
       reasons = failed_checks
       return Result.new(permitted: true, boundary:, reasons: [], notification: nil) if reasons.empty?
+
+      authorization.require_reassessment!(reasons: reassessment_reasons(reasons)) if reassessment_reasons(reasons).any?
 
       notification = FocusedDecision.call(
         account: authorization.account,
@@ -73,9 +76,15 @@ module Automation
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),
         assessment_availability: truthy?(snapshot[:assessment_available]),
-        explicit_hold: !truthy?(snapshot[:explicit_hold])
+        explicit_hold: !truthy?(snapshot[:explicit_hold]),
+        new_risk: !truthy?(snapshot[:new_risk]),
+        scope_correspondence: truthy?(snapshot[:scope_correspondence])
       }
       checks.filter_map { |reason, passed| reason unless passed }
+    end
+
+    def reassessment_reasons(reasons)
+      reasons & %i[intent_revision acceptance_revision posture_signature phase_policy new_risk scope_correspondence]
     end
 
     def revision_matches?(key)

@@ -308,7 +308,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       run = install_step.fetch("run")
 
       expect(run).to include(
-        "bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --network-concurrency 4 " \
+        "bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 " \
         "--network-timeout 60000 && bin/yarn-postinstall'"
       )
     end

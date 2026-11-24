@@ -67,6 +67,17 @@ RSpec.describe PgHeroDevelopmentIntegration, :no_db do
     expect(Rails.application.config.good_job.cron.keys.grep(/pghero/)).to be_empty
   end
 
+  # @spec RAILS-CONTROL-PLANE-026
+  it "schedules the overview scan on a documented cadence inside the development-gated cron block" do
+    initializer = Rails.root.join("config/initializers/good_job.rb").read
+
+    dev_block = initializer.split("if Rails.env.development?").second.to_s
+    expect(dev_block).to include('pghero_overview_scan: { cron: "23 * * * *", class: "PgHeroOverviewScanJob", queue: "maintenance",')
+    expect(dev_block).to include("description:")
+    # The scan schedule appears only inside the development gate, never the shared cron table.
+    expect(initializer.scan("PgHeroOverviewScanJob").length).to eq(1)
+  end
+
   def reset_pghero_config
     %i[config databases file_config password username].each do |name|
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")

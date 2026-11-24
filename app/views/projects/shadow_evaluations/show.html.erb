@@ -2,11 +2,11 @@
 <div class="mx-auto max-w-4xl space-y-6 px-4 py-8" data-shadow-evaluation="<%= @evaluation.id %>">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Review conformance decisions</h1>
+      <h1 class="text-2xl font-bold text-gray-900">Review code changes against requirements</h1>
       <p class="text-sm text-gray-600">
-        Compare the conformance reviewer with the frozen reference labels · policy <span class="font-medium"><%= @evaluation.policy %></span> ·
-        maintainer <%= @evaluation.solo_maintainer&.email %> · status
-        <span class="font-medium" data-evaluation-status><%= @evaluation.status %></span>
+        Help check whether Paid's automated reviewer understands the intended behavior.
+        This records quality evidence for the automated reviewer. It does not approve individual pull requests or change automation settings.
+        Your decisions are saved as <%= @evaluation.solo_maintainer&.email %>.
       </p>
     </div>
     <%= link_to "Back to Inbox", inbox_path(project_id: @project, kind: @inbox_context[:inbox_kind], sort: @inbox_context[:inbox_sort], entry_id: @inbox_context[:inbox_entry_id]),
@@ -16,9 +16,8 @@
 
   <% if @corpus_changed %>
     <div class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-      <strong>The corpus manifest has changed since this evidence generation.</strong>
-      The recorded completion above no longer describes the current corpus: start a new evaluation from
-      the Inbox item for the new manifest, and preserve this record as historical evidence.
+      <strong>The review sample has changed.</strong>
+      This completed review applies to the previous sample. Start a new review from the Inbox to assess the updated sample; your previous decisions remain saved.
     </div>
   <% end %>
 

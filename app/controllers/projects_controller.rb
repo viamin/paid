@@ -179,6 +179,7 @@ class ProjectsController < ApplicationController
     load_screenshot_settings_context
   end
 
+  # @spec PR-ESCALATION-030 PR-ESCALATION-031
   def update
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)
@@ -224,7 +225,11 @@ class ProjectsController < ApplicationController
     label_provisioning_result = provision_labels_after_opt_in(previous_label_mode)
     refresh_code_scanning_after_enable if enabling_security_scan?(update_params)
 
-    audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
+    metadata = { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys }
+    if update_params.key?(:pr_escalation_limits_suspended_until)
+      metadata[:pr_escalation_limits_suspended_until] = @project.pr_escalation_limits_suspended_until&.utc&.iso8601(6)
+    end
+    audit_event("project.updated", metadata: metadata)
     if label_provisioning_result&.any_errors?
       return redirect_to edit_project_path(@project, anchor: "labels"),
         alert: "Project settings were saved, but GitHub labels were not fully synced: #{label_provisioning_result.notice_message}. Retry with Sync Labels to GitHub."
@@ -723,6 +728,7 @@ class ProjectsController < ApplicationController
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :quiet_mode,
       :max_pr_auto_continue_tokens,
+      :pr_escalation_limits_suspended_until,
       :intent_threshold, :technical_threshold,
       :pr_approval_escalation_hours,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
