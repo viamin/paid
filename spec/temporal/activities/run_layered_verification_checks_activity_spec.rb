@@ -194,8 +194,35 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
     expect_counterexample_upload(audit, obligation)
 
-    2.times { described_class.new.execute(agent_run_id: audit.id) }
+    activity = described_class.new
+    2.times { activity.execute(agent_run_id: audit.id) }
 
     expect(obligation.check_results.where(agent_run: audit, producer: "formal_verification").count).to eq(1)
+  end
+
+  # @spec LAYERED-VERIFY-009 LAYERED-VERIFY-019
+  it "isolates execution state when a retained activity instance runs different audits" do
+    first_obligation = create(:layered_verification_obligation, external_revision: "intent-one")
+    second_obligation = create(:layered_verification_obligation, project: first_obligation.project,
+      external_revision: "intent-two", canonical_source_path: "docs/intent/refunds/refund-specs.md")
+    first_audit = formal_audit(first_obligation)
+    second_audit = formal_audit(second_obligation)
+    [ first_audit, second_audit ].each do |audit|
+      scope_directories = (audit == first_audit) ? [ "docs/intent/payments" ] : [ "docs/intent/refunds" ]
+      stub_discovery(audit:, scope_directories:)
+      stub_tlc_violation(audit)
+    end
+    artifact_storage = instance_double(ArtifactStorage, upload_io: true)
+    allow(ArtifactStorage).to receive(:new).and_return(artifact_storage)
+    allow(AgentRun).to receive(:find).with(first_audit.id).and_return(first_audit)
+    allow(AgentRun).to receive(:find).with(second_audit.id).and_return(second_audit)
+
+    activity = described_class.new
+    activity.execute(agent_run_id: first_audit.id)
+    activity.execute(agent_run_id: second_audit.id)
+
+    expect(first_obligation.check_results.where(agent_run: first_audit, producer: "formal_verification").count).to eq(1)
+    expect(second_obligation.check_results.where(agent_run: second_audit, producer: "formal_verification").count).to eq(1)
+    expect(first_obligation.check_results.where(agent_run: second_audit)).to be_empty
   end
 end

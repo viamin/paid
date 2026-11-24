@@ -36,7 +36,27 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
       obligation_coverage: "supported", evidence_ref: prior.evidence_ref)
     expect(carried.recorder_verified).to eq("reused_result_id" => prior.id)
     expect(carried.input_revision).to include("code" => "code-v2", "external_revision" => "intent-v2")
-    expect(carried.limitations).to include("Reuses check result ##{prior.id}")
+    expect(carried.limitations).to include("bounded state space", "Reuses check result ##{prior.id}")
+  end
+
+  # @spec LAYERED-VERIFY-019
+  it "preserves a contradictory result's correspondence identity when carrying it forward" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    claim = create(:layered_verification_correspondence_claim, obligation:)
+    prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
+    prior = create(:layered_verification_check_result, obligation:, correspondence_claim: claim, agent_run: prior_run,
+      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "model-code-drift",
+      limitations: "TLC checked only the declared bounds and assumptions",
+      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
+    audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
+
+    described_class.call(obligation:, agent_run: audit,
+      metadata: audit.external_metadata.fetch("layered_verification"))
+
+    carried = obligation.check_results.where(agent_run: audit).sole
+    expect(carried).to have_attributes(correspondence_claim: claim, obligation_coverage: "contradicted")
+    expect(carried.limitations).to include("TLC checked only the declared bounds and assumptions")
   end
 
   # @spec LAYERED-VERIFY-019

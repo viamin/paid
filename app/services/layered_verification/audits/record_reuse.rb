@@ -55,13 +55,13 @@ module LayeredVerification
 
       def result_attributes(reused)
         {
-          obligation:, agent_run:, producer: PRODUCER,
+          obligation:, correspondence_claim: reused.correspondence_claim, agent_run:, producer: PRODUCER,
           execution_state: reused.execution_state, obligation_coverage: reused.obligation_coverage,
           input_revision:, evidence_ref: reused.evidence_ref,
           evidence_summary: reused.evidence_summary, cause_signature: reused.cause_signature,
           agent_reported: { "selected_check" => PRODUCER },
           recorder_verified: { "reused_result_id" => reused.id },
-          cost: {}, limitations: "Reuses check result ##{reused.id}. #{REUSE_LIMITATION}"
+          cost: {}, limitations: [ reused.limitations, "Reuses check result ##{reused.id}. #{REUSE_LIMITATION}" ].join(" ")
         }
       end
 
