@@ -52,6 +52,21 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+The dedicated GoodJob worker has a separate liveness contract from its boot
+readiness marker.  Its marker remains ready only while the worker can observe a
+fresh GoodJob process heartbeat and running schedulers.  The marker records a
+fresh worker-health heartbeat and bounded scheduler/queue progress metadata;
+an idle worker is healthy, and a long-running owned job is not treated as a
+queue-progress failure merely because its execution counter does not change.
+When runnable work is waiting for an available scheduler thread without a
+bounded progress update, or when the GoodJob process heartbeat is stale, the
+worker withdraws readiness and requests GoodJob's graceful shutdown.  This
+preserves active execution ownership during the configured drain window; a
+replacement must let GoodJob's normal ownership and expiry mechanisms decide
+when work is eligible again.  The health monitor never marks readiness healthy
+or renews audit allowances to manufacture progress, and it records only counts,
+timestamps, and process identity rather than job payloads or credentials.
+
 The devcontainer runs GoodJob in the dedicated `bin/jobs` process so bounded
 maintenance, metrics, and dashboard work cannot consume Puma request slots
 needed by isolated-container credential bootstrap or health checks. Its web

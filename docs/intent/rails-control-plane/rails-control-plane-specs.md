@@ -88,6 +88,21 @@
   *Code:* `.devcontainer/devcontainer.json`, `Procfile.dev`, `bin/dev-web`, `bin/jobs`,
   `config/puma.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-030** — When the dedicated GoodJob worker is
+  running, its readiness metadata SHALL distinguish boot readiness from a
+  fresh GoodJob process heartbeat, scheduler availability, and bounded queue
+  progress. An idle worker and a worker with only legitimately occupied
+  scheduler threads SHALL remain healthy. If the worker loses process-record
+  visibility, its heartbeat becomes stale, or runnable work waits beyond the
+  configured progress window while a scheduler thread is available, the worker
+  SHALL withdraw readiness and request the existing graceful GoodJob shutdown;
+  it SHALL preserve active job ownership and SHALL not log job payloads or
+  credentials.
+  *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
+  `spec/lib/paid/worker_readiness_spec.rb`.
+  *Code:* `lib/paid/good_job_worker.rb`, `lib/paid/worker_readiness.rb`,
+  `bin/jobs`.
+
 - [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,
   its wrapper SHALL restart it with bounded backoff without stopping the
   Temporal workers. Other exit codes and repeated exit 137 SHALL surface as

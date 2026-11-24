@@ -40,6 +40,131 @@ module Paid
       shutdown_timeout + force_exit_buffer
     end
 
+    # @spec RAILS-CONTROL-PLANE-030
+    # Evaluates the dedicated worker's independent liveness signals. The caller
+    # owns database reads and recovery so this remains deterministic and can run
+    # before Rails has fully booted.
+    class HealthMonitor
+      DEFAULT_HEARTBEAT_TIMEOUT = 90
+      DEFAULT_PROGRESS_TIMEOUT = 90
+      Result = Data.define(:status, :reason, :observed_at, :runnable_jobs) do
+        def healthy?
+          status == :healthy
+        end
+
+        def degraded?
+          !healthy?
+        end
+      end
+
+      def initialize(now: -> { Time.now.utc }, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT,
+        progress_timeout: DEFAULT_PROGRESS_TIMEOUT)
+        @clock = now
+        @heartbeat_timeout = heartbeat_timeout
+        @progress_timeout = progress_timeout
+        @progress_count = nil
+        @progress_observed_at = nil
+        @missing_process_since = nil
+      end
+
+      def observe(snapshot, now: clock.call)
+        return observe_missing_process(snapshot, now) unless snapshot[:process]
+
+        @missing_process_since = nil
+        return result(:stale_process_heartbeat, snapshot, now) if heartbeat_stale?(snapshot[:process], now)
+        return result(:scheduler_unavailable, snapshot, now) unless snapshot.fetch(:schedulers_running, true)
+
+        observe_progress(snapshot, now)
+      end
+
+      private
+
+      attr_reader :clock, :heartbeat_timeout, :progress_timeout
+
+      def observe_progress(snapshot, now)
+        return result(:healthy, snapshot, now) unless waiting_with_available_thread?(snapshot)
+
+        reset_progress_window(snapshot, now) if progress_changed?(snapshot)
+        return result(:healthy, snapshot, now) if now - @progress_observed_at <= progress_timeout
+
+        result(:stalled_queue_progress, snapshot, now)
+      end
+
+      def observe_missing_process(snapshot, now)
+        @missing_process_since ||= now
+        return result(:healthy, snapshot, now) if now - @missing_process_since <= heartbeat_timeout
+
+        result(:missing_process_heartbeat, snapshot, now)
+      end
+
+      def heartbeat_stale?(process, now)
+        updated_at = process[:updated_at] || process["updated_at"]
+        updated_at.nil? || now - updated_at > heartbeat_timeout
+      end
+
+      def waiting_with_available_thread?(snapshot)
+        snapshot.fetch(:runnable_jobs, 0).positive? && schedulers(snapshot).any? { |scheduler| available_threads(scheduler).positive? }
+      end
+
+      def progress_changed?(snapshot)
+        progress_count = snapshot.fetch(:progress_count, 0)
+        @progress_count != progress_count || @progress_observed_at.nil?
+      end
+
+      def reset_progress_window(snapshot, now)
+        @progress_count = snapshot.fetch(:progress_count, 0)
+        @progress_observed_at = now
+      end
+
+      def schedulers(snapshot)
+        process = snapshot.fetch(:process)
+        process[:schedulers] || process["schedulers"] || []
+      end
+
+      def available_threads(scheduler)
+        scheduler[:available_threads] || scheduler["available_threads"] || 0
+      end
+
+      def result(reason, snapshot, now)
+        Result.new(
+          status: reason == :healthy ? :healthy : :degraded,
+          reason:,
+          observed_at: now,
+          runnable_jobs: snapshot.fetch(:runnable_jobs, 0)
+        )
+      end
+    end
+
+    # @spec RAILS-CONTROL-PLANE-030
+    # Starts one graceful recovery without touching GoodJob job ownership. The
+    # GoodJob shutdown path remains responsible for draining or retaining locks.
+    class RecoveryCoordinator
+      def initialize(readiness:, shutdown:)
+        @readiness = readiness
+        @shutdown = shutdown
+        @mutex = Mutex.new
+        @started = false
+      end
+
+      def recover
+        return false unless claim_recovery
+
+        @readiness.mark_not_ready!
+        @shutdown.call
+        true
+      end
+
+      private
+
+      def claim_recovery
+        @mutex.synchronize do
+          return false if @started
+
+          @started = true
+        end
+      end
+    end
+
     # Coordinates graceful-vs-forced shutdown across repeated INT/TERM signals.
     # The first signal requests a graceful shutdown; any subsequent signal
     # forces an immediate exit. This is the same pattern as

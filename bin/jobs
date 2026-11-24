@@ -107,10 +107,47 @@ at_exit { Paid::WorkerReadiness.mark_not_ready! }
 Paid::WorkerReadiness.mark_ready!
 puts "GoodJob worker started (readiness file: #{Paid::WorkerReadiness.file_path}). Send INT/TERM to shut down."
 
+health_monitor = Paid::GoodJobWorker::HealthMonitor.new
+health_recovery = Paid::GoodJobWorker::RecoveryCoordinator.new(
+  readiness: Paid::WorkerReadiness,
+  shutdown: -> { Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) } }
+)
+last_health_check_at = Time.at(0)
+
+def good_job_health_snapshot
+  process = GoodJob::Process.where("state ->> 'pid' = ?", Process.pid.to_s).order(updated_at: :desc).first
+  state = process&.state || {}
+  schedulers = state["schedulers"] || []
+
+  {
+    process: process && { updated_at: process.updated_at, schedulers: },
+    schedulers_running: GoodJob::Scheduler.instances.all?(&:running?),
+    runnable_jobs: GoodJob::Job.where(finished_at: nil, locked_by_id: nil).where("scheduled_at <= ?", Time.current).count,
+    progress_count: schedulers.sum { |scheduler| scheduler["total_executions_count"].to_i }
+  }
+end
+
 # Block until the capsule has drained. An unstarted capsule also reports
 # shutdown?, so this loop must run only after `capsule.start` returns; a
 # graceful shutdown flips GoodJob.shutdown? back to true and breaks the loop.
 loop do
   sleep 1
+  if Time.current - last_health_check_at >= 5
+    health = health_monitor.observe(good_job_health_snapshot)
+    last_health_check_at = Time.current
+    Paid::WorkerReadiness.heartbeat!(
+      health: health.status.to_s,
+      health_reason: health.reason.to_s,
+      runnable_jobs: health.runnable_jobs
+    )
+
+    if health.degraded? && health_recovery.recover
+      Rails.logger.warn(
+        message: "good_job_worker.health_degraded",
+        reason: health.reason,
+        runnable_jobs: health.runnable_jobs
+      )
+    end
+  end
   break if GoodJob.shutdown?
 end
