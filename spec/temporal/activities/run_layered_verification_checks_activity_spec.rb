@@ -14,7 +14,7 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
       [ "git", "ls-files", "--", *scope_directories ], timeout: 60, stream: false
     ).and_return(Containers::Provision::Result.success(stdout: scope_output, stderr: "", exit_code: 0))
     allow(audit).to receive(:execute_in_execution_environment).with(
-      [ "cat", anything ], timeout: 60, stream: false
+      [ "head", "-c", anything, "--", anything ], timeout: 60, stream: false
     ).and_return(Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0))
     allow(Llm::Request).to receive(:call).and_return(response_class.new({ "unmapped" => semantic_unmapped }.to_json))
   end

@@ -31,6 +31,7 @@ module LayeredVerification
     TRUNCATED_SCOPE = "Structural and semantic discovery inspected only the first 100 tracked files " \
       "in the declared scope."
     TRUNCATED_MATERIAL = "Discovery recorded only the first 100 unmapped material references."
+    TRUNCATED_CONTENT = "Semantic read-through file content was truncated at the 20,000-byte evidence bound."
 
     def self.call(...) = new(...).call
 
@@ -136,6 +137,7 @@ module LayeredVerification
       limitations << UNINSPECTED_SCOPE unless inspected == scope_references.size
       limitations << TRUNCATED_SCOPE if @scope_truncated
       limitations << TRUNCATED_MATERIAL if @material_truncated
+      limitations << TRUNCATED_CONTENT if @content_truncated
       limitations
     end
 
@@ -157,12 +159,33 @@ module LayeredVerification
     # Structural discovery already flags unreferenced files; the semantic
     # read-through only needs the referenced ones, bounded to a small set.
     def content_evidence(files)
-      evidence = files.select { |path| referenced_paths.include?(path) }.first(SEMANTIC_FILE_LIMIT)
-        .filter_map do |path|
-          output, status = command_runner.call("cat", path)
-          "#{path}\n#{output}" if status.zero?
-        end
-      evidence.join("\n\n").presence || NO_ENUMERATED_FILES
+      evidence = +""
+      referenced_files(files).each do |path|
+        break mark_content_truncated if evidence.bytesize >= CONTENT_LIMIT
+
+        append_file_evidence(evidence, path)
+      end
+      evidence.presence || NO_ENUMERATED_FILES
+    end
+
+    def referenced_files(files)
+      files.select { |path| referenced_paths.include?(path) }.first(SEMANTIC_FILE_LIMIT)
+    end
+
+    def append_file_evidence(evidence, path)
+      header = "#{evidence.present? ? "\n\n" : ""}#{path}\n"
+      return mark_content_truncated if header.bytesize >= CONTENT_LIMIT - evidence.bytesize
+
+      read_limit = CONTENT_LIMIT - evidence.bytesize - header.bytesize
+      output, status = command_runner.call("head", "-c", (read_limit + 1).to_s, "--", path)
+      return unless status.zero?
+
+      @content_truncated = true if output.to_s.bytesize > read_limit
+      evidence << header << output.to_s.byteslice(0, read_limit).to_s.scrub("")
+    end
+
+    def mark_content_truncated
+      @content_truncated = true
     end
 
     PROMPT = <<~PROMPT

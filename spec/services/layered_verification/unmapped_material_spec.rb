@@ -109,6 +109,27 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
     expect(discovery.material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
   end
 
+  # @spec LAYERED-VERIFY-009
+  it "bounds file reads before output crosses the command boundary and discloses truncation" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    commands = []
+    runner = lambda do |*command|
+      commands << command
+      next [ "docs/intent/payments/payment-specs.md\n", 0 ] if command.first == "git"
+
+      [ "x" * command.fetch(2).to_i, 0 ]
+    end
+
+    discovery = described_class.call(obligation:, agent_run: run, command_runner: runner,
+      llm: semantic_llm("unmapped" => []))
+
+    expect(commands.second).to start_with("head", "-c")
+    expect(commands.second.fetch(2).to_i).to be <= described_class::CONTENT_LIMIT + 1
+    expect(discovery.limitations).to include(a_string_matching(/file content was truncated/i))
+  end
+
   it "keeps structural findings and discloses a limitation when the semantic read-through fails or returns invalid JSON" do
     project = create(:project)
     obligation = scoped_obligation(project:)

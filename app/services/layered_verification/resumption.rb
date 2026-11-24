@@ -21,6 +21,7 @@ module LayeredVerification
       AuditAccess.authorize!(user:, project: agent_run.project)
       authorize_repair! if agent_run.goal == "layered_verification_repair"
       raise ArgumentError, "only interrupted layered-verification runs can resume" unless interrupted_run?
+      raise ArgumentError, "one or more scoped obligations no longer exist" unless complete_obligation_scope?
       raise ArgumentError, "all obligations require current approval before resumption" unless obligations.all? { |obligation| obligation.approval_state == "approved" }
 
       remaining_budget = remaining_budget!
@@ -48,6 +49,11 @@ module LayeredVerification
 
     def obligations
       @obligations ||= agent_run.project.layered_verification_obligations.where(id: metadata.fetch("obligation_ids")).to_a
+    end
+
+    def complete_obligation_scope?
+      obligations.map { |obligation| obligation.id.to_s }.sort ==
+        metadata.fetch("obligation_ids").map(&:to_s).sort
     end
 
     def metadata = agent_run.external_metadata.fetch("layered_verification")

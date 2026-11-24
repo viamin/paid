@@ -105,4 +105,17 @@ RSpec.describe LayeredVerification::Resumption do
     expect { described_class.call(agent_run: run, user:) }
       .to raise_error(ArgumentError, /only interrupted layered-verification runs can resume/)
   end
+
+  # @spec LAYERED-VERIFY-020
+  it "rejects resumption when a recorded scoped obligation no longer exists" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = approved_obligation(project)
+    run = interrupted_run(project:, user:, obligation:, goal: "layered_verification_audit", status: "failed")
+    obligation.destroy!
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+
+    expect { described_class.call(agent_run: run, user:) }
+      .to raise_error(ArgumentError, /scoped obligations no longer exist/)
+  end
 end
