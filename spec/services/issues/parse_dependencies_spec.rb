@@ -1133,4 +1133,48 @@ RSpec.describe Issues::ParseDependencies do
       expect(DependencyBackfillJob).not_to have_received(:perform_later)
     end
   end
+
+  describe "automatic cycle analysis after a dependency change" do
+    # @spec AUTO-PICK-QUEUE-025
+    it "offers detected cycles to the automatic start after a changed dependency graph" do
+      owner = create(:user, :owner, account: project.account)
+      create(:runner, user: owner, enabled_for_agent_runs: true)
+      delegate_repair(project, selected_by: owner)
+      create_cycle_issues
+      cycle = Issues::DependencyCycles.call(account: project.account).sole
+      unrelated = create(:issue, project: project, github_number: 9321)
+      changed = create(:issue, project: project, body: "Depends on ##{unrelated.github_number}")
+
+      expect { described_class.call(issue: changed) }.to change(AgentRun, :count).by(1)
+
+      run = AgentRun.find_by(goal: AgentRun::CYCLE_ANALYSIS_GOAL)
+      expect(run).to have_attributes(trigger_type: "automatic", initiating_user: owner)
+      expect(run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("occurrence")).to eq(cycle.occurrence)
+    end
+
+    it "does not schedule an automatic analysis when policy does not delegate" do
+      create_cycle_issues
+      unrelated = create(:issue, project: project, github_number: 9322)
+      changed = create(:issue, project: project, body: "Depends on ##{unrelated.github_number}")
+
+      expect { described_class.call(issue: changed) }.not_to change(AgentRun, :count)
+    end
+
+    def delegate_repair(project, selected_by:)
+      FeatureFlags.enable!(:automation_phases, project: project)
+      FeatureFlags.enable!(:project_delegation, project: project)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { Automation::Phases::CODING => true }
+      })
+      create(:project_delegation_posture, project: project,
+        level: ProjectDelegation::Posture::BOUNDED_DELIVERY, selected_by: selected_by)
+    end
+
+    def create_cycle_issues
+      first = create(:issue, project: project, github_state: "open")
+      second = create(:issue, project: project, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    end
+  end
 end

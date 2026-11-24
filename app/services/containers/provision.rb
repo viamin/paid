@@ -1268,9 +1268,13 @@ module Containers
       cleanup_error = nil
 
       Array(cleanup_steps).reverse_each do |step_env|
-        # Intentionally keeps only the first error (cleanup_error ||= e) so the
-        # caller sees the root-cause failure rather than a cascading one.
-        cleanup_error ||= run_preparation_cleanup_step(step_env, env: env)
+        # Intentionally keeps only the first error (cleanup_error ||= step_error)
+        # so the caller sees the root-cause failure rather than a cascading one,
+        # while every remaining step still runs — one step's Git cleanup failing
+        # must not leave the other targets' originals replaced by preparation
+        # content.
+        step_error = run_preparation_cleanup_step(step_env, env: env)
+        cleanup_error ||= step_error
       end
 
       return unless cleanup_error
@@ -1333,22 +1337,56 @@ module Containers
 
     def materialize_preparation_file(write, env:)
       target_path = expand_preparation_path(write.path)
-      state_dir = "#{target_path}.paid-state-#{SecureRandom.hex(8)}"
-
-      run_preparation_script(
-        materialize_script(write.mode),
-        env: env,
-        script_env: {
-          "PAID_PREPARATION_TARGET" => target_path,
-          "PAID_PREPARATION_STATE_DIR" => state_dir,
-          "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
-        }
-      )
-
-      {
+      state_dir = "/tmp/paid-execution-preparation/#{SecureRandom.hex(8)}"
+      step_env = {
         "PAID_PREPARATION_TARGET" => target_path,
         "PAID_PREPARATION_STATE_DIR" => state_dir
       }
+
+      begin
+        run_preparation_script(
+          materialize_script(write.mode),
+          env: env,
+          script_env: step_env.merge("PAID_PREPARATION_B64" => Base64.strict_encode64(write.content))
+        )
+      rescue StandardError => e
+        rollback_partial_preparation(step_env, env: env, cause: e)
+        raise
+      end
+
+      step_env
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    # The materialize script can fail after it already replaced the original
+    # target and applied part of the run-local Git protection (exclude entry,
+    # assume-unchanged flag) — for example a read-only info/exclude failing
+    # the exclusion append after the snapshot removed the original. The failed
+    # step never reached the caller's accumulated cleanup steps, so restore it
+    # here before re-raising. An unknown snapshot state means the script
+    # failed before mutating the target, so the rollback treats it as nothing
+    # to restore. A rollback that still fails invalidates the container — its
+    # preparation state cannot be trusted for reuse — without replacing the
+    # original error. Connection-level exec failures (raw Excon errors) bypass
+    # the cleanup step's Docker-specific rescue, so they are captured here as
+    # rollback failures rather than propagating over the original error.
+    def rollback_partial_preparation(step_env, env:, cause:)
+      rollback_error = begin
+        run_preparation_cleanup_step(
+          step_env.merge("PAID_PREPARATION_ROLLBACK" => "1"),
+          env: env
+        )
+      rescue StandardError => e
+        e
+      end
+      return unless rollback_error
+
+      log_system(
+        "container.execute.preparation_rollback_failed",
+        error: rollback_error.message,
+        cause: cause.message
+      )
+      invalidate_container_after_preparation_cleanup_failure!
     end
 
     def run_preparation_script(script, env:, script_env:)
@@ -1371,9 +1409,17 @@ module Containers
       path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
     end
 
+    # @spec CONTAINER-RUNTIME-054
     # Matches agent-harness lstat-based snapshot semantics: stores the state type
     # (symlink, file, or missing), preserves symlink targets via readlink, backs
-    # up regular files with cp -p, and rejects directories.
+    # up regular files with cp -p, and rejects directories. Snapshot state stays
+    # outside the checkout while a local Git exclusion hides the temporary write.
+    # The target is resolved to an absolute physical path before the checkout
+    # comparison so relative and symlinked targets receive the same protection,
+    # the Git undo state is recorded before the exclusion entry is appended so a
+    # failed append stays restorable, and only a plain cached index entry is
+    # flagged — skip-worktree, already-flagged, or unmerged entries are recorded
+    # as unprotected and left untouched.
     def materialize_script(mode)
       chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
 
@@ -1381,6 +1427,7 @@ module Containers
         set -e &&
         mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
         mkdir -p "$PAID_PREPARATION_STATE_DIR" &&
+        chmod 700 "$PAID_PREPARATION_STATE_DIR" &&
         if [ -L "$PAID_PREPARATION_TARGET" ]; then
           readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target" &&
           printf symlink > "$PAID_PREPARATION_STATE_DIR/state" &&
@@ -1394,18 +1441,63 @@ module Containers
         else
           printf missing > "$PAID_PREPARATION_STATE_DIR/state";
         fi &&
+        if command -v git >/dev/null 2>&1; then
+          git_root=$(git -C "$(dirname "$PAID_PREPARATION_TARGET")" rev-parse --show-toplevel 2>/dev/null || true) &&
+          target_dir=$(cd "$(dirname "$PAID_PREPARATION_TARGET")" 2>/dev/null && pwd -P) &&
+          if [ -n "$git_root" ]; then
+            case "$target_dir/$(basename "$PAID_PREPARATION_TARGET")" in
+              "$git_root"/*)
+                git_relative="$target_dir/$(basename "$PAID_PREPARATION_TARGET")" &&
+                git_relative=${git_relative#${git_root}/} &&
+                git_exclude_path=$(git -C "$git_root" rev-parse --path-format=absolute --git-path info/exclude) &&
+                git_marker="# paid-execution-preparation-$PAID_PREPARATION_STATE_DIR" &&
+                printf '%s' "$git_root" > "$PAID_PREPARATION_STATE_DIR/git_root" &&
+                printf '%s' "$git_relative" > "$PAID_PREPARATION_STATE_DIR/git_relative" &&
+                printf '%s' "$git_exclude_path" > "$PAID_PREPARATION_STATE_DIR/git_exclude_path" &&
+                printf '%s' "$git_marker" > "$PAID_PREPARATION_STATE_DIR/git_marker" &&
+                mkdir -p "$(dirname "$git_exclude_path")" && touch "$git_exclude_path" &&
+                { [ -s "$git_exclude_path" ] && [ -n "$(tail -c1 "$git_exclude_path")" ] && printf '\\n' >> "$git_exclude_path" || true; } &&
+                printf '%s\\n/%s\\n' "$git_marker" "$git_relative" >> "$git_exclude_path" &&
+                if git -C "$git_root" ls-files --error-unmatch -- "$git_relative" >/dev/null 2>&1; then
+                  git_index_state=$(git -C "$git_root" ls-files -v -- "$git_relative" | cut -c1) &&
+                  printf '%s' "$git_index_state" > "$PAID_PREPARATION_STATE_DIR/git_index_state" &&
+                  case "$git_index_state" in
+                    H) git -C "$git_root" update-index --assume-unchanged -- "$git_relative";;
+                    *) printf unprotected > "$PAID_PREPARATION_STATE_DIR/git_index_state";;
+                  esac;
+                else
+                  printf untracked > "$PAID_PREPARATION_STATE_DIR/git_index_state";
+                fi;;
+            esac;
+          fi;
+        fi &&
         printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
         #{chmod_line}
       SH
     end
 
+    # @spec CONTAINER-RUNTIME-054
+    # Restores the snapshotted target and removes the run-local Git
+    # protection. With PAID_PREPARATION_ROLLBACK=1 (the apply-time rollback of
+    # a partially applied materialize), an unknown snapshot state short-circuits
+    # the restore entirely — including the directory guard — because the
+    # materialize script records the state file before its first destructive
+    # mutation, so unknown means nothing was changed. Exclusion removal and the
+    # index-flag restoration are independent steps: either failing records an
+    # explicit cleanup failure instead of short-circuiting the other, an entry
+    # whose marker is absent (the exclusion append never completed) needs no
+    # rewrite, and the assume-unchanged flag is undone only when the recorded
+    # state is a plain cached entry that still carries it — a target renamed or
+    # resolved during execution is left alone rather than failing the cleanup.
     def cleanup_script
       <<~SH.squish
         set -e && cleanup_status=0 &&
         state_value=$(cat "$PAID_PREPARATION_STATE_DIR/state" 2>/dev/null || echo unknown) &&
         dir=$(dirname "$PAID_PREPARATION_TARGET") &&
-        if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
-          printf 'preparation target changed into a directory during execution: %s\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
+        if [ "${PAID_PREPARATION_ROLLBACK:-0}" = "1" ] && [ "$state_value" = unknown ]; then
+          :;
+        elif [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target changed into a directory during execution: %s\\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
         elif [ "$state_value" = symlink ]; then
           mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
           ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
@@ -1414,13 +1506,36 @@ module Containers
             mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
             cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
           else
-            printf 'missing runtime preparation backup\n' >&2 && cleanup_status=1;
+            printf 'missing runtime preparation backup\\n' >&2 && cleanup_status=1;
           fi;
         elif [ "$state_value" = missing ]; then
           rm -f "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
         else
           cleanup_status=1;
-        fi &&
+        fi;
+        if [ -f "$PAID_PREPARATION_STATE_DIR/git_root" ]; then
+          { git_root=$(cat "$PAID_PREPARATION_STATE_DIR/git_root") &&
+            git_relative=$(cat "$PAID_PREPARATION_STATE_DIR/git_relative") &&
+            git_exclude_path=$(cat "$PAID_PREPARATION_STATE_DIR/git_exclude_path") &&
+            git_marker=$(cat "$PAID_PREPARATION_STATE_DIR/git_marker") &&
+            git_exclude_cleaned="$PAID_PREPARATION_STATE_DIR/git-exclude-cleaned" &&
+            git_exclude_skip=0 &&
+            git_exclude_found=0 &&
+            while IFS= read -r git_exclude_line || [ -n "$git_exclude_line" ]; do
+              if [ "$git_exclude_line" = "$git_marker" ]; then git_exclude_skip=1; git_exclude_found=1; continue; fi;
+              if [ "$git_exclude_skip" -eq 1 ]; then git_exclude_skip=0; continue; fi;
+              printf '%s\\n' "$git_exclude_line";
+            done < "$git_exclude_path" > "$git_exclude_cleaned" &&
+            if [ "$git_exclude_found" -eq 1 ]; then cat "$git_exclude_cleaned" > "$git_exclude_path"; fi &&
+            rm -f "$git_exclude_cleaned"; } || cleanup_status=1;
+          case "$(cat "$PAID_PREPARATION_STATE_DIR/git_index_state")" in
+            H) case "$(git -C "$git_root" ls-files -v -- "$git_relative" 2>/dev/null | cut -c1 | head -n 1)" in
+                 h) git -C "$git_root" update-index --no-assume-unchanged -- "$git_relative" || cleanup_status=$?;;
+                 *) :;;
+               esac;;
+            *) :;;
+          esac;
+        fi;
         rm -rf "$PAID_PREPARATION_STATE_DIR" &&
         exit "$cleanup_status"
       SH

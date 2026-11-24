@@ -1120,7 +1120,8 @@ module Activities
     end
 
     def reconcile_dependency_cycles(account)
-      Issues::DependencyCycles.call(account:)
+      cycles = Issues::DependencyCycles.call(account:)
+      CycleAnalyses::AutoStart.call(cycles:)
       Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
     end
 

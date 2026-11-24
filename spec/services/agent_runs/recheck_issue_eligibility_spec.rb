@@ -32,6 +32,68 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.temporal_workflow_id).to be_nil
   end
 
+  # @spec EAGER-QUEUE-018
+  it "retires an unclaimed automatic non-auto-pick replacement while preserving a manual pushed result" do
+    issue = create(:issue, project:, github_state: "open")
+    producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+      auto_pick: false, branch_name: "paid/5273-preserved-result", result_commit_sha: "a" * 40)
+    replacement = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: false)
+
+    expect(described_class.call(replacement)).to be(true)
+
+    expect(replacement.reload).to have_attributes(status: "cancelled", temporal_workflow_id: nil)
+    expect(replacement.error_message).to include(producer.result_commit_sha, producer.branch_name)
+    expect(producer.reload).to have_attributes(status: "failed", result_commit_sha: "a" * 40)
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "cancels a claimed automatic replacement during the produced-work race before it starts" do
+    issue = create(:issue, project:, github_state: "open")
+    create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      result_commit_sha: "a" * 40)
+    replacement = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: false)
+    replacement.update_columns(temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+
+    expect(described_class.call(replacement, after_claim: true)).to be(true)
+    expect(replacement.reload.status).to eq("cancelled")
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "keeps an ordinary automatic PR repair queued when the PR has no producer" do
+    pr_issue = create(:issue, :pull_request, project:, github_state: "open")
+    repair = create(:agent_run, :queued, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number)
+
+    expect(described_class.call(repair)).to be false
+
+    expect(repair.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "does not treat a failed PR repair's pushed result as replacement coding" do
+    pr_issue = create(:issue, :pull_request, project:, github_state: "open")
+    create(:agent_run, :failed, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number, result_commit_sha: "b" * 40)
+    repair = create(:agent_run, :queued, :automatic, project:, issue: pr_issue, goal: "create_pr",
+      auto_pick: false, source_pull_request_number: pr_issue.github_number)
+
+    expect(described_class.call(repair)).to be false
+
+    expect(repair.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+  end
+
+  # @spec EAGER-QUEUE-018
+  it "points a rate-limit-recovery hold at the in-place re-queue instead of a published result" do
+    issue = create(:issue, project:, github_state: "open")
+    producer = create(:agent_run, :rate_limited, :automatic, project:, issue:, goal: "create_pr", auto_pick: true)
+    replacement = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: false)
+
+    expect(described_class.call(replacement)).to be(true)
+
+    expect(replacement.reload.error_message).to include("rate-limit recovery", "run #{producer.id}")
+    expect(replacement.error_message).not_to include("publish and review")
+  end
+
   it "cancels the run when the issue carries an auto-pick skip label" do
     issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
     run = queued_auto_pick_run(issue: issue)

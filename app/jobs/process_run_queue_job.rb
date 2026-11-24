@@ -33,12 +33,13 @@ class ProcessRunQueueJob < ApplicationJob
   MAX_ITERATIONS_PER_PERFORM = 100
 
   # Temporal priority keys default to the server-configured range 1..5.
-  # Keep Paid's richer 9-tier dequeue ordering internal, then compress it
+  # Keep Paid's richer 10-tier dequeue ordering internal, then compress it
   # onto 5 wire priorities when starting workflows.
   TEMPORAL_PRIORITY_KEYS = {
     manual: 1,
-    pr_p1: 2,
-    pr_p2: 2,
+    operator_coding: 2,
+    pr_p1: 3,
+    pr_p2: 3,
     pr_p3: 3,
     pr_continue: 3,
     issue_p1: 4,
@@ -649,12 +650,14 @@ class ProcessRunQueueJob < ApplicationJob
   # governing bounded authorization failed its recheck and the run must not
   # start; nil/permitted results (not delegated work, or still current)
   # proceed normally.
+  # @spec BOUNDED-PHASE-AUTHORIZATION-006
   def delegated_boundary_blocked?(agent_run)
     result = Automation::DelegatedActionAdmission.call(
       project: agent_run.project,
       issue: agent_run.issue,
       pull_request_number: agent_run.source_pull_request_number,
       goal: agent_run.goal,
+      action_evidence: agent_run.external_metadata.fetch("action_evidence", {}),
       boundary: :dequeue,
       trigger: agent_run.trigger_type
     )

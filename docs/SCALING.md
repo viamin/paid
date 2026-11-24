@@ -577,6 +577,18 @@ test -f "$WORKER_READINESS_FILE" && exit 0 || exit 1
 During a rolling deploy, wait for the new worker's ready flag before removing
 the old worker.
 
+The flag file is local to the worker's own container: no other role can read
+it. For observations that must cross role boundaries, each `bin/temporal_worker`
+process also publishes a periodic readiness heartbeat — its PID, boot time,
+booted revision, and the time of the latest beat — into the shared application
+database (`worker_readiness_observations`, one row per role/process boot,
+refreshed every `WORKER_READINESS_HEARTBEAT_SECONDS`, default 30). This keeps
+both old and new instances visible during a rolling deploy; adoption succeeds
+only after every fresh instance reports the current deployment identity. A
+heartbeat stays fresh for the whole process lifetime, so the trusted
+worker-adoption measurement can verify effective worker adoption from the `job` container (see
+`docs/intent/trusted-measurements/`), where the readiness files do not exist.
+
 ### Termination Grace Periods
 
 When a cloud scheduler sends SIGTERM, each worker process initiates a graceful

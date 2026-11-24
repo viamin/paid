@@ -129,18 +129,15 @@ module Activities
       elsif existing.active? && existing.agent_run_id == agent_run.id
         # Temporal retry — the previous attempt already created this record.
         existing
+      elsif existing.active? && reclaim_for_review_handoff!(existing, agent_run)
+        # A producer parked after a verified push owns no live execution
+        # resource. A read-only review of that exact PR tip may take over its
+        # metadata lease; this does not change the producer's recovery state.
+        existing
       elsif existing.active? && existing.agent_run&.finished?
         # The owning agent run finished (failed/completed) but cleanup never
         # marked the worktree as cleaned. Reclaim the stale record.
-        existing.update!(
-          agent_run: agent_run,
-          path: "/workspace",
-          base_commit: agent_run.base_commit_sha,
-          pushed: false,
-          cleaned_at: nil,
-          created_at: Time.current
-        )
-        existing
+        reclaim_worktree!(existing, agent_run)
       elsif existing.active?
         raise Temporalio::Error::ApplicationError.new(
           "Branch #{agent_run.branch_name} has an active worktree from agent run #{existing.agent_run_id}",
@@ -174,6 +171,46 @@ module Activities
       raise unless e.is_a?(ActiveRecord::RecordNotUnique) || retryable_uniqueness_error
       raise if attempts >= MAX_WORKTREE_RETRIES
       create_worktree_record(agent_run, attempts: attempts + 1)
+    end
+
+    # A waiting source-closeout producer remains unfinished for bookkeeping,
+    # but it is not a writer once its execution references are empty. A
+    # completed Temporal workflow ID is historical provenance, not a live
+    # execution reference. Locking the producer and worktree together makes
+    # the recovery-claim check and lease reassignment one atomic handoff.
+    # @spec PR-BRANCH-PUBLISH-013 PR-BRANCH-PUBLISH-014
+    def reclaim_for_review_handoff!(worktree, review_run)
+      producer = AgentRun.find_by(id: worktree.agent_run_id)
+      return false unless review_run.review_goal? && review_run.existing_pr?
+      return false unless producer
+
+      producer.with_lock do
+        producer.reload
+        worktree.lock!
+        return false unless worktree.active? && worktree.agent_run_id == producer.id
+        return false unless producer.waiting_recovery? && producer.create_pr_goal?
+        return false unless producer.branch_name == review_run.branch_name
+        return false if producer.container_id.present? || producer.runner_handle.present?
+        return false if producer.service_container_ids.present?
+        return false if producer.reconciliation.to_h.dig("source_closure_recovery", "claimed_at").present?
+
+        verified_delivery = producer.result_commit_sha
+        return false unless verified_delivery.present? && verified_delivery == review_run.expected_remote_head_sha
+
+        reclaim_worktree!(worktree, review_run)
+      end
+    end
+
+    def reclaim_worktree!(worktree, agent_run)
+      worktree.update!(
+        agent_run: agent_run,
+        path: "/workspace",
+        base_commit: agent_run.base_commit_sha,
+        pushed: false,
+        cleaned_at: nil,
+        created_at: Time.current
+      )
+      worktree
     end
   end
 end
