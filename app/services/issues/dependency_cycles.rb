@@ -82,7 +82,7 @@ module Issues
 
     def nodes
       @nodes ||= Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .where("is_pull_request = TRUE OR paid_state NOT IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
         .index_by(&:id)
     end
 
@@ -99,10 +99,8 @@ module Issues
     end
 
     def edges
-      @edges ||= IssueDependency.joins(:issue, :depends_on_issue)
+      @edges ||= IssueDependency.blocking_local_prerequisites.joins(:issue)
         .where(issues: { project_id: account.projects.select(:id), github_state: "open" })
-        .where(depends_on_issue: { github_state: "open" })
-        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references
         .pluck(:id, :issue_id, :depends_on_issue_id, :declaration_source, :declaration_url)
         .filter_map do |id, from, to, source, url|

@@ -257,16 +257,12 @@ class Issue < ApplicationRecord
   # @spec QUEUE-TIER-006 @spec PR-ESCALATION-003
   scope :auto_continue_active, -> { where(auto_continue_paused: false) }
   scope :ready_for_work, ->(project) {
-    # Match blocking_issues / lifecycle_statuses semantics: open dependencies
-    # excluding agent-parked or agent-completed blockers, which are treated as
-    # effectively resolved for downstream scheduling until GitHub is closed.
-    blocked_by_local_open = IssueDependency
-      .joins(:issue, :depends_on_issue)
-      .where(
-        depends_on_issue: { github_state: "open" },
-        issues: { project_id: project.id }
-      )
-      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+    # @spec DEPENDENCY-DECLARATIONS-011
+    # Ordinary issue workflow states can resolve an open prerequisite; a PR
+    # requires provider-backed closed-and-merged evidence instead.
+    blocked_by_local_open = IssueDependency.blocking_local_prerequisites
+      .joins(:issue)
+      .where(issues: { project_id: project.id })
       .excluding_parent_references
       .select(:issue_id)
 
@@ -300,6 +296,12 @@ class Issue < ApplicationRecord
       .where.not(id: blocked_by_local_deployment_pending)
       .where.not(id: blocked_by_external)
   }
+
+  def self.prerequisite_resolved?(issue)
+    return issue.github_state == "closed" && issue.pr_review_phase == "merged" if issue.is_pull_request?
+
+    issue.github_state != "open" || issue.paid_state.in?(NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+  end
 
   def github_url
     return github_html_url if source == UPSTREAM_PULL_REQUEST_SOURCE && github_html_url.present?
@@ -658,10 +660,9 @@ class Issue < ApplicationRecord
   # excludes agent-parked/completed blockers and contextual parent
   # references (@spec AUTO-PICK-QUEUE-009).
   def blocking_dependency_target_ids
-    issue_dependencies
-      .joins(:issue, :depends_on_issue)
-      .where(depends_on_issue: { github_state: "open" })
-      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+    IssueDependency.blocking_local_prerequisites
+      .where(issue_id: id)
+      .joins(:issue)
       .excluding_parent_references
       .select(:depends_on_issue_id)
   end
@@ -714,12 +715,12 @@ class Issue < ApplicationRecord
 
     issue_ids = issues.map(&:id)
 
-    # Match blocking_issues semantics: open dependencies excluding non-blocking
-    # parked/completed blockers and contextual parent references.
-    blocked_by_local = IssueDependency
-      .joins(:issue, :depends_on_issue)
-      .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
-      .where.not(depends_on_issue: { paid_state: NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+    # @spec DEPENDENCY-DECLARATIONS-011
+    # Match blocking_issues semantics, including the distinct PR fulfillment
+    # contract, and retain contextual parent-reference exclusion.
+    blocked_by_local = IssueDependency.blocking_local_prerequisites
+      .where(issue_id: issue_ids)
+      .joins(:issue)
       .excluding_parent_references
       .pluck(:issue_id)
       .to_set
