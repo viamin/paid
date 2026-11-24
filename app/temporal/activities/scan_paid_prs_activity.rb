@@ -1392,6 +1392,7 @@ module Activities
     # resolve the triggering condition (e.g. a CI-fix run that pushes a commit
     # but leaves CI red). This gate provides a hard backstop that bounds the
     # loop regardless (#3271).
+    # @spec PR-ESCALATION-028
     def total_followup_limit_reached?(project, issue)
       return false if project.pr_escalation_limits_suspended?
 

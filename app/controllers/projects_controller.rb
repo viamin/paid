@@ -179,6 +179,7 @@ class ProjectsController < ApplicationController
     load_screenshot_settings_context
   end
 
+  # @spec PR-ESCALATION-030 PR-ESCALATION-031
   def update
     authorize @project
     @github_tokens = policy_scope(GithubToken).where(revoked_at: nil)

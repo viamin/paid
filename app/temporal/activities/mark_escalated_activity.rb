@@ -80,6 +80,7 @@ module Activities
 
     private
 
+    # @spec PR-ESCALATION-028
     def escalation_still_applies?(project, issue, input:)
       case resolve_escalation_reason(input)
       when Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT

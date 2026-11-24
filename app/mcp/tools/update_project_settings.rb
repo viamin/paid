@@ -87,6 +87,7 @@ module Tools
       false
     end
 
+    # @spec PR-ESCALATION-030 PR-ESCALATION-031
     def perform(project_id:, settings:, confirmed:)
       raise ArgumentError, "Confirmation required: set confirmed=true to update project settings" unless confirmed
       raise ArgumentError, "settings must be an object" unless settings.is_a?(Hash)

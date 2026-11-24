@@ -9,7 +9,7 @@ RSpec.describe Project do
   let(:pull_request) { create(:issue, :pull_request, project: project, github_number: 42, pr_review_phase: "ready", pr_followup_count: 12) }
 
   it "rejects malformed or timezone-free deadlines instead of silently clearing the suspension" do
-    [ "tomorrow", "2026-11-30T18:00:00", "2026-11-31T18:00:00Z" ].each do |value|
+    [ "tomorrow", "2026-11-30T18:00:00", "2026-11-31T18:00:00Z", "9999999-01-01T00:00:00Z" ].each do |value|
       project.pr_escalation_limits_suspended_until = value
       expect(project).not_to be_valid
       expect(project.errors[:pr_escalation_limits_suspended_until]).not_to be_empty

@@ -242,8 +242,10 @@ have failed for long enough.
   follow-up count/failure-streak or cumulative PR token limits at scanner and
   execution boundaries. Other escalation and merge gates SHALL remain active.
   *Code:* `Project`, `Activities::ScanPaidPrsActivity`,
-  `Activities::CheckQualityGateActivity`.
-  *Test:* `spec/models/project_escalation_suspension_spec.rb`.
+  `Activities::CheckQualityGateActivity`, `Activities::MarkEscalatedActivity`.
+  *Test:* `spec/models/project_escalation_suspension_spec.rb`,
+  `spec/temporal/activities/check_quality_gate_activity_spec.rb`,
+  `spec/temporal/activities/mark_escalated_activity_spec.rb`.
 - [x] **PR-ESCALATION-029** — When the deadline is absent, cleared or reached,
   the system SHALL enforce the configured limits using retained history and
   allowances, without requiring a scheduled restoration action. A suspension
@@ -254,7 +256,8 @@ have failed for long enough.
   authorized project settings and the project settings tool and SHALL audit
   the accepted UTC deadline or explicit clearing using their existing actor-bound
   settings audit.
-  *Code:* `ProjectsController`, `Tools::UpdateProjectSettings`.
+  *Code:* `ProjectsController#update`, `Tools::UpdateProjectSettings#perform`,
+  `app/views/projects/edit.html.erb`.
   *Test:* `spec/requests/projects_spec.rb`,
   `spec/mcp/tools/update_project_settings_spec.rb`.
 
@@ -262,7 +265,8 @@ have failed for long enough.
   invalid type, calendar date or missing time zone, the system SHALL reject
   it before saving and SHALL preserve the input in the settings error form,
   leaving the previously stored deadline unchanged.
-  *Code:* `Project`, `app/views/projects/edit.html.erb`.
+  *Code:* `Project`, `ProjectsController#update`, `Tools::UpdateProjectSettings#perform`,
+  `app/views/projects/edit.html.erb`.
   *Test:* `spec/models/project_escalation_suspension_spec.rb`,
   `spec/requests/projects_spec.rb`,
   `spec/mcp/tools/update_project_settings_spec.rb`.
