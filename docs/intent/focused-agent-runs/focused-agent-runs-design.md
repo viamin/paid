@@ -142,6 +142,16 @@ The composite score is recomputed with the focus-specific weights once the
 `focus_resolved` value lands. Attribution runs only for the focuses in
 `FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES` (i.e. not `general`).
 
+## Verified follow-up thread resolution
+
+Follow-up thread resolution binds its semantic assessment to a complete
+immutable comparison file list within the request's file ceiling. The GitHub
+client raises a typed unavailable error when the local ceiling or upstream
+file-list cap prevents proving completeness, rather than silently dropping
+paths. Patch and thread excerpts retain explicit byte-budget markers. Only
+thread IDs actually included in the bounded prompt receive content-version
+bindings and may be authorized; omitted findings remain actionable.
+
 ## PR automation fuses
 
 Focused runs still need a hard spend fuse because a repeated PR follow-up can

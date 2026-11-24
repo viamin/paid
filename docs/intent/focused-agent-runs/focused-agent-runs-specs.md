@@ -151,10 +151,14 @@
   request, and evidence-size budgets, rejecting missing, repeated, or cyclic
   pagination cursors. Failed, unavailable, incomplete, malformed, stale,
   concurrently changed, over-budget, or no-op assessment cannot resolve it.
+  Immutable comparison file lists SHALL be complete within their configured
+  limit; a local cutoff or an unprovable upstream file-list limit SHALL refuse
+  assessment. A thread omitted from the bounded prompt SHALL NOT be authorized.
   This does not prohibit a supported no-code disposition such as invalid,
   outdated, or already-fixed feedback.
   *Code:* `AgentExecutionWorkflow#execute`,
-  `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`.
+  `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`,
+  `GithubClient#detailed_compare_files`.
   *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
   `spec/services/github_client_spec.rb`,
   `spec/temporal/activities/assess_followup_review_threads_activity_spec.rb`,

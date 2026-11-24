@@ -2200,6 +2200,17 @@ RSpec.describe GithubClient do
   describe "#detailed_compare_files" do
     let(:repo) { "owner/repo" }
 
+    [ [ 101, 100 ], [ 300, 500 ] ].each do |file_count, limit|
+      it "refuses incomplete comparison evidence at #{file_count} files with limit #{limit}" do
+        files = file_count.times.map { |index| { filename: "file_#{index}.rb", status: "modified", patch: "+fixed" } }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: }.to_json, headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456", max_files: limit) }
+          .to raise_error(GithubClient::Error)
+      end
+    end
+
     before do
       stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
         .to_return(
@@ -2230,7 +2241,7 @@ RSpec.describe GithubClient do
       expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([ metadata ])
     end
 
-    it "caps the returned entries at max_files" do
+    it "refuses to return a partial comparison at max_files" do
       stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
         .to_return(
           status: 200,
@@ -2243,9 +2254,8 @@ RSpec.describe GithubClient do
           headers: { "Content-Type" => "application/json" }
         )
 
-      result = client.detailed_compare_files(repo, "base123", "head456", max_files: 1)
-
-      expect(result.map { |file| file[:filename] }).to eq([ "a.rb" ])
+      expect { client.detailed_compare_files(repo, "base123", "head456", max_files: 1) }
+        .to raise_error(GithubClient::IncompleteComparisonError)
     end
   end
 

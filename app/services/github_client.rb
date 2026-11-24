@@ -79,6 +79,10 @@ class GithubClient
   # Raised when GitHub cannot provide a complete tree listing for an exact path lookup.
   class IncompleteTreeError < Error; end
 
+  class IncompleteComparisonError < Error; end
+
+  COMPARE_FILE_LIMIT = 300
+
   # Project credentials can be backed by a shared token client, so comment
   # policy belongs in a project-scoped decorator rather than on that shared
   # instance. All other GitHub operations, including PR body updates, pass
@@ -470,7 +474,7 @@ class GithubClient
   end
 
   # Lists files changed between two immutable commits with full metadata,
-  # capped at +max_files+. Unlike +detailed_pull_request_files+ (which reflects
+  # refusing incomplete evidence above +max_files+. Unlike +detailed_pull_request_files+ (which reflects
   # a pull request's *mutable* current head), this binds the diff to the exact
   # SHAs the caller captured, so a concurrent head change cannot swap the
   # evidence out from under a SHA-pinned assessment.
@@ -478,12 +482,20 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @param base [String] Base commit SHA
   # @param head [String] Head commit SHA
-  # @param max_files [Integer] Cap on returned entries
+  # @param max_files [Integer] Maximum complete file list accepted
+  # @raise [IncompleteComparisonError] if the local or upstream limit prevents a complete listing
   # @return [Array<Hash>] :filename, :status, :additions, :deletions, :changes, :patch
   def detailed_compare_files(repo, base, head, max_files: 100)
     handle_errors do
       comparison = client.compare(repo, base, head)
-      compare_files_payload(comparison.files || []).first(max_files)
+      files = comparison.files
+      # GitHub only returns up to 300 changed files, even with pagination:
+      # https://docs.github.com/en/rest/commits/commits#compare-two-commits
+      if !files.is_a?(Array) || files.size > max_files || files.size >= COMPARE_FILE_LIMIT
+        raise IncompleteComparisonError, "GitHub comparison file evidence is incomplete"
+      end
+
+      compare_files_payload(files)
     end
   end
 

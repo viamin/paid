@@ -36,8 +36,12 @@ module Activities
       # between reading the head and fetching the diff cannot assess a
       # different head's changes while labeling them as this one.
       evidence = client.detailed_compare_files(project.full_name, base_sha, head_sha)
-      prompt_threads = threads.map { |thread| thread_with_trusted_comments(project, thread) }
-      assessment_prompt = prompt(head_sha, bounded_threads(prompt_threads), bounded_evidence(evidence))
+      prompt_threads = bounded_threads(threads.map { |thread| thread_with_trusted_comments(project, thread) })
+      included_ids = prompt_threads[:items].map { |thread| thread[:id].to_s }
+      threads = threads.select { |thread| included_ids.include?(thread[:id].to_s) }
+      return unavailable if threads.empty?
+
+      assessment_prompt = prompt(head_sha, prompt_threads, bounded_evidence(evidence))
       return unavailable if assessment_prompt.bytesize > MAX_PROMPT_BYTES
 
       response = Llm::Request.call(prompt: assessment_prompt, agent_run: agent_run, timeout: TIMEOUT)
