@@ -74,6 +74,30 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
     expect(issue.reload.paid_state).to eq("manual_review")
   end
 
+  # @spec ISSUE-ENHANCEMENT-021 ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+  it "honors a shared skip-label hold added during recovery delay" do
+    project.update!(auto_pick_skip_labels: [ "operator-hold" ])
+    issue.update!(labels: [ "operator-hold" ])
+
+    expect { described_class.call(agent_run:) }.not_to change(AgentRun, :count)
+    expect(issue.reload.paid_state).to eq("manual_review")
+    expect(agent_run.reload.external_metadata[described_class::METADATA_KEY]).not_to have_key("recovery_claimed_at")
+    expect(CostBudgets::Check).not_to have_received(:call)
+    expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
+  # @spec ISSUE-ENHANCEMENT-021 ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+  it "honors a shared Paid-local hold added during recovery delay" do
+    project.update!(label_integration_mode: "ignored")
+    issue.update!(auto_pick_excluded_reason: "Operator hold")
+
+    expect { described_class.call(agent_run:) }.not_to change(AgentRun, :count)
+    expect(issue.reload.paid_state).to eq("manual_review")
+    expect(agent_run.reload.external_metadata[described_class::METADATA_KEY]).not_to have_key("recovery_claimed_at")
+    expect(CostBudgets::Check).not_to have_received(:call)
+    expect(ProcessRunQueueJob).not_to have_received(:perform_later)
+  end
+
   # @spec ISSUE-ENHANCEMENT-021
   it "does not recover a manual-review stop owned by another producer" do
     issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)

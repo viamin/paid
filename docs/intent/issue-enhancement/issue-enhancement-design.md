@@ -379,6 +379,10 @@ error and consumed claim across duplicate delivery and failure bookkeeping.
 Legacy recovery asks the same issue-level feature activation check as the
 original enhancement path, including trusted per-item labels. Skip labels,
 local-activation mode, and rollout phase denial remain authoritative.
+The delayed claim separately rechecks the same effective skip-label or
+Paid-local exclusion hold used by normal queue/dequeue admission. Project
+activation does not override a hold added while recovery was waiting, and a
+held attempt consumes neither its recovery claim nor its budget check.
 The shared deduplication statuses define existing work ownership: a rate-limited
 run still owns its work while awaiting recovery and blocks another successor.
 Human questions, independent holds, and exhausted recovery remain actionable

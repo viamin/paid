@@ -328,7 +328,10 @@
   recovery attempt when current issue revision, legacy automatic-enhancement
   authorization, effective issue-preparation policy, budget, and active-work
   checks still admit it. Legacy activation SHALL use the shared issue-level
-  decision, including trusted per-issue opt-ins. A rate-limited run SHALL retain
+  decision, including trusted per-issue opt-ins. Recovery SHALL recheck the shared
+  effective skip-label or Paid-local hold at claim time, including a hold added
+  during the delay, before consuming a budget or recovery claim.
+  A rate-limited run SHALL retain
   its work ownership and
   block another recovery successor. The producer's consumed recovery claim
   SHALL survive duplicate activity delivery and terminal-failure bookkeeping.

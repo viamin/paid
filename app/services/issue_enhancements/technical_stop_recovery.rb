@@ -67,7 +67,7 @@ module IssueEnhancements
         issue.github_state == "open" && issue.trusted? && issue.paid_state == "manual_review" &&
         technical_manual_review? &&
         issue.needs_input_questions.blank? && metadata.fetch("attempt", 0).to_i < MAX_ATTEMPTS &&
-        metadata["recovery_claimed_at"].blank? && current_revision? && automatic_enhancement_enabled? &&
+        metadata["recovery_claimed_at"].blank? && current_revision? && !automatic_execution_held? && automatic_enhancement_enabled? &&
         policy.permitted? && no_active_work?
     end
 
@@ -95,6 +95,10 @@ module IssueEnhancements
     # trusted legacy opt-ins and the same phase/local-activation boundaries.
     def automatic_enhancement_enabled?
       Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue:)
+    end
+
+    def automatic_execution_held?
+      Automation::Strategies::AutoPick::DefaultCandidateSource.effective_skip_label_hold?(project, issue.id)
     end
 
     def no_active_work?
