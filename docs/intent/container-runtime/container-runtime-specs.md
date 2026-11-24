@@ -923,7 +923,15 @@
   Snapshot state SHALL live outside the repository. The runtime SHALL preserve
   and restore an original missing target, tracked file, untracked user file, or
   symlink, including original regular-file bytes and mode, without disabling
-  heartbeat configuration. Successful execution, command failure, and
+  heartbeat configuration. The Git protection SHALL apply to targets that
+  physically resolve inside the checkout (including relative and
+  symlink-traversed paths); only a plain cached index entry SHALL be flagged,
+  with skip-worktree, already-flagged, and unmerged entries left untouched; the
+  exclusion append SHALL keep its marker on its own line and record its undo
+  state before mutating the exclude file; cleanup SHALL un-flag only a recorded
+  cached entry that still carries the flag, and exclusion removal and flag
+  restoration SHALL fail explicitly and independently rather than
+  short-circuiting each other. Successful execution, command failure, and
   cancellation SHALL retain the existing restoration and explicit
   cleanup-failure behavior. When applying a preparation write fails after the
   target was replaced or part of the run-local Git protection was applied, the
@@ -931,7 +939,8 @@
   target bytes, mode, and symlink and removing partial exclusion and index
   changes — before propagating the original failure; an unknown snapshot state
   SHALL be treated as nothing to restore, and a rollback that cannot restore
-  SHALL invalidate the container without replacing the original failure.
+  SHALL invalidate the container without replacing the original failure,
+  including when the rollback exec fails at the connection level.
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision#materialize_preparation_file`,
   `#materialize_script`, `#rollback_partial_preparation`, `#cleanup_script`.
