@@ -227,8 +227,9 @@
   SHALL NOT consume the activity's remaining attempts or replace the typed
   stop with a generic timeout. The stop-path publication SHALL post at most
   one rejection comment per repair range, and the activity SHALL record
-  sanitized per-component elapsed diagnostics (assessment, publication) on
-  the run's phase record without persisting prompts or raw provider output.
+  sanitized per-component elapsed diagnostics (assessment, publication, and
+  whether rejection publication was abandoned) on the run's phase record
+  without persisting prompts or raw provider output.
   No new retry allowance, spend, worker slot, task-queue authority, or
   native mapping is granted by this envelope (#5310).
   *Code:* `app/services/conflict_repairs/assess_scope.rb`,

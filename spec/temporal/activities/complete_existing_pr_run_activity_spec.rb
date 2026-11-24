@@ -315,6 +315,10 @@ allow(GithubClient).to receive(:new).and_return(github_client)
         expect(github_client).not_to have_received(:add_comment)
         expect(Timeout).to have_received(:timeout)
           .with(1.0, described_class::RejectionPublicationDeadlineExceeded)
+
+        phase = agent_run.agent_run_phases.find_by(phase_key: "complete_existing_pr_run")
+        expect(phase.metadata["rejection_publication_skipped"]).to be(true)
+        expect(phase.metadata["publication_elapsed_ms"]).to be_a(Numeric)
       end
 
       it "skips rejection publication when no publication budget remains" do
