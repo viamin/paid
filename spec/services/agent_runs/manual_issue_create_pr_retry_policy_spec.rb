@@ -22,6 +22,17 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
     expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :implementation_work_produced)
   end
 
+  it "retains a rate-limited sibling as the active implementation owner" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
+    parked = create(:agent_run, project:, issue:, goal: "create_pr", status: "rate_limited",
+      rate_limited_until: 1.hour.from_now)
+
+    assessment = policy.assess(run)
+
+    expect(assessment).to have_attributes(eligible?: false, reason: :existing_active_run)
+    expect(assessment.existing_run&.id).to eq(parked.id)
+  end
+
   it "refuses a guardrail exhaustion without resetting its execution budget" do
     run = create(:agent_run, :timeout, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
       guardrail_violation_type: "time_limit")

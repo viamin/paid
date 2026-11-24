@@ -136,7 +136,8 @@
   locked retry mechanism, retaining source, actor, runner, and bounded lineage
   without enabling unrelated discovery. It SHALL recheck source eligibility,
   trust, dependencies, active ownership, policy, opt-out, and pauses. Partial
-  work, changed source, an active successor, duplicate delivery, or execution
+  work, changed source, an active successor (including a rate-limited sibling
+  that can resume in place), duplicate delivery, or execution
   budget exhaustion SHALL refuse blind replacement; classifications alone SHALL
   not be reported as execution.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
