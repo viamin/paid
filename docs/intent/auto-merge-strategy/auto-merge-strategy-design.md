@@ -139,7 +139,8 @@ slow or unavailable GitHub publication can neither consume the activity's
 remaining attempts nor replace the actionable typed classification with a
 generic timeout. The activity records sanitized per-component elapsed
 diagnostics on its phase record (assessment and publication timings, bound
-scope status) without persisting prompts or raw provider output.
+scope status, and whether rejection publication was abandoned) without
+persisting prompts or raw provider output.
 
 The assessment input itself is complete-or-explicit, never silently partial
 (#5312). The prompt carries the complete immutable result-path inventory —

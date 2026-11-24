@@ -409,6 +409,7 @@ module Activities
         end
       end
     rescue RejectionPublicationDeadlineExceeded
+      skipped = true
       logger.warn(
         message: "agent_execution.conflict_repair_rejection_publication_timed_out",
         agent_run_id: agent_run.id,
