@@ -79,15 +79,32 @@ class IssueDependency < ApplicationRecord
       .joins(sanitize_sql_array([ EXTERNAL_RESOLUTION_JOIN_SQL, account_id ]))
   }
 
+  # @spec DEPENDENCY-DECLARATIONS-011
+  # A local PR is not resolved by Paid workflow state. Use the explicit join
+  # alias so every query consumer can compose this canonical predicate without
+  # relying on association-generated aliases.
+  scope :blocking_local_prerequisites, -> {
+    joins("INNER JOIN issues prerequisite_issues ON prerequisite_issues.id = issue_dependencies.depends_on_issue_id")
+      .where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        (prerequisite_issues.is_pull_request = TRUE AND
+          (prerequisite_issues.github_state IS DISTINCT FROM 'closed' OR
+           prerequisite_issues.pr_review_phase IS DISTINCT FROM 'merged')) OR
+        (prerequisite_issues.is_pull_request = FALSE AND prerequisite_issues.github_state = 'open' AND
+          prerequisite_issues.paid_state NOT IN (?))
+      SQL
+  }
+
   # External deps that should still block their dependent: target project
   # not synced into the account, target issue not yet synced, or target
-  # is observably open (and not in a local state treated as effectively
-  # resolved for downstream scheduling).
+  # is not resolved under the typed issue/PR prerequisite contract.
   scope :still_blocking_external_for_account, ->(account_id) {
     external_resolved_for_account(account_id)
       .where(
         "ext_project.id IS NULL OR ext_issue.id IS NULL OR " \
-        "(ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN ('recommend_close', 'completed'))"
+        "(ext_issue.is_pull_request = TRUE AND " \
+        "(ext_issue.github_state IS DISTINCT FROM 'closed' OR ext_issue.pr_review_phase IS DISTINCT FROM 'merged')) OR " \
+        "(ext_issue.is_pull_request = FALSE AND ext_issue.github_state = 'open' " \
+        "AND ext_issue.paid_state NOT IN ('recommend_close', 'completed'))"
       )
   }
 
