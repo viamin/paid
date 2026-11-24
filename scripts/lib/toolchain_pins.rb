@@ -39,7 +39,6 @@ module ToolchainPins
     ".devcontainer/compose.yaml",
     "docker-compose.yml",
     ".github/workflows/ci.yml",
-    ".github/workflows/claude-code-review.yml",
     ".github/workflows/system_tests.yml",
     ".github/workflows/test_prof.yml",
     ".github/workflows/pr-screenshots.yml",
