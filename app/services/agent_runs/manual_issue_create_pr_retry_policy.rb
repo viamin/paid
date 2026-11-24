@@ -21,9 +21,7 @@ module AgentRuns
       return Assessment.new(false, :not_failed, retry_number, nil) unless agent_run.status.in?(AgentRun::FAILURE_STATUSES)
       return Assessment.new(false, :execution_budget_exhausted, retry_number, nil) if execution_budget_exhausted?(agent_run)
       return Assessment.new(false, :rate_limit_recovery_owned, retry_number, nil) if agent_run.recoverable_rate_limited?
-      if agent_run.implementation_work_produced? || agent_run.unpublished_result_commit_sha.present?
-        return Assessment.new(false, :implementation_work_produced, retry_number, nil)
-      end
+      return Assessment.new(false, :implementation_work_produced, retry_number, nil) if agent_run.implementation_work_produced?
       return Assessment.new(false, :project_retry_disabled, retry_number, nil) unless agent_run.project.retry_failed_manual_runs?
       return Assessment.new(false, :project_or_issue_paused, retry_number, nil) if paused?(agent_run)
       return Assessment.new(false, :issue_not_eligible, retry_number, nil) unless issue_eligible?(agent_run)

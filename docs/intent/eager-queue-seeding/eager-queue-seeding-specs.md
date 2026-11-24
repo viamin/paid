@@ -110,12 +110,15 @@
   SHALL retain its existing Sidekiq-style delay, retry cap, abandonment-reset
   boundary, project gate, labels, dependencies, trust, budget, provider-cap,
   and queue-admission checks. A run awaiting in-place rate-limit recovery or
-  a run with a PR, pushed revision, or partial-closeout continuation SHALL not
+  a run with a PR, published or retained unpublished revision, or
+  partial-closeout continuation SHALL not
   mint a blind replacement; duplicate callbacks, delayed jobs, and sweeps
   SHALL converge on one active implementation run. Ordinary
   `create_pr` admission (`Issues::EnqueueEligible`, including periodic
   sweeps, delayed re-enqueues, and sync-driven seeding) SHALL honor the same
-  produced-work and rate-limit-recovery refusals the shared policy records
+  produced-work (including a retained unpublished revision before execution
+  counters or the published result are recorded) and rate-limit-recovery
+  refusals the shared policy records
   for a still-current failed `create_pr` producer on the same issue: it SHALL
   NOT mint a fresh implementation attempt while that refusal stands, whether
   the producer was manual or automatic (#4989 acceptance bypass). A queued
