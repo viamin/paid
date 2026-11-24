@@ -72,6 +72,29 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     expect(obligation.check_results.where(producer: "formal_verification").sole.input_revision).to include("code" => "code123", "external_revision" => "intent123")
   end
 
+  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-009 LAYERED-VERIFY-019
+  it "does not hold the agent run row lock while external checks execute" do
+    obligation = create(:layered_verification_obligation)
+    audit = formal_audit(obligation)
+    baseline_transactions = AgentRun.connection.open_transactions
+    allow(audit).to receive(:execute_in_execution_environment) do |command, **|
+      expect(AgentRun.connection.open_transactions).to eq(baseline_transactions)
+
+      output = command.first == "tlc" ? "Model checking completed." : ""
+      Containers::Provision::Result.success(stdout: output, stderr: "", exit_code: 0)
+    end
+    allow(Llm::Request).to receive(:call) do |**|
+      expect(AgentRun.connection.open_transactions).to eq(baseline_transactions)
+
+      response_class.new({ "unmapped" => [] }.to_json)
+    end
+    allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
+
+    described_class.new.execute(agent_run_id: audit.id)
+
+    expect(obligation.check_results.where(agent_run: audit, producer: "formal_verification")).to exist
+  end
+
   it "bounds the inline TLC evidence summary" do
     obligation = create(:layered_verification_obligation)
     audit = formal_audit(obligation)

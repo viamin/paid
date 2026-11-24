@@ -14,12 +14,12 @@ module Activities
 
     def execute(input)
       agent_run = AgentRun.find(input[:agent_run_id])
-      agent_run.with_lock { execute_locked(agent_run) }
+      execute_checks(agent_run)
     end
 
     private
 
-    def execute_locked(agent_run)
+    def execute_checks(agent_run)
       metadata = audit_metadata(agent_run)
       obligations = obligations(agent_run, metadata)
       record_linkage_freshness(agent_run, obligations)
@@ -38,10 +38,14 @@ module Activities
         )
         next if discovery.material.empty? && discovery.limitations.empty?
 
-        LayeredVerification::LinkageFreshness.call(
-          agent_run:, obligation:, structural_material: discovery.structural_material,
-          semantic_material: discovery.semantic_material, limitations: discovery.limitations
-        )
+        agent_run.with_lock do
+          next if recorded?(agent_run, obligation, "linkage_freshness")
+
+          LayeredVerification::LinkageFreshness.call(
+            agent_run:, obligation:, structural_material: discovery.structural_material,
+            semantic_material: discovery.semantic_material, limitations: discovery.limitations
+          )
+        end
       end
     end
 
@@ -50,7 +54,12 @@ module Activities
       return if recorded?(agent_run, obligation, "formal_verification")
       return if LayeredVerification::Audits::RecordReuse.call(obligation:, agent_run:, metadata:)
 
-      run_tlc(agent_run, metadata, obligation, plan)
+      outcome = run_tlc(agent_run, plan)
+      agent_run.with_lock do
+        next if recorded?(agent_run, obligation, "formal_verification")
+
+        LayeredVerificationCheckResult.create!(result_attributes(agent_run, metadata, obligation, outcome))
+      end
     end
 
     def recorded?(agent_run, obligation, producer)
@@ -73,12 +82,11 @@ module Activities
       agent_run.external_metadata.fetch("layered_verification")
     end
 
-    def run_tlc(agent_run, metadata, obligation, plan)
+    def run_tlc(agent_run, plan)
       module_path, config_path = model_pair(plan)
-      outcome = LayeredVerification::Checks::TlcRunner.call(
+      LayeredVerification::Checks::TlcRunner.call(
         command_runner: command_runner(agent_run), module_path:, config_path:
       )
-      LayeredVerificationCheckResult.create!(result_attributes(agent_run, metadata, obligation, outcome))
     end
 
     def model_pair(plan)

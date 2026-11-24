@@ -96,7 +96,7 @@ module LayeredVerification
     # A claim may anchor a path fragment (line, heading, or anchor) rather than
     # the whole file; the referenced path is the mechanical coverage unit.
     def reference_path(reference)
-      reference.to_s.split("#").first.to_s.strip
+      reference.to_s.split("#", 2).first.to_s.strip.sub(/:\d+(?:-\d+)?\z/, "")
     end
 
     # Returns [material, limitation]: a failed or unparseable read-through

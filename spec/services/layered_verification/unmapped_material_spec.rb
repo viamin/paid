@@ -48,6 +48,24 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
   end
 
   # @spec LAYERED-VERIFY-009
+  it "treats line-suffixed correspondence references as references to their repository files" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    obligation.correspondence_claims.first.update!(
+      source_reference: "docs/intent/payments/payment-specs.md:12-20",
+      target_reference: "app/models/payment.rb:37"
+    )
+    run = create(:agent_run, goal: "layered_verification_audit")
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(
+        scope_output: "docs/intent/payments/payment-specs.md\napp/models/payment.rb\n"
+      ), llm: semantic_llm("unmapped" => []))
+
+    expect(discovery.structural_material).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-009
   it "enumerates bounded target directories as well as the canonical source directory" do
     project = create(:project)
     obligation = scoped_obligation(project:)
