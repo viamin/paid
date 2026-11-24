@@ -97,9 +97,8 @@ module Dashboard
     end
 
     def local_dependency_blocker_scope(issue_ids = excluded_issue_ids)
-      IssueDependency.joins(:issue, :depends_on_issue)
-        .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
-        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      IssueDependency.blocking_local_prerequisites.joins(:issue)
+        .where(issue_id: issue_ids)
         .excluding_parent_references
     end
 
