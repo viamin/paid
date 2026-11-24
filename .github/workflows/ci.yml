@@ -359,7 +359,7 @@ jobs:
             # spreads those requests without extending an attempt's bound.
             sleep "$((RSPEC_SHARD_INDEX * 3))"
             for attempt in 1 2 3 4 5; do
-              if timeout "$timeout_limit" "$@"; then
+              if timeout --kill-after=30s "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"
@@ -368,15 +368,16 @@ jobs:
             return 1
           }
           # Hosted-runner registry connections can remain idle while a shared
-          # cache or package mirror is contended. Let one request wait up to
-          # five minutes. Serialize each leg's requests so five concurrent
-          # matrix legs do not multiply retryable registry pressure.
+          # cache or package mirror is contended. Fail a stalled request after
+          # one minute so the bounded complete-setup retries can recover.
+          # Serialize each leg's requests so five concurrent matrix legs do
+          # not multiply retryable registry pressure.
           # The enclosing twenty-minute attempt remains the authoritative
           # bound from TEST-SUITE-023.
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -769,7 +770,7 @@ jobs:
             shift 2
             local attempt
             for attempt in 1 2 3 4 5; do
-              if timeout "$timeout_limit" "$@"; then
+              if timeout --kill-after=30s "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"
@@ -777,14 +778,13 @@ jobs:
             done
             return 1
           }
-          # Keep recovery's registry tolerance aligned with matrix shards;
-          # serialize requests there too, since recovery can run alongside a
-          # different workflow's package setup. Each complete setup attempt is
-          # still bounded to twenty minutes.
+          # Keep recovery's socket timeout and registry tolerance aligned with
+          # matrix shards. Each complete setup attempt is still bounded to
+          # twenty minutes.
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 60000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
