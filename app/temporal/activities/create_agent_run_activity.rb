@@ -161,6 +161,82 @@ module Activities
 
     private
 
+    def paused_resume_result(agent_run)
+      {
+        agent_run_id: agent_run.id,
+        focus: agent_run.focus,
+        runner_attempt_count: 1,
+        agent_timeout_seconds: AGENT_TIMEOUT_DEFAULT,
+        max_execution_seconds: effective_max_execution_seconds(agent_run.project, nil),
+        paused: true
+      }
+    end
+
+    def queued_resume_attempt
+      Temporalio::Activity::Context.current_or_nil&.info&.attempt || 1
+    end
+
+    def claim_queued_resume_attempt!(agent_run, attempt)
+      agent_run.with_lock do
+        agent_run.reload
+        raise_queued_resume_superseded!(agent_run, attempt) unless agent_run.queued?
+
+        previous_attempt = agent_run.external_metadata.dig("queued_run_resume", "attempt").to_i
+        raise_queued_resume_superseded!(agent_run, attempt) if previous_attempt > attempt
+
+        metadata = agent_run.external_metadata.deep_dup
+        metadata["queued_run_resume"] = { "attempt" => attempt }
+        agent_run.update!(external_metadata: metadata)
+      end
+    end
+
+    def resume_queued_stage(agent_run, attempt, stage, allow_paused: false)
+      ensure_queued_resume_attempt_current!(agent_run, attempt, allow_paused: allow_paused)
+      started_at = monotonic_now
+      record_queued_resume_stage(agent_run, attempt, stage, "started")
+      result = yield
+      ensure_queued_resume_attempt_current!(agent_run, attempt, allow_paused: allow_paused)
+      record_queued_resume_stage(agent_run, attempt, stage, "completed", started_at: started_at)
+      result
+    rescue Temporalio::Error::CanceledError
+      record_queued_resume_stage(agent_run, attempt, stage, "cancelled", started_at: started_at) if defined?(started_at)
+      raise
+    rescue => error
+      record_queued_resume_stage(agent_run, attempt, stage, "failed", started_at: started_at, error: error) if defined?(started_at)
+      raise
+    end
+
+    def ensure_queued_resume_attempt_current!(agent_run, attempt, allow_paused: false)
+      agent_run.reload
+      recorded_attempt = agent_run.external_metadata.dig("queued_run_resume", "attempt").to_i
+      current_status = agent_run.queued? || (allow_paused && agent_run.paused?)
+      return if current_status && recorded_attempt == attempt
+
+      raise_queued_resume_superseded!(agent_run, attempt)
+    end
+
+    def raise_queued_resume_superseded!(_agent_run, _attempt)
+      raise Temporalio::Error::ApplicationError.new(
+        "Queued run resume attempt is no longer current",
+        type: "QueuedRunResumeSuperseded",
+        non_retryable: true
+      )
+    end
+
+    def record_queued_resume_stage(agent_run, attempt, stage, outcome, started_at: nil, error: nil)
+      metadata = {
+        type: "queued_run_resume_stage",
+        stage: stage,
+        outcome: outcome,
+        attempt: attempt,
+        account_id: agent_run.project.account_id,
+        project_id: agent_run.project_id
+      }
+      metadata[:elapsed_ms] = [ ((monotonic_now - started_at) * 1000).round, 0 ].max if started_at
+      metadata[:error_class] = error.class.name if error
+      agent_run.log!("system", "Queued run resume #{stage} #{outcome}", metadata: metadata)
+    end
+
     # @spec TEMPORAL-ORCHESTRATION-009
     def reject_create_pr_awaiting_input!(issue, goal)
       return unless issue && goal == "create_pr" && clarification_pending?(issue)
@@ -391,24 +467,34 @@ module Activities
       )
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-019
     def resume_queued_run(agent_run_id)
       agent_run = AgentRun.find(agent_run_id)
+      attempt = queued_resume_attempt
 
-      if agent_run.queued?
-        validate_and_sync_resumed_runner!(agent_run)
-      else
+      unless agent_run.queued?
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
           agent_run_id: agent_run.id,
           current_status: agent_run.status,
           project_id: agent_run.project_id
         )
+        return paused_resume_result(agent_run) if agent_run.paused?
+
+        raise_queued_resume_superseded!(agent_run, attempt)
       end
 
+      claim_queued_resume_attempt!(agent_run, attempt)
+      resume_queued_stage(agent_run, attempt, "runner_revalidation") { validate_and_sync_resumed_runner!(agent_run) }
+
       if agent_run.create_feature_goal? && agent_run.issue.present?
-        assessment = assess_feature_brief!(agent_run, agent_run.project, agent_run.issue)
+        assessment = resume_queued_stage(agent_run, attempt, "feature_assessment") do
+          assess_feature_brief!(agent_run, agent_run.project, agent_run.issue)
+        end
         unless assessment.ready?
-          initiate_feature_needs_input!(agent_run, agent_run.project, agent_run.issue, assessment.questions)
+          resume_queued_stage(agent_run, attempt, "feature_needs_input", allow_paused: true) do
+            initiate_feature_needs_input!(agent_run, agent_run.project, agent_run.issue, assessment.questions)
+          end
           return {
             agent_run_id: agent_run.id,
             focus: agent_run.focus,
@@ -420,20 +506,22 @@ module Activities
         end
       end
 
-      mark_issue_in_progress!(agent_run)
-      select_model(agent_run) unless agent_run.model_selection
-      ensure_lid_planning_prompt!(agent_run)
-      user_settings = resolve_user_settings(agent_run.project)
-      validate_tier_capability!(agent_run, user_settings)
-      attach_marketplace_entries_for_resume(
-        agent_run: agent_run,
-        user_settings: user_settings,
-        force: false,
-        account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
-      )
-      policy_evaluation = apply_policy_controls(agent_run)
-      assign_configuration_bundle(agent_run)
-      select_and_log_orchestration_strategy(agent_run)
+      resume_queued_stage(agent_run, attempt, "issue_state_publication") { mark_issue_in_progress!(agent_run) }
+      resume_queued_stage(agent_run, attempt, "model_selection") { select_model(agent_run) } unless agent_run.model_selection
+      resume_queued_stage(agent_run, attempt, "prompt_preparation") { ensure_lid_planning_prompt!(agent_run) }
+      user_settings = resume_queued_stage(agent_run, attempt, "user_settings") { resolve_user_settings(agent_run.project) }
+      resume_queued_stage(agent_run, attempt, "tier_validation") { validate_tier_capability!(agent_run, user_settings) }
+      resume_queued_stage(agent_run, attempt, "marketplace_attachment") do
+        attach_marketplace_entries_for_resume(
+          agent_run: agent_run,
+          user_settings: user_settings,
+          force: false,
+          account_auto_attach_required: marketplace_auto_attach_required?(agent_run.project)
+        )
+      end
+      policy_evaluation = resume_queued_stage(agent_run, attempt, "policy_evaluation") { apply_policy_controls(agent_run) }
+      resume_queued_stage(agent_run, attempt, "configuration_bundle_assignment") { assign_configuration_bundle(agent_run) }
+      resume_queued_stage(agent_run, attempt, "strategy_selection") { select_and_log_orchestration_strategy(agent_run) }
 
       logger.info(
         message: "agent_execution.queued_run_resumed",
