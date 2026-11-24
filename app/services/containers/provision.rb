@@ -3691,7 +3691,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      record_managed_materialization!("codex", credential, credential_generation)
+      !!record_managed_materialization!("codex", credential, credential_generation)
     end
 
     def materialize_managed_opencode_credentials!
@@ -3723,7 +3723,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      record_managed_materialization!("opencode", credential, credential_generation)
+      !!record_managed_materialization!("opencode", credential, credential_generation)
     end
 
     def seed_omp_credentials!
@@ -3767,7 +3767,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_import")
       )
-      record_managed_materialization!("omp", credential, credential_generation)
+      !!record_managed_materialization!("omp", credential, credential_generation)
     rescue Docker::Error::DockerError => e
       log_system("container.omp_credentials_seed_failed", error: e.message)
       record_auth_attempt!(
