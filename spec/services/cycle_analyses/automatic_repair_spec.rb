@@ -5,10 +5,11 @@ require "rails_helper"
 RSpec.describe CycleAnalyses::AutomaticRepair do
   # @spec AUTO-PICK-QUEUE-019
   it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
-    _user, cycle, run = cycle_run
+    _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
     edge = cycle.effective_edges.first
     source = Issue.find(edge.from_id)
     target = Issue.find(edge.to_id)
+    expect([ source.github_number, target.github_number ]).to eq([ 1000, 999 ])
     client = instance_double(GithubClient)
     live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
     allow(client).to receive_messages(issue: live, issue_comments: [])
@@ -223,13 +224,11 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
-  it "reports a missing live declaration distinctly from an ambiguous one" do
-    _user, cycle, run = cycle_run
+  it "reports a nonmatching live declaration as missing when the target is #999" do
+    _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
     target = Issue.find(cycle.effective_edges.first.to_id)
-    # A number guaranteed to differ from the target's, so the body declares no
-    # match regardless of where FactoryBot's github_number sequence has reached.
-    unmatched_number = target.github_number + 1
-    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- ##{unmatched_number}" })
+    expect(target.github_number).to eq(999)
+    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #998" })
     allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
@@ -339,11 +338,11 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     expect(client).not_to have_received(:update_issue)
   end
 
-  def cycle_run
+  def cycle_run(first_github_number: nil, second_github_number: nil)
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)
-    first = create(:issue, project:, github_state: "open")
-    second = create(:issue, project:, github_state: "open")
+    first = create(:issue, project:, github_state: "open", **{ github_number: first_github_number }.compact)
+    second = create(:issue, project:, github_state: "open", **{ github_number: second_github_number }.compact)
     create_legacy_issue_dependency(issue: first, depends_on_issue: second)
     create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     cycle = Issues::DependencyCycles.call(account: user.account).sole
