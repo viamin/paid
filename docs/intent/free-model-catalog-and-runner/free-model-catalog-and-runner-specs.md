@@ -7,8 +7,11 @@
 
 - [x] **FREE-MODEL-001** — When an OpenRouter-routed free-policy execution
   plan or specific-model direct-outbound runtime is built, the system SHALL
-  derive `provider_routing` from the project's `data_classification`,
-  mapping `restricted` to `{ data_collection: "deny", zdr: true }`.
+  identify the API provider as `openrouter`, derive routing from the project's
+  `data_classification`, map `restricted` to
+  `{ data_collection: "deny", zdr: true }`, and carry required ZDR routing in
+  the SDK privacy payload. Execution-plan cache identity SHALL include that
+  privacy payload.
   *Code:* `Runners::FreeModelExecutionPlan`.
 
 - [x] **FREE-MODEL-002** — When a selected free-model path is OpenRouter-routed,

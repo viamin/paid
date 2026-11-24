@@ -51,7 +51,8 @@ class DependencyCycleReconciliationJob < ApplicationJob
     unavailable_count = 0
 
     accounts.each do |account|
-      Issues::DependencyCycles.call(account:)
+      cycles = Issues::DependencyCycles.call(account:)
+      CycleAnalyses::AutoStart.call(cycles:)
       Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
       last_successful_account_id = account.id
       reconciled_count += 1

@@ -43,6 +43,17 @@ RSpec.describe AutoReleaseEvaluationJob do
   end
 
   describe "#perform" do
+    # @spec AUTO-MERGE-012
+    it "does not merge a release PR with an internal technical stop" do
+      issue.update!(technical_merge_blockers: [ { "key" => "release", "reason" => "Release verification failed" } ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+      expect(client).not_to have_received(:add_labels_to_issue)
+      expect(project.auto_merge_attempts.last.reason_code).to eq("technical_merge_blocked")
+    end
+
     it "merges a release PR when all conditions are met" do
       described_class.perform_now(project.id)
 

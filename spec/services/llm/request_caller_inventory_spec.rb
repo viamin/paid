@@ -10,6 +10,7 @@ RSpec.describe Llm::Request do
     %w[
     app/services/agent_run_patterns/diagnose.rb
     app/services/agent_runs/diagnose_error.rb
+    app/services/automation/assess_bounded_scope.rb
     app/services/conflict_repairs/assess_scope.rb
     app/services/cycle_analyses/analyze.rb
     app/services/design_amendments/impact_review.rb
@@ -41,6 +42,7 @@ RSpec.describe Llm::Request do
     %w[
     app/services/knowledge/session_summaries/capture.rb
     app/services/llm/analyze_partial_closeout.rb
+    app/services/llm/assess_no_output_disposition.rb
     app/services/llm/generate_agent_update_summary.rb
     app/services/llm/generate_issue_title.rb
     app/services/llm/generate_pr_description.rb
@@ -50,6 +52,7 @@ RSpec.describe Llm::Request do
     app/temporal/activities/complete_existing_pr_run_activity.rb
     app/temporal/activities/create_github_issue_activity.rb
     app/temporal/activities/create_pull_request_activity.rb
+    app/temporal/activities/handle_no_output_issue_run_activity.rb
     app/temporal/activities/reconcile_partial_closeout_activity.rb
     app/temporal/activities/run_acceptance_audit_activity.rb
     ].freeze

@@ -89,7 +89,7 @@ RSpec.describe IntentConformance::ShadowEvaluationPolicy, :no_db do
     end
 
     it "rejects an incomplete adjudication" do
-      event = adjudication(case_id: "A-01").merge("reason" => "")
+      event = adjudication(case_id: "A-01").merge("verdict" => "")
       entries = [ declaration_event, event, adjudication(case_id: "A-02") ]
       expect { described_class.ensure_solo_adjudications!(cases, entries) }
         .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /incomplete/)

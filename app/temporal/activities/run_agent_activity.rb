@@ -1046,7 +1046,8 @@ module Activities
         chat_api_key: configured_runtime.chat_api_key,
         chat_max_tokens: configured_runtime.chat_max_tokens,
         chat_tools: configured_runtime.chat_tools,
-        metadata: configured_runtime.metadata
+        metadata: configured_runtime.metadata,
+        privacy_routing: configured_runtime.privacy_routing
       )
     end
 
@@ -1068,7 +1069,8 @@ module Activities
         runtime.base_url,
         runtime.env,
         runtime.unset_env,
-        runtime.metadata
+        runtime.metadata,
+        runtime.privacy_routing
       ]
     end
 

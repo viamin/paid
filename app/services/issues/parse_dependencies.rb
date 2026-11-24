@@ -118,12 +118,17 @@ module Issues
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     INLINE_EXCLUDED_HEADING_PATTERN = Regexp.union(DEPENDENCY_HEADING_PATTERN, CHILD_LISTING_HEADING_PATTERN)
     DIRECTIVE_KEYWORD_PATTERN = /\b(?:depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of|remove\s+(?:deployment\s+)?dependenc(?:y|ies))\b/i
+    # A comma can attribute the directive only when it immediately follows the
+    # numbered subject (for example, "#4707, blocked by owner/repo#557").
+    # This deliberately does not match an unrelated reference elsewhere in the
+    # clause before a current item's directive.
+    DIRECTIVE_SUBJECT_SEPARATOR_PATTERN = /(?:\s*:\s*|,\s*|\s+)/
     CLAUSE_SUBJECT_PATTERN = /
-      (?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)
+      (?:\b(?:issue|pr|pull request)\s+)?#(\d+)#{DIRECTIVE_SUBJECT_SEPARATOR_PATTERN}
       (?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*
       (?=depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of)
     /ix
-    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
+    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)#{DIRECTIVE_SUBJECT_SEPARATOR_PATTERN}(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
     CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
@@ -195,8 +200,10 @@ module Issues
 
     # Reconciliation reads the same persisted effective graph as admission.
     # It never edits a declaration: repair remains an explicit GitHub action.
+    # A newly detected cycle is offered to the policy-gated automatic start.
     def reconcile_dependency_cycles
-      Issues::DependencyCycles.call(account: issue.project.account)
+      cycles = Issues::DependencyCycles.call(account: issue.project.account)
+      CycleAnalyses::AutoStart.call(cycles:)
       Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
     end
 

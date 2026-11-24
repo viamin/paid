@@ -41,6 +41,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
   end
 
   describe "source-closure assessment recovery" do
+    before do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+    end
+
     def source_closure_activity_error(cause, retry_state:)
       begin
         begin
@@ -75,14 +79,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
       allow(workflow).to receive(:run_activity).and_raise(error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120)
         .and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+    it "keeps long assessment work on its queue while parking on bounded control capacity" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-recovery-control-routing-v1").and_return(true)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything,
+          timeout: 30, task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120).and_return({})
+
+      workflow.send(:assess_source_closure_or_park, 42)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::AssessSourceClosureActivity,
+        { agent_run_id: 42 }, timeout: 120, retry_policy: described_class::SOURCE_CLOSURE_RETRY_POLICY)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+    it "preserves legacy park routing and bounds for an unpatched history" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-recovery-control-routing-v1").and_return(false)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30).and_return({})
+
+      workflow.send(:assess_source_closure_or_park, 42)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30)
     end
 
     # @spec PARTIAL-CLOSEOUT-044
@@ -95,12 +140,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       allow(Temporalio::Workflow).to receive(:patched).with("source-closure-timeout-cause-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_raise(error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30).and_return({})
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120).and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
     end
 
@@ -124,13 +171,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with("source-closure-unsuccessful-response-recovery-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_raise(unsuccessful_source_closure_error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120)
         .and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
     end
 
@@ -1060,6 +1109,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       workflow.execute(input)
     end
+
+    # @spec NO-OUTPUT-ISSUE-010
+    it "allows no-output semantic assessment and cleanup to use their full activity budget" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity"
+          { success: true, has_changes: false, output_present: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::HandleNoOutputIssueRunActivity,
+        { agent_run_id: 42, output_present: true }, timeout: 120
+      )
+    end
   end
 
   describe "verification browser patch guard" do
@@ -1941,6 +2009,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::ResolveCleanupOwnershipActivity"
+          { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -1969,6 +2039,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::CreateAgentRunActivity, anything, timeout: 30)
         .and_return(agent_run_id: 42)
       allow(workflow).to receive(:run_activity)
+        .with(Activities::ResolveCleanupOwnershipActivity, anything, anything)
+        .and_return(container: true, mcp_servers: true, services: true, worktree: true, janitor: true)
+      allow(workflow).to receive(:run_activity)
         .with(Activities::RunAgentActivity, anything, anything)
         .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
     end
@@ -1984,7 +2057,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
               timeout: 300,
               cancellation: an_instance_of(Temporalio::Cancellation),
               start_to_close_timeout: 10,
-              retry_policy: an_instance_of(Temporalio::RetryPolicy))
+              retry_policy: an_instance_of(Temporalio::RetryPolicy),
+              task_queue: Paid::POLL_TASK_QUEUE,
+              schedule_to_close_timeout: 120)
     end
 
     it "invokes cleanup activities with CLEANUP_RETRY_POLICY and schedule_to_close_timeout" do
@@ -2079,6 +2154,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::RetainContainerActivity"
           raise retain_error if retain_error
           retain_result
+        when "Activities::ResolveCleanupOwnershipActivity"
+          { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -2098,8 +2175,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(called_activities).not_to include(Activities::CleanupContainerActivity)
     end
 
-    it "cleans up normally when agent step fails (known failure)" do
-      called_activities = []
+    def stub_known_agent_failure(called_activities)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         called_activities << activity_class
         case activity_class.name
@@ -2109,6 +2185,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
             "All providers exhausted", type: "AllProvidersExhausted", non_retryable: true
           )
         when "Activities::MarkAgentRunFailedActivity" then {}
+        when "Activities::ResolveCleanupOwnershipActivity"
+          { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
         when "Activities::CleanupContainerActivity" then {}
         when "Activities::CleanupServicesActivity" then {}
         when "Activities::CleanupWorktreeActivity" then {}
@@ -2116,6 +2194,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         else {}
         end
       end
+    end
+
+    def stub_successful_completion(called_activities)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        called_activities << activity_class
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        when "Activities::MarkAgentRunCompleteActivity" then {}
+        when "Activities::ResolveCleanupOwnershipActivity"
+          { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "cleans up normally when agent step fails (known failure)" do
+      called_activities = []
+      stub_known_agent_failure(called_activities)
 
       expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
 
@@ -2125,19 +2226,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
     it "cleans up normally on success (no workflow error)" do
       called_activities = []
-      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
-        called_activities << activity_class
-        case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
-        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
-        when "Activities::MarkAgentRunCompleteActivity" then {}
-        when "Activities::CleanupContainerActivity" then {}
-        when "Activities::CleanupServicesActivity" then {}
-        when "Activities::CleanupWorktreeActivity" then {}
-        when "Activities::EnqueueJanitorActivity" then {}
-        else {}
-        end
-      end
+      stub_successful_completion(called_activities)
 
       workflow.execute(input)
 

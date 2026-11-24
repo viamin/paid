@@ -44,6 +44,7 @@ module Tools
       max_draft_review_rounds
       max_pr_followup_runs
       max_pr_auto_continue_tokens
+      pr_escalation_limits_suspended_until
       token_limit_warning_threshold
       poll_interval_seconds
       intent_threshold
@@ -86,6 +87,7 @@ module Tools
       false
     end
 
+    # @spec PR-ESCALATION-030 PR-ESCALATION-031
     def perform(project_id:, settings:, confirmed:)
       raise ArgumentError, "Confirmation required: set confirmed=true to update project settings" unless confirmed
       raise ArgumentError, "settings must be an object" unless settings.is_a?(Hash)
@@ -127,12 +129,16 @@ module Tools
     end
 
     def record_activity!(project, changed_fields:)
+      metadata = { changed_fields: changed_fields.uniq }
+      if changed_fields.include?("pr_escalation_limits_suspended_until")
+        metadata[:pr_escalation_limits_suspended_until] = project.pr_escalation_limits_suspended_until&.utc&.iso8601(6)
+      end
       Accounts::RecordActivity.call(
         account:,
         actor: user,
         action: "project.settings_changed",
         subject: project,
-        metadata: { changed_fields: changed_fields.uniq }
+        metadata: metadata
       )
     end
 

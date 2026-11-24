@@ -1081,6 +1081,7 @@ class Issue < ApplicationRecord
   def merge_approval_candidate_state_changed?
     is_pull_request? && (
       saved_change_to_auto_merge_blockers? ||
+      saved_change_to_technical_merge_blockers? ||
       saved_change_to_auto_merge_evaluated_at? ||
       saved_change_to_awaiting_approval_since? ||
       saved_change_to_merge_permission_rejected_at? ||
@@ -1513,6 +1514,26 @@ class Issue < ApplicationRecord
   # is treated the same as the 50th.
   def consecutive_auto_pick_failure_count
     auto_pick_failure_streak.last
+  end
+
+  # The failed auto-picked create_pr run that holds a fresh implementation
+  # attempt out of ordinary issue admission, or nil when admission may mint
+  # one. Mirrors the shared AgentRuns::AutoPickCreatePrRetryPolicy refusals
+  # — produced implementation work and owned in-place rate-limit recovery —
+  # so a sweep, delayed re-enqueue, or sync-driven seeding cannot route
+  # around a shared decision the failure callback already refused (#4989
+  # acceptance bypass). Failures created before the authorized operator
+  # reset window no longer hold admission, matching #auto_pick_failure_streak.
+  # @spec EAGER-QUEUE-018 AGENT-RETRY-017
+  def auto_pick_create_pr_admission_hold
+    run = current_failed_auto_pick_create_pr_run
+    return nil unless run
+    return nil if runner_retry_failure_window_reset_at.present? && run.created_at < runner_retry_failure_window_reset_at
+    return run if run.recoverable_rate_limited?
+    return nil if run.partial_closeout_reaudit_failure?
+    return run if run.implementation_work_produced?
+
+    nil
   end
 
   # @spec EAGER-QUEUE-010

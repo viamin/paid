@@ -30,7 +30,9 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   def issue_class
-    @issue_class ||= Struct.new(:id, :github_number, :labels, :paid_state, :last_analyzer_sufficient_context, :confidence_delivery?)
+    @issue_class ||= Struct.new(:id, :github_number, :labels, :paid_state, :last_analyzer_sufficient_context, :confidence_delivery?) do
+      def auto_pick_create_pr_admission_hold = nil
+    end
   end
 
   def run_class
@@ -57,6 +59,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(false)
     allow(project).to receive_messages(auto_pick_enabled?: true, model_preferences: {})
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
+    allow(issue).to receive(:auto_pick_create_pr_admission_hold).and_return(nil)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
       .and_return(eligible_scope)
@@ -110,6 +113,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   it "reconciles confidence-driven delivery before enqueueing" do # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
     confidence_issue = instance_double(issue_class, id: 11, github_number: 42, labels: [],
       paid_state: "new", last_analyzer_sufficient_context: false, confidence_delivery?: true)
+    allow(confidence_issue).to receive(:auto_pick_create_pr_admission_hold).and_return(nil)
     service = described_class.new(confidence_issue, project: project)
     release = instance_double(FeatureIntents::ReleaseIssue::Result, released?: false, reason: "Readiness is incomplete.")
     allow(FeatureIntents::ReleaseIssue).to receive(:call).with(issue: confidence_issue).and_return(release)
@@ -159,6 +163,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     issue = instance_double(issue_class, id: 11, github_number: 42, labels: [],
       paid_state: "completed", last_analyzer_sufficient_context: true, confidence_delivery?: false)
+    allow(issue).to receive(:auto_pick_create_pr_admission_hold).and_return(nil)
     service = described_class.new(issue, project: project)
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
     allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)

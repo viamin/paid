@@ -99,6 +99,12 @@ Depends on #101, #102
 Blocked by #103
 ```
 
+Write a prerequisite for the current item as a clear declaration, preferably
+under `## Dependencies`. Keep related-work context separate. For example,
+`The configuration-loss gap remains #4707, blocked by owner/repo#557` describes
+that issue's prerequisite; it does not declare one for the issue or PR carrying the
+sentence. Use `Blocked by owner/repo#557` when the current item is blocked.
+
 ## Quick Start
 
 ### Option 1: Docker Compose (recommended)
@@ -278,6 +284,35 @@ WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
 ORDER BY total_plan_time DESC
 LIMIT 20;
 ```
+
+#### Overview finding issues (development only)
+
+An hourly development-only scan (GoodJob, `pghero_overview_scan`, minute 23 of
+every hour) reads the same PgHero Overview data through PgHero's Ruby methods —
+including the extended view — and files actionable, deduplicated tracking
+issues in your self repository (`TenantSetting.self_repo_full_name`, or
+`PAID_REPO_FULL_NAME`, with a project whose GitHub credential Paid holds).
+Each finding owns at most one issue labeled `pghero-overview`; subsequent
+scans update it, and a finding that disappears closes its issue. Structural
+findings (invalid/duplicate/unused/suggested indexes, invalid constraints,
+sequence and transaction ID danger, inactive replication slots, slow queries,
+unreadable sequences) file on first observation; transient observations
+(long-running queries, connection pressure, idle-in-transaction sessions,
+low cache hit rates) file only after persisting across consecutive scans, so
+cumulative counters and one-off local activity do not flood issues. New issues
+are capped per run and deferred findings retry on the next scan. Missing query
+stats, collection timeouts, database errors, and GitHub failures surface as a
+failed or incomplete scan instead of an all-clear. Issue bodies carry observed
+values against thresholds, observation time, the database, a dashboard link,
+and an investigation prompt; query text is literal-filtered and no credentials
+are included. Set `PAID_PGHERO_BASE_URL` when the dashboard is not at
+<http://localhost:3000>. For manual verification run:
+
+```bash
+bin/rails development:pg_hero_overview_scan
+```
+
+which performs the same scheduled job (collection, state, and filing path).
 
 PgHero resets current counters on each capture. Committed historical samples
 survive database recovery, but the unsampled interval and interrupted queries

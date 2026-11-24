@@ -20,13 +20,6 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     JSON.generate(payload)
   end
 
-  def stub_codex_harness_exchange(payload)
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true,
-      exchange_refresh_token: payload
-    )
-  end
-
   def create_omp_credential(account:, fixture:)
     create(:runner_credential, account: account, created_by: create(:user, account: account), runner_key: "omp",
       auth_kind: "oauth_token", token: file_fixture(fixture).read, expires_at: 1.minute.from_now)
@@ -78,13 +71,13 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       credential = create_credential(runner_key: "codex", token: valid_codex_auth,
         expires_at: 1.minute.from_now)
       refreshed = JSON.parse(valid_codex_auth)
-      refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
+      refreshed["tokens"]["access_token"] = fresh_codex_access_token(account_id: refreshed.fetch("tokens").fetch("account_id"))
       stub_codex_harness_exchange(refreshed)
 
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
 
       expect(outcome).to eq(:refreshed)
-      expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
+      expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq(refreshed.fetch("tokens").fetch("access_token"))
     end
 
     it "skips when the credential is not near expiry" do
@@ -158,10 +151,18 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     end
 
     # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
-    it "keeps active Codex credentials eligible until the harness supports refresh" do
+    it "keeps active Codex credentials eligible when the harness cannot refresh" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 5.minutes.from_now)
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(false)
 
       expect(described_class.readiness(credential, runner_key: "codex")).to eq(:fresh)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "marks active near-expiry Codex credentials refreshable when the harness supports recovery" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 5.minutes.from_now)
+
+      expect(described_class.readiness(credential, runner_key: "codex")).to eq(:refreshable)
     end
   end
 

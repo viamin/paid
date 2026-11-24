@@ -20,6 +20,7 @@ module Activities
       auto_pick = input.fetch(:auto_pick, false)
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
+      action_evidence = normalized_action_evidence(input[:action_evidence])
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
@@ -58,11 +59,13 @@ module Activities
       # :delegated_boundary (queue by default, follow_up from the follow-up
       # scheduler); a block routes to one focused Inbox decision.
       # @spec PROJECT-DELEGATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-004
+      # @spec BOUNDED-PHASE-AUTHORIZATION-006
       delegated_recheck = Automation::DelegatedActionAdmission.call(
         project: project,
         issue: issue,
         pull_request_number: source_pull_request_number,
         goal: goal,
+        action_evidence: action_evidence,
         boundary: input.fetch(:delegated_boundary, "queue").to_sym,
         trigger: trigger_type
       )
@@ -125,7 +128,10 @@ module Activities
               trigger_type: trigger_type,
               # A PR repair may inherit manual queue priority, but its
               # authorization still comes from the automatic workflow.
-              external_metadata: automatic_authorization ? { "automatic_authorization" => true } : {},
+              external_metadata: run_external_metadata(
+                automatic_authorization: automatic_authorization,
+                action_evidence: action_evidence
+              ),
               auto_pick: auto_pick,
               count_toward_draft_review_round: count_toward_draft_review_round,
               expected_draft_review_count: expected_draft_review_count,
@@ -231,6 +237,16 @@ module Activities
     end
 
     private
+
+    def normalized_action_evidence(evidence)
+      evidence.is_a?(Hash) ? evidence.stringify_keys : {}
+    end
+
+    def run_external_metadata(automatic_authorization:, action_evidence:)
+      metadata = automatic_authorization ? { "automatic_authorization" => true } : {}
+      metadata["action_evidence"] = action_evidence if action_evidence.present?
+      metadata
+    end
 
     def with_phase_rollout_lock(project, phase_rollout_observed)
       return yield unless phase_rollout_observed

@@ -88,6 +88,21 @@
   `spec/mcp/tools/get_agent_run_audit_diagnostics_spec.rb`,
   `spec/system/acceptance_audit_diagnostics_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-059** — When a report-only acceptance request exhausts
+  its routed candidates or raises, Paid SHALL persist the bounded actual route
+  trace from `Llm::Request` with its final diagnostic. The trace SHALL identify
+  the selected producing attempt rather than infer provider/model from the
+  configured primary runner, preserve the existing authentication/configuration
+  precedence and substantive-verdict behavior, and mark non-executed candidates
+  as `skipped`. Existing safe reconciliation and diagnostic projections SHALL
+  allowlist the trace and tolerate rows recorded before it existed.
+  *Code:* `app/services/llm/request.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`.
+  *Test:* `spec/services/llm/request_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
   acceptance-audit packet and source revision for an issue, it SHALL include
   each matching terminal `closeout_verification` record — keyed by issue,
@@ -259,12 +274,18 @@
   transport outage. A typed activity timeout SHALL remain recoverable when
   its retry state is either `TIMEOUT` or `MAXIMUM_ATTEMPTS_REACHED`; replay of
   executions predating the timeout-cause patch SHALL retain their recorded path.
+  New histories SHALL publish that parking state through the existing bounded
+  Temporal control capacity; a finite publication failure is not proof that it
+  executed and SHALL not create a PR, completion, assessment, authority, or
+  fresh recovery budget. Legacy histories retain their recorded activity
+  command and queue.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
   `app/temporal/activities/assess_source_closure_activity.rb`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due
@@ -300,6 +321,65 @@
   `spec/requests/projects/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
   *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-061** — When recoverable source-closure assessment
+  failures re-park the same original run, pushed commit, failed step, and
+  lineage across workflow epochs or process restarts, Paid SHALL admit no more
+  than three automatic recovery claims, including the legacy
+  `recovery_attempt` claim history recorded before the automatic counter was
+  introduced; once the dedicated automatic counter is present, operator claims
+  SHALL NOT consume automatic capacity. It SHALL preserve prior claim history,
+  failure category, branch, and commit, retain a visible
+  `automatic_recovery_budget_exhausted` stop, and schedule no successor after
+  exhaustion. Assessment request provenance and actual request count SHALL be
+  retained separately from claim counts. Delayed duplicate jobs, stale leases,
+  and unavailable ownership RPCs retain the existing ownership guard and SHALL
+  not mint a claim or an assessment environment. At every locked claim
+  boundary, Paid SHALL recheck current automatic-phase authorization, source
+  issue trust, project and issue pause state, and project cost budget through
+  the existing policy and budget contracts. A denial SHALL retain the original
+  run, branch, commit and counters, make its actionable reason visible, and
+  start neither an environment nor an assessment request. Each recovery
+  workflow SHALL have a finite total execution deadline, and its assessment
+  activity SHALL have a shorter finite schedule-to-close deadline covering
+  queue delay and retries; expiry SHALL return through the ordinary parked
+  recovery and cleanup path without replacing the original record or renewing
+  exhausted capacity.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/services/partial_closeouts/source_closure_recovery_admission.rb`,
+  `app/jobs/source_closure_recovery_job.rb`,
+  `app/temporal/activities/park_source_closure_recovery_activity.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-060** — When an authorized operator explicitly
+  requests source-closure recovery through the existing run-detail or confirmed
+  MCP boundary, Paid SHALL consume at most one separately recorded operator
+  recovery claim without resetting automatic claims or creating a replacement
+  run. The locked claim SHALL recheck the requesting operator's current run
+  permission without requiring automatic picking, and SHALL retain current
+  source-trust, pause, and hard-cost-budget guards. A denied request SHALL not
+  consume either claim counter. Operator allowance exhaustion SHALL remain
+  visible as `operator_recovery_budget_exhausted`. The recovery SHALL remain
+  assessment-only and retain the original commit, branch, failure evidence,
+  and publication checks. When an operator recovery parks after a recoverable
+  assessment failure, the independently-budgeted automatic retry chain SHALL
+  remain scheduled while automatic capacity remains; `next_retry_at` SHALL be
+  nil whenever no automatic retry is scheduled.
+  *Code:* `app/mcp/tools/retry_source_closure.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/jobs/source_closure_recovery_job.rb`,
+  `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/services/partial_closeouts/source_closure_recovery_admission.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`.
+  *Test:* `spec/mcp/tools/retry_source_closure_spec.rb`,
+  `spec/requests/projects/source_closure_recovery_spec.rb`,
+  `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
@@ -1348,7 +1428,7 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/models/notification_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-060** — When the semantic acceptance assessor proposes
+- [x] **PARTIAL-CLOSEOUT-062** — When the semantic acceptance assessor proposes
   the specialized `facet_confidence_closeout_evaluation` human workflow, it
   SHALL add it only when the current source intent explicitly owns that exact
   acceptance criterion and a supplied, revision-bound policy or evaluation

@@ -69,6 +69,81 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "publishes a coarse active activity count without exposing activity data" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+
+      described_class.activity_started!(env)
+      active_payload = JSON.parse(File.read(file_path))
+      expect(active_payload).to include("active_activities" => 1)
+      expect(active_payload.keys).to match_array(%w[pid ready_at revision active_activities])
+
+      described_class.activity_finished!(env)
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "holds activity admission ownership until the activity finishes" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      activity, release = start_owned_activity(env)
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
+      end
+      release << true
+      activity.join
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(0)
+      end
+    ensure
+      release << true if activity&.alive?
+      activity&.join
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+    it "writes JSON with the booted checkout revision" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to eq(`git -C #{Rails.root} rev-parse HEAD`.strip)
+    end
+
+    it "prefers PAID_DEPLOYED_REVISION for the payload revision when set" do
+      env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "deployed-sha" }
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to eq("deployed-sha")
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "retains the boot revision while activity ownership changes" do
+      env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "booted-sha" }
+      described_class.mark_ready!(env)
+      env["PAID_DEPLOYED_REVISION"] = "checkout-changed-after-boot"
+
+      described_class.activity_started!(env)
+
+      expect(JSON.parse(File.read(file_path))).to include(
+        "revision" => "booted-sha",
+        "active_activities" => 1
+      )
+    ensure
+      described_class.activity_finished!(env)
+    end
+
+    it "reports a null revision when the checkout revision cannot be determined" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      allow(Open3).to receive(:capture3).and_return([ "", "", double(success?: false) ])
+
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to be_nil
+    end
+
     it "creates parent directories if needed" do
       nested = File.join(tmpdir, "deep", "nested", "ready")
       described_class.mark_ready!("WORKER_READINESS_FILE" => nested)
@@ -78,8 +153,9 @@ RSpec.describe Paid::WorkerReadiness do
 
     it "does not raise when the file cannot be written" do
       env = { "WORKER_READINESS_FILE" => file_path }
-      allow(File).to receive(:write).and_call_original
-      allow(File).to receive(:write).with(file_path, anything).and_raise(Errno::EACCES, file_path)
+      allow(File).to receive(:rename).and_call_original
+      allow(File).to receive(:rename).with(/#{Regexp.escape(file_path)}\.#{Process.pid}\.tmp/, file_path)
+        .and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_ready!(env) }
         .to output(/Failed to write worker readiness file: Errno::EACCES/).to_stderr
@@ -132,5 +208,18 @@ RSpec.describe Paid::WorkerReadiness do
       env = { "WORKER_READINESS_FILE" => file_path }
       expect(described_class.ready?(env)).to be false
     end
+  end
+
+  def start_owned_activity(env)
+    entered = Queue.new
+    release = Queue.new
+    activity = Thread.new do
+      described_class.with_activity(env) do
+        entered << true
+        release.pop
+      end
+    end
+    entered.pop
+    [ activity, release ]
   end
 end

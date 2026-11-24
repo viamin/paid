@@ -146,8 +146,8 @@ an acyclicity determination for each candidate. Paid derives each expected
 resulting graph from the snapshot and the structured removals or endpoint
 corrections, rejecting unaccounted edge changes before checking acyclicity.
 Missing local provenance is not itself disqualifying: before a write Paid
-re-fetches the trusted source and proceeds only if it uniquely locates the
-exact declaration. It rechecks the SCC occurrence, source identity, target,
+re-fetches the trusted source and proceeds only if it uniquely locates
+the exact declaration. It rechecks the SCC occurrence, source identity, target,
 authority, and resulting graph before writing only that GitHub declaration.
 It never changes local dependency rows to simulate success. A write is
 `pending_sync` until ordinary synchronization confirms an acyclic persisted
@@ -161,6 +161,29 @@ If cancellation races with a successful GitHub write, the cancelled run retains
 the `pending_sync` repair outcome and source details. Ordinary synchronization
 may requeue that outcome only for local confirmation; it never repeats the
 GitHub mutation.
+
+For projects that delegate routine dependency repair, detection also starts the
+bounded analysis automatically. Every cycle-detection reconciliation point —
+ordinary dependency parsing, issue synchronization, and the maintenance sweep —
+offers newly detected cycles to the automatic start. Consent is project policy,
+never inference: the effective policy of every project represented by the
+occurrence must delegate the bounded `repair` action under a current,
+non-legacy decision (the rollout guard's legacy path permits nothing here), and
+one identified actor — the posture's selecting user or the project owner — must
+hold run and issue-mutation authority for every represented project, so a
+cross-project cycle is never started from one project's setting alone. The
+scheduled run is the same operator-started bounded run with an automatic
+trigger; every analysis, repair, write, and confirmation safeguard applies
+unchanged. Retries and cost stay bounded structurally: exactly one automatic
+attempt may exist for an unchanged occurrence regardless of outcome (a failed,
+cancelled, or completed analysis is never automatically retried, and a
+pending-sync confirmation is resumed only by ordinary synchronization), a
+changed graph is a new occurrence that earns one fresh attempt, and recurring
+occurrences of the same cycle fingerprint are capped after a small fixed
+number of automatic runs so a flapping graph cannot drive unbounded spend. A
+cycle that cannot be repaired without a human decision therefore stays an
+actionable Inbox occurrence with its recommendation, and manual start remains
+available wherever policy does not delegate it.
 
 The recommendation analysis itself is read-only. In addition to the bounded
 automatic attempt above, an operator may separately select a supported

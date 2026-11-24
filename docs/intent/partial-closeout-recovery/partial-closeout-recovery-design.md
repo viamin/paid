@@ -136,7 +136,36 @@ then invokes the existing idempotent PR activity. It never invokes the coding
 or push activities. Cancellation wins over recovery; duplicate/replayed claims
 are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
 visible recovery state; PR creation remains impossible without a successful
-current assessment.
+current assessment. Each recovery workflow has a finite total execution
+deadline, and its assessment activity has a shorter schedule-to-close deadline
+that includes queue delay and activity retries. An expired assessment deadline
+parks the original recovery record through the ordinary activity failure path,
+re-arms only remaining automatic capacity, and then runs detached cleanup.
+
+Automatic source-closure recovery has a lineage-wide budget of three recovery
+claims in addition to each workflow's bounded activity retry policy. The
+durable recovery record owns this counter, so re-parking, restarts, lease
+expiry, and delayed duplicate jobs cannot create a fresh budget. Exhaustion
+retains the original run, pinned branch and commit, failure category, claim
+history, and a visible stop reason; it neither reruns coding nor changes
+publication authority. The record separately counts assessment requests from
+claims because a claim is ownership evidence, not proof that a model request
+started. An authorized operator may consume one separately recorded recovery
+claim through the existing confirmed retry boundary. The claim rechecks the
+requesting operator's current run permission without requiring automatic picking
+to be enabled, while retaining the current source trust, pause, and hard-budget
+guards. This does not reset the automatic budget or mint a new run, and repeated
+clicks stop visibly with an operator-specific reason after that finite operator
+allowance. Legacy `recovery_attempt` history is conservative
+automatic-claim consumption until a separate automatic counter exists; it does
+not imply assessment requests. At every locked claim boundary, the current
+automatic phase policy, source-issue trust, project or issue pause, and project
+cost budget are rechecked through their existing contracts. A denied claim
+retains the same run and evidence with an actionable stop reason and starts no
+environment or assessment request. If an operator recovery parks after a
+recoverable assessment failure, its separately-budgeted operator claim does not
+suppress the already-authorized automatic chain: the retry timestamp and queued
+automatic retry remain paired while automatic capacity is available.
 
 The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
 as run detail, under the same run policy and tenant scope. It requires an
@@ -181,6 +210,14 @@ attempt through ordinary admission. Each attempt records its successor lineage
 and terminal reason. A valid assessment with unmet or unknown criteria remains
 substantive and is never retried to seek a different verdict. This path is
 report-only and cannot authorize implementation, repair, or issue closure.
+
+The same diagnostic carries a bounded route trace for a raised request. It
+contains only the owned candidate identity, resolved provider/model when known,
+ordinal, allocated and elapsed time, phase, normalized outcome, and correlation
+identifiers. A skipped candidate did not execute. The selected terminal failure
+points to the actual producing entry; configured-primary routing remains
+separate context, never observed fallback provenance. Legacy rows may have no
+trace and remain readable.
 
 Report-only audits, pre-publication source assessment, post-PR reconciliation,
 and legacy reconciliation persist the same bounded diagnostic projection.

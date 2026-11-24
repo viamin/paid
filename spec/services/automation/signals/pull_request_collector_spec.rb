@@ -179,6 +179,15 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(collector.dependency_resolved?(number: 41)).to be(false)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-010
+    it "is unsatisfied when the referenced pull request is closed but unmerged" do
+      allow(client).to receive(:pull_request)
+        .with("acme/widgets", 41)
+        .and_return(OpenStruct.new(merged: false, merged_at: nil))
+
+      expect(collector.dependency_resolved?(number: 41)).to be(false)
+    end
+
     it "is unsatisfied when the referenced PR/issue does not exist" do
       allow(client).to receive(:pull_request)
         .with("acme/widgets", 41)

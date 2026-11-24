@@ -43,8 +43,11 @@ another copy here.
   `Prompts::BuildForPr.select_trusted_comments` for PRs. Never bypass the
   project's GitHub-user allowlist or `issue.trusted?` gate.
 - Keep auto-pick dependencies explicit (`Depends on #123` or `Blocked by
-  owner/repo#123`); cross-project dependencies are text-driven, and unresolved
-  external dependencies remain blocked.
+  owner/repo#123`) for the current issue or PR; cross-project dependencies are
+  text-driven, and unresolved external dependencies remain blocked. Put related
+  work in a separate sentence: `#4707, blocked by owner/repo#557` describes
+  #4707's prerequisite, while `Blocked by owner/repo#557` declares the current
+  item's prerequisite.
 
 ### Git and verification
 
@@ -57,6 +60,12 @@ another copy here.
 - Verify changed behavior with focused tests, then run the required suite;
   use `bin/lint` for formatting/lint and `bin/coherence-check.mjs` for LID
   structural checks when LID artifacts change.
+- Follow the [auto-merge hold contract](docs/intent/auto-merge-strategy/auto-merge-strategy-design.md)
+  during implementation and acceptance: `paid-hold-review` requests a concrete
+  human-only decision. Technical failures and integration stops belong in
+  Paid's internal technical merge blockers, with responsible work and a
+  verifiable release condition. Never use human-intervention labels as internal
+  workflow state or clear a stop merely because CI or a review is green.
 
 ### Database safety
 

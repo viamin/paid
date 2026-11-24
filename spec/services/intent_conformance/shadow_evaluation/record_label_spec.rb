@@ -57,9 +57,15 @@ RSpec.describe IntentConformance::ShadowEvaluation::RecordLabel do
     expect(call(outcome: "accepted")).not_to be_success
   end
 
-  it "rejects a label without a cited claim or reason" do
+  it "requires a cited claim but permits an omitted explanation" do # @spec INTENT-CONFORMANCE-ROLLOUT-012
     expect(call(claim: " ")).not_to be_success
-    expect(call(reason: nil)).not_to be_success
+    expect(call(reason: nil)).to be_success
+  end
+
+  it "allows uncertainty without a citation or explanation" do # @spec INTENT-CONFORMANCE-ROLLOUT-012
+    expect(call(outcome: "uncertain", claim: "", reason: "The approved requirements are missing.")).to be_success
+    expect(call(outcome: "uncertain", claim: "", reason: "")).to be_success
+    expect(call(outcome: "material_drift", claim: "")).not_to be_success
   end
 
   it "rejects a case outside the frozen corpus" do

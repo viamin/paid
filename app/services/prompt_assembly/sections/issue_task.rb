@@ -17,6 +17,13 @@ class PromptAssembly::Sections::IssueTask
     /Do not infer a pass from a test name, agent prose, or a skipped job\./
   ].freeze
 
+  HOLD_REVIEW_REQUIREMENTS = [
+    /specific unresolved human-only decision/,
+    /screenshots or review/,
+    /the pull request this run creates or materially\s+changes/,
+    /why normal delegated checks cannot settle it/
+  ].freeze
+
   # The instruction block rendered into the issue-implementation prompt when
   # the project has quiet mode enabled. Kept identical to the PR follow-up
   # variant so the agent's commit-message contract is stable across run
@@ -70,8 +77,28 @@ class PromptAssembly::Sections::IssueTask
     6. Run the test suite and fix any failures: `{{test_command}}`
     7. Commit your changes with a descriptive message
 
-    If you open a pull request that requires human judgment before it can land,
-    apply the structured review hold through the GitHub API proxy; no `gh` CLI
+    # Review-Hold Boundary
+
+    When the effective merge policy delegates auto-merge, apply
+    `paid-hold-review` only to the pull request this run creates or materially
+    changes and only for a specific unresolved human-only decision that normal
+    delegated checks cannot settle. This includes an explicit design or intent
+    approval gate, a material scope or authority change, or another decision
+    automation is not authorized to make. Do not apply a hold solely because a
+    change is user-facing, a pull request asks for screenshots or review,
+    normal CI or bot review remains, verification evidence is missing, or you
+    feel generally cautious. Follow the ordinary verification or blocker path
+    for those conditions. Do not hold another existing pull request merely
+    because you encounter it while completing dependency or bookkeeping work,
+    unless the assigned task explicitly requires reviewing or holding it.
+
+    When a hold is warranted, apply the label and publish a durable
+    operator-visible pull-request update recording the concrete unresolved
+    decision, why normal delegated checks cannot settle it, and the PR, run,
+    and issue evidence. The update explains the hold but does not replace the
+    label; `paid-hold-review` remains the structured merge blocker.
+
+    Apply the structured review hold through the GitHub API proxy; no `gh` CLI
     exists in this environment. Use the repository and pull request number from
     the PR URL:
 
@@ -155,11 +182,13 @@ class PromptAssembly::Sections::IssueTask
   end
 
   # @spec PROMPT-ASSEMBLY-024
+  # @spec AUTO-MERGE-009
   def task_template
     template = PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
-    return template if criterion_verification_requirements_present?(template)
-
-    [ template, criterion_verification_guidance(include_heading: !criterion_verification_heading?(template)) ].join("\n\n")
+    guidance = []
+    guidance << criterion_verification_guidance(include_heading: !criterion_verification_heading?(template)) unless criterion_verification_requirements_present?(template)
+    guidance << hold_review_guidance unless hold_review_guidance_present?(template)
+    [ template, *guidance ].join("\n\n")
   end
 
   def criterion_verification_requirements_present?(template)
@@ -168,6 +197,35 @@ class PromptAssembly::Sections::IssueTask
 
   def criterion_verification_heading?(template)
     template.include?("# Criterion-Level Verification")
+  end
+
+  def hold_review_guidance_present?(template)
+    HOLD_REVIEW_REQUIREMENTS.all? { |requirement| template.match?(requirement) }
+  end
+
+  def hold_review_guidance
+    <<~GUIDANCE
+      # Review-Hold Boundary
+
+      When the effective merge policy delegates auto-merge, apply
+      `paid-hold-review` only to the pull request this run creates or materially
+      changes and only for a specific unresolved human-only decision that normal
+      delegated checks cannot settle. This includes an explicit design or intent
+      approval gate, a material scope or authority change, or another decision
+      automation is not authorized to make. Do not apply a hold solely because a
+      change is user-facing, a pull request asks for screenshots or review,
+      normal CI or bot review remains, verification evidence is missing, or you
+      feel generally cautious. Follow the ordinary verification or blocker path
+      for those conditions. Do not hold another existing pull request merely
+      because you encounter it while completing dependency or bookkeeping work,
+      unless the assigned task explicitly requires reviewing or holding it.
+
+      When a hold is warranted, apply the label and publish a durable
+      operator-visible pull-request update recording the concrete unresolved
+      decision, why normal delegated checks cannot settle it, and the PR, run,
+      and issue evidence. The update explains the hold but does not replace the
+      label; `paid-hold-review` remains the structured merge blocker.
+    GUIDANCE
   end
 
   # Kept outside the persisted template so existing prompt versions gain the

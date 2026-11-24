@@ -48,6 +48,7 @@ RSpec.describe Containers::ChatSessionManager do
     session.chat_session_projects.create!(project: sensitive, context_type: "reference")
 
     expect(manager.execute_agent_command(prompt: "Reply OK")).to be_success
-    expect(configurations.last.dig("provider", "openrouter")).to include("data_collection" => "deny", "zdr" => true)
+    routing = configurations.last&.dig("provider", "openrouter", "options", "extraBody", "provider")
+    expect(routing).to eq("data_collection" => "deny", "zdr" => true)
   end
 end

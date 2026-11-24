@@ -49,6 +49,9 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       remove_labels_from_issue: { removed: [], failed: [] }
     )
     allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
+    allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+      { "disposition" => "recommend_close", "rationale" => "The issue is already resolved.", "next_action" => "Close the issue after reviewing the run evidence." }
+    )
   end
 
   describe "#execute" do
@@ -308,6 +311,138 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
           "marker" => "<!-- paid:recommend-close -->",
           "error" => "comment rejected"
         )
+      end
+    end
+
+    context "when observable output proposes remaining work" do
+      let(:next_action) { "Approve the remaining Full LID implementation scope, then request continuation." }
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "parks the issue for the proposal's exact next action rather than recommending closure" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "Phase 1 is approved; add the remaining LLD, EARS, tests, and implementation after approval.")
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "needs_input", "rationale" => "Implementation remains planned but was not performed.",
+            "next_action" => next_action }
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+        expect(issue.reload).to have_attributes(paid_state: "needs_input", needs_input_questions: [ next_action ])
+        expect(agent_run.reload.reconciliation.fetch("no_output_disposition")).to include(
+          "disposition" => "needs_input",
+          "next_action" => next_action
+        )
+        expect(client).to have_received(:add_comment).with(project.full_name, issue.github_number,
+          a_string_including(next_action))
+        expect(client).not_to have_received(:add_comment).with(project.full_name, issue.github_number,
+          a_string_including("Recommend Close"))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "preserves an already-authorized continuation without requesting human approval" do
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
+        create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+        agent_run = create(:agent_run, :running, project:, issue:, iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "The implementation plan is ready; continue with the authorized coding work.")
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "continue", "rationale" => "The remaining work is within the existing grant.",
+            "next_action" => "Continue with the planned implementation." }
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("continue")
+        expect(issue.reload).to have_attributes(paid_state: "in_progress", needs_input_questions: nil)
+        expect(client).not_to have_received(:remove_labels_from_issue)
+        expect(client).not_to have_received(:add_comment)
+        expect(Llm::AssessNoOutputDisposition).to have_received(:call).with(
+          agent_run:, diagnostic_output: kind_of(String), continuation_authorized: true
+        )
+      end
+
+      # @spec NO-OUTPUT-ISSUE-009 NO-OUTPUT-ISSUE-010
+      it "holds after two authorized automatic continuations make no delivery progress" do
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, :in_progress, project:, labels: [ "paid-build" ])
+        create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "continue", "rationale" => "The remaining work is within the existing grant.",
+            "next_action" => "Continue with the planned implementation." }
+        )
+
+        2.times do
+          agent_run = create(:agent_run, :running, :automatic, project:, issue:, goal: "create_pr",
+            auto_pick: true, iterations: 3, cost_cents: 100)
+          agent_run.log!("stdout", "Continue with the authorized coding work.")
+          expect(activity.execute(agent_run_id: agent_run.id, output_present: true)[:outcome]).to eq("continue")
+        end
+
+        expect(Issues::NoProgressCreatePrHold.diagnostic_for(issue)).to include(
+          reason: "repeated_no_progress_create_pr"
+        )
+      end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "fails closed to needs-input when the semantic disposition is malformed" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_raise(
+          Llm::AssessNoOutputDisposition::DispositionFailure.new("invalid", category: "invalid_disposition")
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(client).not_to have_received(:add_labels_to_issue)
+          .with(project.full_name, issue.github_number, [ "paid-recommend-close" ])
+      end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "reuses the persisted disposition on a repeated callback" do
+        bot_project = create_bot_project
+        issue = create(:issue, :in_progress, project: bot_project)
+        agent_run = create(:agent_run, :running, project: bot_project, issue: issue,
+          iterations: 3, cost_cents: 100)
+        stub_bot_backed_agent_run(agent_run, bot_project)
+        existing_comment = paid_bot_comment.dup
+        existing_comment.body = "<!-- paid:needs-input -->\nExisting explanation"
+        allow(client).to receive(:recent_issue_comments).and_return([], [ existing_comment ])
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "needs_input", "rationale" => "A decision is required.", "next_action" => "Choose the implementation scope." }
+        )
+
+        2.times { activity.execute(agent_run_id: agent_run.id, output_present: true) }
+
+        expect(Llm::AssessNoOutputDisposition).to have_received(:call).once
+        expect(client).to have_received(:add_comment).once
+      end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "rejects malformed persisted fields and replaces them with a fresh assessment" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 3, cost_cents: 100,
+          reconciliation: { "no_output_disposition" => {
+            "disposition" => "recommend_close", "rationale" => false, "next_action" => 42
+          } })
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "needs_input", "rationale" => "A human decision is missing.",
+            "next_action" => "Choose the supported implementation option." }
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("needs_input")
+        expect(Llm::AssessNoOutputDisposition).to have_received(:call).once
+        expect(agent_run.reload.reconciliation.dig("no_output_disposition", "next_action"))
+          .to eq("Choose the supported implementation option.")
       end
     end
 

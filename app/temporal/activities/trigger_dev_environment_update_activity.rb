@@ -8,19 +8,26 @@ module Activities
   # TenantSetting.self_repo_full_name or the PAID_REPO_FULL_NAME env var).
   #
   # Lightweight update (git pull only):
-  #   Any changes that do not match FULL_RESTART_PATTERNS. This includes most
-  #   Rails-autoloaded app/ code as well as non-critical files such as docs.
+  #   Changes no long-lived worker process retains — docs, specs, and
+  #   web-autoloaded code such as controllers and views.
   #
   # Full restart (git pull + Overmind stop + bin/setup):
-  #   Any changes matching FULL_RESTART_PATTERNS: Temporal code under
-  #   app/temporal/, config changes, database migrations, Gemfile/lockfile
-  #   or JS dependency/lockfile changes, bin/ scripts, lib/ code, or the
-  #   Procfile.
+  #   Any changes matching FULL_RESTART_PATTERNS: worker-loaded application
+  #   code (app/temporal/, app/services/, app/models/, app/jobs/ — the
+  #   Temporal and GoodJob workers boot Rails once and keep the constants
+  #   they loaded, so a pull alone cannot make them run new code), config
+  #   changes, database migrations, Gemfile/lockfile or JS dependency/
+  #   lockfile changes, bin/ scripts, lib/ code, or the Procfile. This list
+  #   must stay in sync with bin/dev-update's restart_required_for_file.
   class TriggerDevEnvironmentUpdateActivity < BaseActivity
     activity_name "TriggerDevEnvironmentUpdate"
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
     FULL_RESTART_PATTERNS = [
       %r{\Aapp/temporal/},
+      %r{\Aapp/services/},
+      %r{\Aapp/models/},
+      %r{\Aapp/jobs/},
       %r{\Aconfig/},
       %r{\Adb/migrate/},
       %r{\AGemfile},
