@@ -120,9 +120,8 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
 
     linkage = obligation.check_results.find_by!(producer: "linkage_freshness")
     expect(linkage).to have_attributes(agent_run: audit, execution_state: "incomplete", obligation_coverage: "unresolved")
-    expect(linkage.evidence_summary.fetch("unmapped_material")).to contain_exactly(
-      "docs/intent/payments/unmapped-spec.md", "docs/intent/payments/payment-specs.md#refund-clause"
-    )
+    expect(linkage.recorder_verified).to eq("structural_unmapped_material" => [ "docs/intent/payments/unmapped-spec.md" ])
+    expect(linkage.agent_reported).to eq("semantic_unmapped_material" => [ "docs/intent/payments/payment-specs.md#refund-clause" ])
     expect(linkage.limitations).to include("bounded semantic read-through")
   end
 
@@ -150,6 +149,7 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
       execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space")
     audit = formal_audit(obligation,
       "dependencies" => { "environment" => "isolated_execution_environment" },
+      "input_revisions" => { obligation.id.to_s => "intent123" },
       "impact" => { "reused_check_result_ids" => [ prior.id ] })
     stub_discovery(audit:)
     allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)

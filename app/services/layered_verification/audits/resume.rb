@@ -11,13 +11,13 @@ module LayeredVerification
     class Resume
       def self.call(...) = new(...).call
 
-      def initialize(agent_run:, user:, decision:)
+      def initialize(agent_run:, user:)
         @agent_run = agent_run
         @user = user
-        @decision = decision
       end
 
       def call
+        AuditAccess.authorize!(user:, project:)
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: resumed_goal)
         successor = nil
         AgentRun.transaction do
@@ -26,6 +26,8 @@ module LayeredVerification
           project.lock!
           raise Request::DuplicateAuditError, "an audit for this scope and revision is already active" if duplicate_audit?
 
+          lock_obligations!
+          @decision = Resumption.call(agent_run:, user:)
           successor = AgentRun.create!(run_attributes(runner_id, agent_type))
         end
         ProcessRunQueueJob.perform_later
@@ -49,6 +51,10 @@ module LayeredVerification
           obligation_ids: Array(metadata.fetch("obligation_ids")), target_revision: metadata.fetch("target_revision"))
       end
 
+      def lock_obligations!
+        @obligations = project.layered_verification_obligations.where(id: metadata.fetch("obligation_ids")).lock.order(:id).to_a
+      end
+
       def run_attributes(runner_id, agent_type)
         {
           project:, initiating_user: user, runner_id:, agent_type:, goal: resumed_goal,
@@ -64,6 +70,7 @@ module LayeredVerification
       def resumed_metadata
         metadata.merge(
           "budget" => decision.remaining_budget,
+          "input_revisions" => obligation_input_revisions,
           "impact" => {
             "reused_check_result_ids" => decision.reusable_result_ids,
             "invalidated_check_result_ids" => decision.invalidated_result_ids,
@@ -75,6 +82,10 @@ module LayeredVerification
             "originating_audit_run_id" => agent_run.originating_audit_run_id
           }.compact
         )
+      end
+
+      def obligation_input_revisions
+        @obligations.to_h { |obligation| [ obligation.id.to_s, obligation.external_revision ] }
       end
 
       # A repair may already have mutated canonical artifacts before its

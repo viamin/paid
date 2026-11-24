@@ -42,6 +42,8 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
       llm: semantic_llm("unmapped" => []))
 
     expect(discovery.material).to eq([ "docs/intent/payments/unmapped-spec.md" ])
+    expect(discovery.structural_material).to eq([ "docs/intent/payments/unmapped-spec.md" ])
+    expect(discovery.semantic_material).to be_empty
     expect(discovery.limitations).to be_empty
   end
 
@@ -107,6 +109,8 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
       llm: semantic_llm("unmapped" => [ "docs/intent/payments/payment-specs.md#refund-clause" ]))
 
     expect(discovery.material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
+    expect(discovery.structural_material).to be_empty
+    expect(discovery.semantic_material).to contain_exactly("docs/intent/payments/payment-specs.md#refund-clause")
   end
 
   # @spec LAYERED-VERIFY-009

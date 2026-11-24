@@ -60,17 +60,16 @@ module LayeredVerification
         raise EmptyScopeError, "select at least one obligation" if obligations.empty?
         validate_budget!
         validate_target_revision!
-        attributes = run_attributes
         run = nil
         AgentRun.transaction do
           # Serialize admission on the project row so two concurrent approvals
           # cannot both observe no active audit and both create one; the
           # resumption path takes the same lock before re-admitting a successor.
-          # Attributes resolve before the lock to keep its hold bounded.
           project.lock!
           raise DuplicateAuditError, "an audit for this scope and revision is already active" if duplicate_audit?
 
-          run = AgentRun.create!(attributes)
+          lock_obligations!
+          run = AgentRun.create!(run_attributes)
         end
         ProcessRunQueueJob.perform_later
         run
@@ -84,6 +83,11 @@ module LayeredVerification
         @obligations ||= project.layered_verification_obligations.where(id: obligation_ids).order(:id).to_a
       end
 
+      def lock_obligations!
+        @obligations = project.layered_verification_obligations.where(id: obligation_ids).lock.order(:id).to_a
+        raise EmptyScopeError, "select at least one obligation" if @obligations.empty?
+      end
+
       def run_attributes
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: "layered_verification_audit")
         {
@@ -93,6 +97,7 @@ module LayeredVerification
           external_metadata: {
             "layered_verification" => {
               "obligation_ids" => obligations.map(&:id), "target_revision" => target_revision,
+              "input_revisions" => obligation_input_revisions,
               "budget" => budget, "plan" => Plans::Build.call(obligations:, selections:),
               "dependencies" => dependency_snapshot,
               "replay" => { "requested_at" => Time.current.iso8601, "requester_id" => user.id,
@@ -110,6 +115,10 @@ module LayeredVerification
             "producer_versions" => { "paid" => ENV.fetch("APP_VERSION", "unversioned") },
             "tool_versions" => { "tlc_runtime_image_digest" => runtime["digest"] } }
         end
+      end
+
+      def obligation_input_revisions
+        obligations.to_h { |obligation| [ obligation.id.to_s, obligation.external_revision ] }
       end
 
       def impact_snapshot

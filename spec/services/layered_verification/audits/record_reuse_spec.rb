@@ -7,6 +7,7 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     create(:agent_run, issue: nil, project:, goal: "layered_verification_audit",
       external_metadata: { "layered_verification" => {
         "obligation_ids" => [ obligation.id ], "target_revision" => "code-v2",
+        "input_revisions" => { obligation.id.to_s => obligation.external_revision },
         "dependencies" => { "environment" => "isolated_execution_environment" },
         "impact" => { "reused_check_result_ids" => reused_ids }
       } })
@@ -20,6 +21,7 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
       execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space")
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
+    obligation.update!(external_revision: "intent-v3")
 
     expect(described_class.call(obligation:, agent_run: audit, metadata: audit.external_metadata.fetch("layered_verification"))).to be(true)
 

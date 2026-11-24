@@ -12,10 +12,12 @@ module LayeredVerification
   # would move complexity without reducing it.
   # @spec LAYERED-VERIFY-009
   class UnmappedMaterial
-    Discovery = Data.define(:material, :limitations) do
+    Discovery = Data.define(:structural_material, :semantic_material, :limitations) do
       def self.unavailable(reason)
-        new([], [ reason ])
+        new([], [], [ reason ])
       end
+
+      def material = (structural_material + semantic_material).uniq.sort
     end
 
     SCOPE_FILE_LIMIT = 100
@@ -46,10 +48,13 @@ module LayeredVerification
       files, failure = structural_scope_files
       return Discovery.unavailable(failure) if failure
 
+      structural = structural_unmapped(files)
       semantic, limitation = semantic_unmapped(files)
-      material = (structural_unmapped(files) + semantic).uniq.sort
+      material = (structural + semantic).uniq.sort
       @material_truncated = material.size > SCOPE_FILE_LIMIT
-      Discovery.new(material.first(SCOPE_FILE_LIMIT), [ *scope_limitations, *Array(limitation) ].uniq)
+      selected = material.first(SCOPE_FILE_LIMIT).to_set
+      Discovery.new(structural.select { |item| selected.include?(item) },
+        semantic.select { |item| selected.include?(item) }, [ *scope_limitations, *Array(limitation) ].uniq)
     end
 
     private

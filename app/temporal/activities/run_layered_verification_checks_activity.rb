@@ -32,7 +32,8 @@ module Activities
         next if discovery.material.empty? && discovery.limitations.empty?
 
         LayeredVerification::LinkageFreshness.call(
-          agent_run:, obligation:, material: discovery.material, limitations: discovery.limitations
+          agent_run:, obligation:, structural_material: discovery.structural_material,
+          semantic_material: discovery.semantic_material, limitations: discovery.limitations
         )
       end
     end

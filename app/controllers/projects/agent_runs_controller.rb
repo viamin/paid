@@ -913,13 +913,13 @@ module Projects
     # because a fresh audit request is the entry point for new work.
     # @spec LAYERED-VERIFY-020
     def resume_layered_verification_run
-      decision = LayeredVerification::Resumption.call(agent_run: @agent_run, user: current_user)
-      new_run = LayeredVerification::Audits::Resume.call(agent_run: @agent_run, user: current_user, decision:)
+      new_run = LayeredVerification::Audits::Resume.call(agent_run: @agent_run, user: current_user)
+      impact = new_run.external_metadata.dig("layered_verification", "impact")
 
       @agent_run.retry!(
         decision_point: "layered_verification_resume",
-        signals: { goal: @agent_run.goal, reusable_check_results: decision.reusable_result_ids.size,
-                   invalidated_check_results: decision.invalidated_result_ids.size },
+        signals: { goal: @agent_run.goal, reusable_check_results: impact.fetch("reused_check_result_ids").size,
+                   invalidated_check_results: impact.fetch("invalidated_check_result_ids").size },
         result: { new_agent_run_id: new_run.id }
       )
       audit_event("agent_run.retried",

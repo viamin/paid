@@ -29,6 +29,7 @@ RSpec.describe LayeredVerification::Audits::Request do
     expect(run).to have_attributes(base_commit_sha: "resolved-sha")
     expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "implementation_conformance")
     expect(run.external_metadata.dig("layered_verification", "budget", "max_minutes")).to eq(15)
+    expect(run.external_metadata.dig("layered_verification", "input_revisions")).to eq(obligation.id.to_s => obligation.external_revision)
   end
 
   it "rejects non-numeric and out-of-range budgets" do

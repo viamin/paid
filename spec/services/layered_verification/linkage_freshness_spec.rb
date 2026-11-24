@@ -9,10 +9,13 @@ RSpec.describe LayeredVerification::LinkageFreshness do
     obligation = create(:layered_verification_obligation, project:)
     run = create(:agent_run, project:, goal: "layered_verification_audit")
 
-    result = described_class.call(agent_run: run, obligation:, material: [ "docs/intent/payments.md#refund", "app/services/refund.rb" ])
+    result = described_class.call(agent_run: run, obligation:,
+      structural_material: [ "app/services/refund.rb" ], semantic_material: [ "docs/intent/payments.md#refund" ])
 
     expect(result).to have_attributes(producer: "linkage_freshness", execution_state: "incomplete", obligation_coverage: "unresolved")
     expect(result.evidence_summary.fetch("unmapped_material")).to contain_exactly("docs/intent/payments.md#refund", "app/services/refund.rb")
+    expect(result.recorder_verified).to eq("structural_unmapped_material" => [ "app/services/refund.rb" ])
+    expect(result.agent_reported).to eq("semantic_unmapped_material" => [ "docs/intent/payments.md#refund" ])
     expect(result.limitations).to include("bounded semantic read-through")
   end
 
@@ -22,7 +25,7 @@ RSpec.describe LayeredVerification::LinkageFreshness do
     obligation = create(:layered_verification_obligation, project:)
     run = create(:agent_run, project:, goal: "layered_verification_audit")
 
-    result = described_class.call(agent_run: run, obligation:, material: [],
+    result = described_class.call(agent_run: run, obligation:, structural_material: [], semantic_material: [],
       limitations: [ "Structural discovery could not execute in the audit environment." ])
 
     expect(result.evidence_summary.fetch("unmapped_material")).to be_empty

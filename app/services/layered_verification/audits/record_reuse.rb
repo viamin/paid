@@ -58,7 +58,7 @@ module LayeredVerification
 
       def input_revision
         { "target_revision" => metadata["target_revision"], "code" => metadata["target_revision"],
-          "external_revision" => obligation.external_revision,
+          "external_revision" => metadata.fetch("input_revisions").fetch(obligation.id.to_s),
           "dependencies" => metadata.fetch("dependencies", {}) }.compact
       end
     end

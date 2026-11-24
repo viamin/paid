@@ -10,10 +10,11 @@ module LayeredVerification
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, obligation:, material:, limitations: [])
+    def initialize(agent_run:, obligation:, structural_material:, semantic_material:, limitations: [])
       @agent_run = agent_run
       @obligation = obligation
-      @material = material
+      @structural_material = structural_material
+      @semantic_material = semantic_material
       @limitations = Array(limitations)
     end
 
@@ -21,14 +22,20 @@ module LayeredVerification
       LayeredVerificationCheckResult.create!(
         obligation:, agent_run:, producer: "linkage_freshness", execution_state: "incomplete",
         obligation_coverage: "unresolved", input_revision: input_revision,
-        evidence_summary: { "unmapped_material" => material }, agent_reported: {}, recorder_verified: { "structural_diff" => true },
+        evidence_summary: { "unmapped_material" => unmapped_material },
+        agent_reported: { "semantic_unmapped_material" => semantic_material },
+        recorder_verified: { "structural_unmapped_material" => structural_material },
         cost: {}, limitations: [ LIMITATION, *@limitations ].join(" ")
       )
     end
 
     private
 
-    attr_reader :agent_run, :limitations, :material, :obligation
+    attr_reader :agent_run, :limitations, :obligation, :semantic_material, :structural_material
+
+    def unmapped_material
+      (structural_material + semantic_material).uniq.sort
+    end
 
     def input_revision
       { "code" => agent_run.external_metadata.dig("layered_verification", "target_revision"),
