@@ -141,5 +141,5 @@
   not be reported as execution.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
   `RetryFailedManualIssueCreatePrJob`.
-  *Test:* `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
+  *Test:* `spec/services/agent_runs/manual_issue_create_pr_retry_policy_spec.rb`,
   `spec/jobs/retry_failed_manual_issue_create_pr_job_spec.rb`.

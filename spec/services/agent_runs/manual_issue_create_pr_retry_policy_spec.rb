@@ -37,4 +37,22 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
     project.update!(retry_failed_manual_runs: true, paused: true)
     expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :project_or_issue_paused)
   end
+
+  it "carries the operator-authorized review depth snapshot onto the successor" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      review_depth_snapshot: "focused")
+
+    successor = policy.build_successor!(run, 1)
+
+    expect(successor.review_depth_snapshot).to eq("focused")
+  end
+
+  it "carries the maintenance context snapshot onto the successor" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      maintenance_type: "dependency_upgrade", base_commit_sha: "b" * 40)
+
+    successor = policy.build_successor!(run, 1)
+
+    expect(successor).to have_attributes(maintenance_type: "dependency_upgrade", base_commit_sha: "b" * 40)
+  end
 end

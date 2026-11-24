@@ -8,9 +8,16 @@ module AgentRuns
 
     Assessment = Data.define(:eligible?, :reason, :attempt, :existing_run)
 
+    class << self
+      def manual_issue_create_pr_run?(agent_run)
+        agent_run.manual? && agent_run.create_pr_goal? && agent_run.issue_id.present? &&
+          agent_run.source_pull_request_number.blank?
+      end
+    end
+
     def assess(agent_run, retry_number: next_attempt(agent_run))
       return Assessment.new(false, :retry_budget_exhausted, retry_number, nil) if retry_number > maximum_attempts
-      return Assessment.new(false, :not_manual_issue_create_pr, retry_number, nil) unless manual_issue_create_pr?(agent_run)
+      return Assessment.new(false, :not_manual_issue_create_pr, retry_number, nil) unless self.class.manual_issue_create_pr_run?(agent_run)
       return Assessment.new(false, :not_failed, retry_number, nil) unless agent_run.status.in?(AgentRun::FAILURE_STATUSES)
       return Assessment.new(false, :execution_budget_exhausted, retry_number, nil) if execution_budget_exhausted?(agent_run)
       return Assessment.new(false, :rate_limit_recovery_owned, retry_number, nil) if agent_run.recoverable_rate_limited?
@@ -36,6 +43,8 @@ module AgentRuns
         project: original.project, issue: original.issue, initiating_user: original.initiating_user,
         runner: original.runner, agent_type: original.agent_type, custom_prompt: original.custom_prompt,
         plan_doc_source: original.plan_doc_source, goal: original.goal, priority_tier: original.priority_tier,
+        review_depth_snapshot: original.review_depth_snapshot,
+        **original.maintenance_context_attributes,
         source_pull_request_number: original.source_pull_request_number,
         trigger_type: "manual", status: "queued",
         external_metadata: original.external_metadata.merge(
@@ -73,10 +82,6 @@ module AgentRuns
     end
 
     private
-
-    def manual_issue_create_pr?(agent_run)
-      agent_run.manual? && agent_run.create_pr_goal? && agent_run.issue_id.present? && agent_run.source_pull_request_number.blank?
-    end
 
     def execution_budget_exhausted?(agent_run)
       agent_run.status == "token_budget_exceeded" || agent_run.guardrail_violation_type.present?
