@@ -28,6 +28,9 @@ module LayeredVerification
     SEMANTIC_UNAVAILABLE = "Semantic read-through could not execute; linkage freshness was not established."
     NO_ENUMERATED_FILES = "(no scope files could be enumerated mechanically)"
     UNINSPECTED_SCOPE = "Some declared correspondence references were not repository paths and could not be enumerated mechanically."
+    TRUNCATED_SCOPE = "Structural and semantic discovery inspected only the first 100 tracked files " \
+      "in the declared scope."
+    TRUNCATED_MATERIAL = "Discovery recorded only the first 100 unmapped material references."
 
     def self.call(...) = new(...).call
 
@@ -44,6 +47,7 @@ module LayeredVerification
 
       semantic, limitation = semantic_unmapped(files)
       material = (structural_unmapped(files) + semantic).uniq.sort
+      @material_truncated = material.size > SCOPE_FILE_LIMIT
       Discovery.new(material.first(SCOPE_FILE_LIMIT), [ *scope_limitations, *Array(limitation) ].uniq)
     end
 
@@ -60,7 +64,9 @@ module LayeredVerification
       output, status = command_runner.call("git", "ls-files", "--", *scope_directories)
       return [ nil, DISCOVERY_FAILURE ] unless status.zero?
 
-      [ output.to_s.lines.map(&:strip).reject(&:blank?).first(SCOPE_FILE_LIMIT), nil ]
+      paths = output.to_s.lines.map(&:strip).reject(&:blank?)
+      @scope_truncated = paths.size > SCOPE_FILE_LIMIT
+      [ paths.first(SCOPE_FILE_LIMIT), nil ]
     rescue Containers::Provision::Error, Docker::Error::DockerError => error
       Rails.logger.warn(
         message: "layered_verification.scope_discovery_failed", agent_run_id: agent_run.id,
@@ -94,7 +100,7 @@ module LayeredVerification
       return [ [], SEMANTIC_UNAVAILABLE ] unless response.success?
 
       material = Array(JSON.parse(response.output.to_s)["unmapped"])
-        .filter_map { |reference| reference.to_s.presence }.uniq.first(SCOPE_FILE_LIMIT)
+        .filter_map { |reference| reference.to_s.presence }.uniq
       [ material, nil ]
     rescue AgentHarness::Error => error
       Rails.logger.warn(
@@ -126,7 +132,11 @@ module LayeredVerification
 
     def scope_limitations
       inspected = scope_references.count { |reference| repository_directory(reference) }
-      inspected == scope_references.size ? [] : [ UNINSPECTED_SCOPE ]
+      limitations = []
+      limitations << UNINSPECTED_SCOPE unless inspected == scope_references.size
+      limitations << TRUNCATED_SCOPE if @scope_truncated
+      limitations << TRUNCATED_MATERIAL if @material_truncated
+      limitations
     end
 
     def prompt(files)

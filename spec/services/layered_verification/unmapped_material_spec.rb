@@ -68,6 +68,35 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
   end
 
   # @spec LAYERED-VERIFY-009
+  it "discloses when structural scope enumeration exceeds its evidence bound" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    files = Array.new(101) { |index| "docs/intent/payments/file-#{index.to_s.rjust(3, "0")}.md" }
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: files.join("\n")), llm: semantic_llm("unmapped" => []))
+
+    expect(discovery.material).to have_attributes(size: 100)
+    expect(discovery.limitations).to include(a_string_matching(/first 100 tracked files/))
+  end
+
+  # @spec LAYERED-VERIFY-009
+  it "discloses when combined structural and semantic findings exceed the result bound" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    run = create(:agent_run, goal: "layered_verification_audit")
+    files = Array.new(100) { |index| "docs/intent/payments/file-#{index.to_s.rjust(3, "0")}.md" }
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: files.join("\n")),
+      llm: semantic_llm("unmapped" => [ "docs/intent/payments/payment-specs.md#new-clause" ]))
+
+    expect(discovery.material).to have_attributes(size: 100)
+    expect(discovery.limitations).to include(a_string_matching(/first 100 unmapped material references/))
+  end
+
+  # @spec LAYERED-VERIFY-009
   it "merges the bounded semantic read-through for material a structural diff cannot detect" do
     project = create(:project)
     obligation = scoped_obligation(project:)

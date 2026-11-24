@@ -930,6 +930,7 @@ module Projects
     rescue LayeredVerification::AuditAccess::FeatureDisabledError,
            LayeredVerification::AuditAccess::UnauthorizedError,
            LayeredVerification::Audits::Request::DuplicateAuditError,
+           LayeredVerification::Audits::Request::InvalidBudgetError,
            ActiveRecord::RecordInvalid,
            ArgumentError,
            KeyError => error

@@ -2498,6 +2498,29 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("only interrupted layered-verification runs can resume")
       end
 
+      # @spec LAYERED-VERIFY-020
+      it "rejects resuming a layered-verification run whose budget is exhausted" do
+        obligation = create(:layered_verification_obligation, project: project)
+        obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payments.md", persisted: true)
+        metadata = { "layered_verification" => {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "sha-1",
+          "budget" => { "max_minutes" => 2 }, "dependencies" => {}
+        } }
+        now = Time.current
+        audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
+          external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("no budget remains for resumption")
+      end
+
       # @spec LAYERED-VERIFY-012
       it "rejects resuming layered-verification runs while the add-on is disabled" do
         audit = create(:agent_run, :failed, project: project, goal: "layered_verification_audit")
