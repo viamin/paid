@@ -24,7 +24,12 @@ module TrustedMeasurements
     }.freeze
 
     def self.current(root: Rails.root, environment: Rails.env)
-      return ENV[ENV_KEY].presence unless environment.to_s == "development"
+      unless environment.to_s == "development"
+        revision = ENV[ENV_KEY]
+        return revision unless revision.to_s.strip.empty?
+
+        return
+      end
 
       repository_root = git_output(root, "rev-parse", "--show-toplevel")
       return unless repository_root && File.realpath(repository_root.strip) == File.realpath(root)

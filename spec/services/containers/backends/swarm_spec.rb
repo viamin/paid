@@ -73,7 +73,9 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       "State" => { "Running" => true, "ExitCode" => 0 }
     }
   end
-  let(:concrete_container) { instance_double(Docker::Container, exec: [ [ "ok" ], [], 0 ], json: container_payload) }
+  let(:concrete_container) do
+    instance_double(Docker::Container, exec: [ [ "ok" ], [], 0 ], stop: true, json: container_payload)
+  end
 
   before do
     stub_manager_get("/services/#{service_id}", service_payload)
@@ -100,6 +102,20 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(result).to eq([ [ "hello" ], [], 0 ])
     expect(Containers::DockerExecWithStdin).to have_received(:call)
       .with(container: concrete_container, command: [ "cat" ], stdin: input, wait: 5)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "passes only the remaining deadline to upgraded stdin exec after task resolution" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC)
+      .and_return(100.0, 101.0, 102.0, 103.0, 104.0)
+    service = backend.get_container(service_id)
+
+    backend.exec_in_container_with_stdin(service, [ "cat" ], stdin: input, wait: 5, deadline: 10)
+
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container: concrete_container, command: [ "cat" ], stdin: input, wait: 5, deadline: 6.0)
   end
 
   it "uses overlay DNS rather than remote proxy routing" do
@@ -264,6 +280,56 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.container_host_for(service)).to eq("worker-1")
   end
 
+  # @spec LLM-ROUTING-013
+  it "applies create deadlines to the Swarm manager transport" do
+    stub_request(:post, "#{manager_url}/services/create")
+      .to_return(status: 200, body: { "ID" => service_id }.to_json)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    expect(backend.create_container(container_config, deadline: 4.0)).to be_a(described_class::ServiceHandle)
+    expect(Docker::Connection).to have_received(:new).with(manager_url,
+      hash_including(timeout: be_between(0, 4.0))).at_least(:once)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "applies candidate deadlines to eager worker metadata refreshes" do
+    stub_request(:post, "#{manager_url}/services/create")
+      .to_return(status: 200, body: { "ID" => service_id }.to_json)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    service = backend.create_container(container_config, deadline: 4.0)
+    backend.start_container(service, deadline: 3.0)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 4.0))).at_least(:twice)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "disables node transport retries while refreshing deadline-bound metadata" do
+    allow(Docker::Connection).to receive(:new).and_call_original
+    service = backend.get_container(service_id)
+
+    backend.start_container(service, deadline: 3.0)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(
+        timeout: be_between(0, 3.0),
+        read_timeout: be_between(0, 3.0),
+        connect_timeout: be_between(0, 3.0),
+        write_timeout: be_between(0, 3.0),
+        retry_limit: 0
+      )).at_least(:once)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not treat a timed-out metadata refresh as successful startup" do
+    service = backend.get_container(service_id)
+    allow(Docker::Container).to receive(:get).and_raise(Docker::Error::TimeoutError, "deadline reached")
+
+    expect { backend.start_container(service, deadline: 3.0) }
+      .to raise_error(Docker::Error::TimeoutError, "deadline reached")
+  end
+
   it "waits for a runnable task before returning from start_container" do
     pending_task = task_payload.deep_dup
     pending_task["Status"] = { "State" => "pending", "ContainerStatus" => {} }
@@ -287,6 +353,30 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
 
     expect(backend.exec_in_container(service, [ "pwd" ])).to eq([ [ "ok" ], [], 0 ])
     expect(Docker::Container).to have_received(:get).with(container_id, {}, kind_of(Docker::Connection)).at_least(:once)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "applies exec deadlines to the landed worker transport without forwarding them as Docker options" do
+    service = backend.get_container(service_id)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    backend.exec_in_container(service, [ "pwd" ], deadline: 3.0, user: "agent")
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 3.0))).twice
+    expect(concrete_container).to have_received(:exec).with([ "pwd" ], user: "agent")
+  end
+
+  # @spec LLM-ROUTING-013
+  it "applies stop deadlines to the landed worker transport without forwarding them as Docker options" do
+    service = backend.get_container(service_id)
+    allow(Docker::Connection).to receive(:new).and_call_original
+
+    backend.stop_container(service, deadline: 2.0, timeout: 1)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(timeout: be_between(0, 2.0))).twice
+    expect(concrete_container).to have_received(:stop).with(timeout: 1)
   end
 
   it "refreshes the routed task before exec when the service is rescheduled" do

@@ -86,6 +86,30 @@ compatibility, retained results, bounded retry/budget policies, and
 control-queue routing; the updater never force-kills active owners to speed
 adoption.
 
+The same readiness contract has one read-only recorder consumer: the
+allowlisted worker-adoption measurement. Worker processes publish their own
+readiness identity — PID, boot time, raw boot revision, boot-time deployment
+identity, and a periodic
+heartbeat — as durable per-process-boot observations in the shared application
+database. This preserves overlapping old and new instances during a rolling
+deploy, and the measurement requires every fresh instance of the fixed
+`poll`/`agent` roles to carry the current deployment identity. It does not
+accept a host path, run a host command, or inspect process arguments,
+environment, or credentials, and it never reads another role's filesystem or PID namespace. Its persisted
+collection receipt is owned by the trusted-measurements boundary. The raw boot
+revision remains the updater's commit-adoption contract; the recorder uses the
+separate complete boot-time deployment identity so later same-HEAD source drift
+cannot be accepted. The Temporal worker captures that complete identity before
+Rails loads application code and compares it with a second snapshot after its
+routes, activities, workflows, and worker registrations are constructed. The
+first snapshot uses only Ruby standard-library behavior because Rails and
+Active Support are not loaded yet in development or production. It
+refuses startup before readiness publication or polling when the snapshots
+differ, so a source edit during boot cannot be represented as loaded worker
+code. The readiness facts remain evidence about worker adoption
+only and do not attest
+application-level behavior.
+
 ## Temporal Worker Quiescence Before Restart
 
 Activity-body counts are observability only: a Temporal task can already be
@@ -132,6 +156,8 @@ is safe to stop.
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
 | Temporal worker quiescence | Defer before stop when a Temporal worker is ready, when a running Overmind reports one without readiness metadata, or when a socket-less orphaned same-workspace session hosts a worker window the stop path would force-kill; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata or an absent control socket as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, missing metadata cannot prove no worker owns work, and an absent control socket does not stop the tmux cleanup from killing an orphaned session's workers. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-019`. |
+| Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
+| Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
 
 ## References
 

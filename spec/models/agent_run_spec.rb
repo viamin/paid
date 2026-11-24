@@ -4155,6 +4155,23 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(auto_continue)
     end
 
+    it "keeps SQL ordering and the Ruby tier aligned for a promoted PR retry" do # @spec QUEUE-TIER-009
+      project = create(:project)
+      continuation = create(:agent_run, :queued, :automatic, project: project,
+        source_pull_request_number: 41, created_at: 2.minutes.ago)
+      coding_retry = create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+        source_pull_request_number: 42, operator_coding_priority_requested_at: Time.current,
+        created_at: 1.minute.ago)
+      p1_issue = create(:issue, project:, labels: [ "P1" ])
+      p1_run = create(:agent_run, :queued, :automatic, project:, issue: p1_issue, created_at: 3.minutes.ago)
+
+      expect(described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)).to eq(
+        [ coding_retry.id, continuation.id, p1_run.id ]
+      )
+      expect(coding_retry.queue_priority_tier).to eq(:operator_coding)
+      expect(coding_retry.queue_priority_label).to eq("2 - Operator-requested coding retry")
+    end
+
     it "prioritizes PR-continuation work within the same priority tier" do
       project = create(:project)
       _fresh = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)
@@ -4246,7 +4263,7 @@ RSpec.describe AgentRun do
       expect(pr_run.queue_priority_tier).to eq(:pr_p1)
     end
 
-    context "with all 9 priority tiers" do
+    context "with all 10 priority tiers" do
       let(:project) { create(:project) }
 
       def issue_run(project, minutes_ago, label: nil)
@@ -4266,6 +4283,8 @@ RSpec.describe AgentRun do
         issue_p3_run = issue_run(project, 8, label: "P3")
         issue_p2_run = issue_run(project, 7, label: "P2")
         issue_p1_run = issue_run(project, 6, label: "P1")
+        operator_coding = create(:agent_run, :queued, :automatic, project:, goal: "create_pr",
+          operator_coding_priority_requested_at: Time.current, created_at: 6.minutes.ago)
         auto_continue = pr_run(project, 5, github_number: 100)
         pr_p3_run = pr_run(project, 4, github_number: 103, label: "P3")
         pr_p2_run = pr_run(project, 3, github_number: 102, label: "P2")
@@ -4275,8 +4294,8 @@ RSpec.describe AgentRun do
 
         ordered_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
         expect(ordered_ids).to eq(
-          [ manual_run, pr_p1_run, pr_p2_run, pr_p3_run, auto_continue,
-            issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
+          [ manual_run, operator_coding, pr_p1_run, pr_p2_run, pr_p3_run,
+            auto_continue, issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
         )
       end
     end
@@ -4809,40 +4828,40 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_label).to eq("1 - Manual")
     end
 
-    it "returns '5 - Auto-continue' for automatic runs with a source PR" do
+    it "returns '6 - Auto-continue' for automatic runs with a source PR" do
       run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
 
-      expect(run.queue_priority_label).to eq("5 - Auto-continue")
+      expect(run.queue_priority_label).to eq("6 - Auto-continue")
     end
 
-    it "returns '9 - Auto-pick' for automatic runs without a source PR" do
+    it "returns '10 - Auto-pick' for automatic runs without a source PR" do
       run = create(:agent_run, trigger_type: "automatic")
 
-      expect(run.queue_priority_label).to eq("9 - Auto-pick")
+      expect(run.queue_priority_label).to eq("10 - Auto-pick")
     end
 
-    it "returns '2 - PR · P1' for a PR-continuation run with the P1 label" do
+    it "returns '3 - PR · P1' for a PR-continuation run with the P1 label" do
       project = create(:project)
       create(:issue, project: project, labels: [ "P1" ], is_pull_request: true, github_number: 201)
       run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 201)
 
-      expect(run.queue_priority_label).to eq("2 - PR · P1")
+      expect(run.queue_priority_label).to eq("3 - PR · P1")
     end
 
-    it "returns '3 - PR · P2' for a PR-continuation run with the P2 label" do
+    it "returns '4 - PR · P2' for a PR-continuation run with the P2 label" do
       project = create(:project)
       create(:issue, project: project, labels: [ "P2" ], is_pull_request: true, github_number: 202)
       run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 202)
 
-      expect(run.queue_priority_label).to eq("3 - PR · P2")
+      expect(run.queue_priority_label).to eq("4 - PR · P2")
     end
 
-    it "returns '4 - PR · P3' for a PR-continuation run with the P3 label" do
+    it "returns '5 - PR · P3' for a PR-continuation run with the P3 label" do
       project = create(:project)
       create(:issue, project: project, labels: [ "P3" ], is_pull_request: true, github_number: 203)
       run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 203)
 
-      expect(run.queue_priority_label).to eq("4 - PR · P3")
+      expect(run.queue_priority_label).to eq("5 - PR · P3")
     end
   end
 
@@ -4979,12 +4998,12 @@ RSpec.describe AgentRun do
       end
     end
 
-    it "returns '6 - P1' for P1-labeled fresh issues" do
+    it "returns '7 - P1' for P1-labeled fresh issues" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P1" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_label).to eq("6 - P1")
+      expect(run.queue_priority_label).to eq("7 - P1")
     end
   end
 
