@@ -15,7 +15,8 @@ require "digest"
 module TrustedMeasurements
   ALLOWLIST = {
     "agent_planning_hold_reconciliation_closed_count" =>
-      "TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount"
+      "TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount",
+    "worker_adoption" => "TrustedMeasurements::Checks::WorkerAdoption"
   }.freeze
 
   UnknownCheckError = Class.new(StandardError)
