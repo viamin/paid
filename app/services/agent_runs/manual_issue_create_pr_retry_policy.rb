@@ -39,6 +39,15 @@ module AgentRuns
     def conflict_reason(_error) = :existing_active_run
 
     def build_successor!(original, attempt)
+      original.issue.with_lock do
+        original.reload
+        next unless assess(original, retry_number: attempt).eligible?
+
+        create_successor!(original, attempt)
+      end
+    end
+
+    def create_successor!(original, attempt)
       AgentRun.create!(
         project: original.project, issue: original.issue, initiating_user: original.initiating_user,
         runner: original.runner, agent_type: original.agent_type, custom_prompt: original.custom_prompt,
@@ -54,6 +63,7 @@ module AgentRuns
         )
       )
     end
+    private :create_successor!
 
     def record_claim!(agent_run, successor:, decision_point:, retry_number:)
       agent_run.retry!(decision_point:, signals: retry_signals(retry_number),
@@ -68,6 +78,7 @@ module AgentRuns
 
     def handle_ineligible!(agent_run, assessment, decision_point:)
       return unless assessment.reason == :existing_active_run
+      return unless assessment.existing_run.goal == agent_run.goal
 
       agent_run.retry!(decision_point:, signals: retry_signals(assessment.attempt),
         result: { existing_agent_run_id: assessment.existing_run.id, reason: "existing_active_run" })

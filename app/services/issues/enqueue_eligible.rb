@@ -28,6 +28,15 @@ module Issues
 
       return nil unless confidence_delivery_released?
 
+      issue.with_lock { enqueue_current_issue } # @spec MANUAL-RUN-RETRY-010
+    end
+
+    private
+
+    attr_reader :issue, :project
+    attr_reader :skip_project_gate, :no_runner_retry_count
+
+    def enqueue_current_issue
       unless eligible?
         log_ineligible
         return nil
@@ -73,11 +82,6 @@ module Issues
         nil
       end
     end
-
-    private
-
-    attr_reader :issue, :project
-    attr_reader :skip_project_gate, :no_runner_retry_count
 
     def eligible?
       Automation::Strategies::AutoPick::DefaultCandidateSource

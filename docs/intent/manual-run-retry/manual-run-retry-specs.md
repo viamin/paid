@@ -138,9 +138,17 @@
   trust, dependencies, active ownership, policy, opt-out, and pauses. Partial
   work, changed source, active issue ownership (including a rate-limited sibling
   with any goal that can resume in place), duplicate delivery, or execution
-  budget exhaustion SHALL refuse blind replacement; classifications alone SHALL
+  budget exhaustion SHALL refuse blind replacement. The final eligibility
+  recheck and successor insertion SHALL hold the issue admission lock shared
+  with normal queue, Auto-Pick, controller and MCP creation; a refused recheck
+  SHALL leave the failed lineage unconsumed. A different-goal owner SHALL NOT
+  retire the failed implementation as retried. Classifications alone SHALL
   not be reported as execution.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
-  `RetryFailedManualIssueCreatePrJob`.
+  `RetryFailedManualIssueCreatePrJob`, `Activities::QueueAgentRunActivity`,
+  `Issues::EnqueueEligible`, `Tools::TriggerAgentRun`.
   *Test:* `spec/services/agent_runs/manual_issue_create_pr_retry_policy_spec.rb`,
-  `spec/jobs/retry_failed_manual_issue_create_pr_job_spec.rb`.
+  `spec/jobs/retry_failed_manual_issue_create_pr_job_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/services/issues/enqueue_eligible_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`.
