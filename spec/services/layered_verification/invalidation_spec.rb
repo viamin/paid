@@ -35,6 +35,24 @@ RSpec.describe LayeredVerification::Invalidation do
   end
 
   # @spec LAYERED-VERIFY-019
+  it "invalidates evidence from producers the carry-forward path cannot record" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    create(:layered_verification_correspondence_claim, obligation:,
+      source_reference: obligation.canonical_source_path, target_reference: "app/models/payment.rb")
+    result = create(:layered_verification_check_result, obligation:, producer: "semantic_audit", input_revision: {
+      "code" => "code-v2", "external_revision" => "intent-v2",
+      "dependencies" => dependencies,
+      "scope_paths" => [ "app/models/payment.rb", obligation.canonical_source_path ]
+    })
+
+    impact = described_class.call(obligations: [ obligation ], target_revision: "code-v2", dependencies:)
+
+    expect(impact.reusable_result_ids).to be_empty
+    expect(impact.invalidated_result_ids).to eq([ result.id ])
+  end
+
+  # @spec LAYERED-VERIFY-019
   it "reuses cross-revision evidence when the complete declared scope is unchanged" do
     project = create(:project)
     github_client = instance_double(GithubClient)

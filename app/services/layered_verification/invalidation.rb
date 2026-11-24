@@ -25,7 +25,8 @@ module LayeredVerification
 
     def reusable?(result)
       revision = result.input_revision.to_h.deep_stringify_keys
-      complete_dependency_basis?(revision) && code_unaffected?(result, revision) &&
+      result.producer == Audits::RecordReuse::PRODUCER &&
+        complete_dependency_basis?(revision) && code_unaffected?(result, revision) &&
         revision["external_revision"] == result.obligation.external_revision &&
         revision.fetch("dependencies") == dependencies
     end
