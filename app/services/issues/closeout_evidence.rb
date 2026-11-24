@@ -37,8 +37,12 @@ module Issues
       linked = Issue.where(project_id: issues.map(&:project_id).uniq, is_pull_request: true,
         pr_review_phase: "merged", parent_issue_id: issue_ids)
         .pluck(:parent_issue_id, :github_number, :github_html_url, :created_at, ISSUE_BODY_DIGEST_SQL)
+      shared = shared_linked(issue_ids)
       run_linked = linked_runs(issue_ids)
       merged_prs_by_issue_id = merged_prs_by_issue_id(issues_by_id, linked, run_linked)
+      shared.each do |issue_id, number, url, terminal_at, body_digest|
+        merged_prs_by_issue_id[issue_id][[ number, url ]] ||= MergedPullRequest.new(number:, url:, terminal_at:, run_id: nil, body_digest:)
+      end
 
       issues_by_id.transform_values do |issue|
         build_result(merged_prs_by_issue_id.fetch(issue.id, {}).values, issue.no_code_required_at)
@@ -175,6 +179,16 @@ module Issues
           "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
     end
     private_class_method :linked_runs
+
+    def self.shared_linked(issue_ids)
+      SharedDeliveryEvidenceAssociation.where(issue_id: issue_ids, revoked_at: nil)
+        .joins("INNER JOIN issues merged_prs ON merged_prs.id = shared_delivery_evidence_associations.pull_request_id")
+        .where("merged_prs.is_pull_request = TRUE AND merged_prs.pr_review_phase = 'merged'")
+        .where("merged_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url")
+        .where("merged_prs.merged_commit_sha = shared_delivery_evidence_associations.revision")
+        .pluck(:issue_id, "merged_prs.github_number", "merged_prs.github_html_url", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
+    end
+    private_class_method :shared_linked
 
     def self.merged_prs_by_issue_id(issues_by_id, linked, run_linked)
       result = Hash.new { |hash, key| hash[key] = {} }

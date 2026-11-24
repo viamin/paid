@@ -4,6 +4,9 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-060** — When an authorized operator records a durable shared-delivery association from an open source issue to one same-account, same-project merged pull request, Paid SHALL bind the association to that pull request's canonical URL and immutable merged revision without changing its original parent or producer history. Only while that exact PR remains merged at that revision and the association is unrevoked SHALL `Issues::CloseoutEvidence` admit it as terminal delivery evidence and the eager queue suppress replacement implementation work; a changed, revoked, unmerged, cross-project, or otherwise mismatched association SHALL fail closed. The association SHALL admit only the ordinary, bounded report-only acceptance-audit path; it SHALL not satisfy acceptance criteria, bypass closure gates, or infer authority from dependencies or issue text.
+  *Test:* `spec/services/issues/closeout_evidence_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
   attempt under one logical audit identity — the issue plus the closeout-evidence
   source revision — fails transiently because transport or infrastructure was

@@ -451,7 +451,11 @@ module Automation
           def merged_block_issue_ids(project) # @spec EAGER-QUEUE-011
             merged_ids = (
               merged_linked_pr_parent_issue_ids(project).pluck(:parent_issue_id) +
-              Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).pluck(:issue_id)
+              Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).pluck(:issue_id) +
+              SharedDeliveryEvidenceAssociation.where(project:, revoked_at: nil)
+                .joins("INNER JOIN issues shared_prs ON shared_prs.id = shared_delivery_evidence_associations.pull_request_id")
+                .where("shared_prs.pr_review_phase = 'merged' AND shared_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url AND shared_prs.merged_commit_sha = shared_delivery_evidence_associations.revision")
+                .pluck(:issue_id)
             ).uniq
             return [] if merged_ids.empty?
 
