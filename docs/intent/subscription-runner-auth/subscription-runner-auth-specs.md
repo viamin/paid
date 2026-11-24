@@ -109,7 +109,8 @@
 - [x] **SUBSCRIPTION-RUNNER-AUTH-008** — When a rotating managed credential is
   materialized, Paid SHALL persist trusted provenance binding its runner key,
   canonical credential identity and generation, agent run, and container lifecycle.
-  Harvest SHALL write only to that still-current, unrevoked materialized record.
+  Execution SHALL resolve its lease and writeback source from that provenance,
+  and harvest SHALL write only to that still-current, unrevoked materialized record.
   Missing, host-forwarded, replacement-container, changed-selection, or stale
   provenance SHALL be explicitly skipped and SHALL NOT establish managed readiness
   or import native auth into a canonical credential.

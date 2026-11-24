@@ -96,6 +96,9 @@ Each rotating managed materialization persists non-secret, trusted provenance
 for the specific agent run and container lifecycle: runner key, source,
 canonical credential identity, and its generation timestamp. Harvest resolves
 that provenance first rather than re-selecting the account's current credential.
+Execution resolves its lease and writeback source from the same provenance, so
+a later account selection cannot move an older container onto another managed
+credential's lease or the host-forwarded synchronization path.
 It writes only when the recorded managed credential remains unrevoked and at
 the same generation. Missing provenance, host-forwarded provenance, a
 replacement container, and changed generation are explicit skipped harvests;

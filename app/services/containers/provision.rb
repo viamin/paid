@@ -1883,17 +1883,38 @@ module Containers
     # credential id and the rotated auth.json is harvested back into the
     # canonical credential after the run. For a host-backed auth.json the lease
     # is keyed on the source path and the rotated file is synced back to disk.
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008
     def with_codex_auth_lock(command)
-      return yield unless subscription_auth_lock_required?(command)
+      runner_key = subscription_exec_runner_key(command)
+      provenance = materialization_provenance_for(runner_key) if runner_key
+      return with_current_subscription_auth_lock(runner_key) { yield } unless provenance
 
-      if omp_auth_lock_required?(command) && omp_managed_credential_active?
-        with_omp_managed_auth_lock { yield }
-      elsif opencode_auth_lock_required?(command) && opencode_managed_credential_active?
-        with_opencode_managed_auth_lock { yield }
-      elsif codex_managed_credential_active?
-        with_codex_managed_auth_lock { yield }
-      else
+      if provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_MANAGED && provenance.runner_credential
+        with_subscription_managed_auth_lock(
+          runner_key: runner_key,
+          runner_credential: provenance.runner_credential,
+          lockfile: managed_auth_lockfile_path(runner_key, provenance.runner_credential),
+          skipped_event: "container.#{runner_key}_managed_harvest_skipped_without_lock"
+        ) { yield }
+      elsif runner_key == "codex" && provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         with_codex_host_auth_lock { yield }
+      else
+        yield
+      end
+    end
+
+    def with_current_subscription_auth_lock(runner_key)
+      case runner_key
+      when "omp"
+        omp_managed_credential_active? ? with_omp_managed_auth_lock { yield } : yield
+      when "opencode"
+        opencode_managed_credential_active? ? with_opencode_managed_auth_lock { yield } : yield
+      when "codex"
+        return yield unless codex_subscription_auth?
+
+        codex_managed_credential_active? ? with_codex_managed_auth_lock { yield } : with_codex_host_auth_lock { yield }
+      else
+        yield
       end
     end
 
@@ -3653,8 +3674,10 @@ module Containers
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_codex_managed_caches
-      materialization = codex_managed_materialization
+      credential.reload
+      materialization = codex_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3671,7 +3694,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      record_managed_materialization!("codex", credential)
+      record_managed_materialization!("codex", credential, credential_generation)
     end
 
     def materialize_managed_opencode_credentials!
@@ -3683,8 +3706,10 @@ module Containers
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_opencode_managed_caches
-      materialization = opencode_managed_materialization
+      credential.reload
+      materialization = opencode_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3701,7 +3726,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      record_managed_materialization!("opencode", credential)
+      record_managed_materialization!("opencode", credential, credential_generation)
     end
 
     def seed_omp_credentials!
@@ -3718,8 +3743,10 @@ module Containers
       return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "omp") == :fresh
 
       reset_omp_managed_caches
-      materialization = omp_managed_materialization
+      credential.reload
+      materialization = omp_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3743,7 +3770,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_import")
       )
-      record_managed_materialization!("omp", credential)
+      record_managed_materialization!("omp", credential, credential_generation)
     rescue Docker::Error::DockerError => e
       log_system("container.omp_credentials_seed_failed", error: e.message)
       record_auth_attempt!(
@@ -4038,20 +4065,11 @@ module Containers
       (codex_config_candidate_paths + [ codex_local_config_path ]).compact.uniq
     end
 
-    def subscription_auth_lock_required?(command)
-      codex_auth_lock_required?(command) || opencode_auth_lock_required?(command) || omp_auth_lock_required?(command)
-    end
+    def subscription_exec_runner_key(command)
+      return "omp" if omp_exec_command?(command)
+      return "opencode" if opencode_exec_command?(command)
 
-    def codex_auth_lock_required?(command)
-      codex_subscription_auth? && codex_exec_command?(command)
-    end
-
-    def opencode_auth_lock_required?(command)
-      opencode_managed_credential_active? && opencode_exec_command?(command)
-    end
-
-    def omp_auth_lock_required?(command)
-      omp_managed_credential_active? && omp_exec_command?(command)
+      "codex" if codex_exec_command?(command)
     end
 
     def codex_exec_command?(command)
@@ -4218,18 +4236,20 @@ module Containers
     # Runners::ManagedCredentialLifecycle so standalone text execution and
     # agent-run provisions resolve the identical lockfile for one credential.
     def codex_managed_auth_lockfile_path
-      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "codex", credential: codex_managed_runner_credential)
+      managed_auth_lockfile_path("codex", codex_managed_runner_credential)
     end
 
     def opencode_managed_auth_lockfile_path
-      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "opencode", credential: opencode_managed_runner_credential)
+      managed_auth_lockfile_path("opencode", opencode_managed_runner_credential)
     end
 
     def omp_managed_auth_lockfile_path
+      managed_auth_lockfile_path("omp", omp_managed_runner_credential)
+    end
+
+    def managed_auth_lockfile_path(runner_key, credential)
       Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "omp", credential: omp_managed_runner_credential)
+        runner_key: runner_key, credential: credential)
     end
 
     # Public boundary for the Codex managed refresh (RDR-041 / #2962). Refreshes
@@ -4593,33 +4613,38 @@ module Containers
         result: telemetry_result, failure_reason: failure_reason)
     end
 
-    def record_managed_materialization!(runner_key, credential)
-      record_materialization_provenance!(runner_key, auth_source: :managed, credential: credential)
+    def record_managed_materialization!(runner_key, credential, credential_generation)
+      record_materialization_provenance!(runner_key, auth_source: :managed, credential: credential,
+        credential_generation: credential_generation)
     end
 
     def record_unmanaged_materialization!(runner_key, auth_source)
       record_materialization_provenance!(runner_key, auth_source: auth_source)
     end
 
-    def record_materialization_provenance!(runner_key, auth_source:, credential: nil)
+    def record_materialization_provenance!(runner_key, auth_source:, credential: nil, credential_generation: nil)
       return unless agent_run&.persisted? && container&.id.present?
 
       attrs = {
         account: project.account,
         project: project,
         agent_run: agent_run,
-        runner_credential: credential&.reload,
+        runner_credential: credential,
         runner_key: runner_key,
         auth_source: auth_source.to_s,
         container_id: container.id,
-        credential_updated_at: credential&.updated_at,
+        credential_updated_at: credential_generation,
         materialized_at: Time.current
       }
       RunnerAuthMaterialization.create!(attrs)
     rescue ActiveRecord::RecordNotUnique
       existing = materialization_provenance_for(runner_key)
-      return true if existing&.attributes&.slice("auth_source", "runner_credential_id", "credential_updated_at") ==
-        attrs.slice(:auth_source, :runner_credential_id, :credential_updated_at).stringify_keys
+      expected = {
+        "auth_source" => auth_source.to_s,
+        "runner_credential_id" => credential&.id,
+        "credential_updated_at" => credential_generation
+      }
+      return true if existing&.attributes&.slice(*expected.keys) == expected
 
       log_system("container.#{runner_key}_materialization_provenance_conflict",
         container_id: container.id, credential_id: credential&.id)
