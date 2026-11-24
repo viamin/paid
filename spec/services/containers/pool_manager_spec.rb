@@ -167,7 +167,7 @@ RSpec.describe Containers::PoolManager do
 
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
-    let(:service) { instance_double(Containers::Provision) }
+    let(:service) { instance_double(Containers::Provision, materialize_claimed_runner_credentials!: true) }
     let(:container) { instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true) }
     let(:volume) { instance_double(Docker::Volume, remove: true) }
 
@@ -199,6 +199,7 @@ RSpec.describe Containers::PoolManager do
         workspace_volume: entry.workspace_volume,
         pool_entry: entry
       )
+      expect(service).to have_received(:materialize_claimed_runner_credentials!)
       expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
     end
 
@@ -300,6 +301,17 @@ RSpec.describe Containers::PoolManager do
       entry = create(:container_pool_entry, project: project)
       allow(Containers::Provision).to receive(:reconnect)
         .and_raise(Containers::Provision::ProvisionError, "Container #{entry.container_id} not found")
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
+
+      expect(result).to be_nil
+      expect(ContainerPoolEntry.exists?(entry.id)).to be(false)
+    end
+
+    it "removes entries when claim-time credential materialization fails" do
+      entry = create(:container_pool_entry, project: project)
+      allow(service).to receive(:materialize_claimed_runner_credentials!)
+        .and_raise(Containers::Provision::ProvisionError, "credential materialization failed")
 
       result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run)
 
