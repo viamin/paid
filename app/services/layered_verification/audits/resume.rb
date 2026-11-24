@@ -70,7 +70,7 @@ module LayeredVerification
       end
 
       def resumed_metadata
-        metadata.merge(
+        metadata.except("results_ingested_at", "coverage").merge(
           "target_revision" => target_revision,
           "budget" => decision.remaining_budget,
           "input_revisions" => obligation_input_revisions,

@@ -42,6 +42,25 @@ RSpec.describe LayeredVerification::Audits::Resume do
     expect(metadata.dig("resumption", "requested_by_id")).to eq(user.id)
   end
 
+  # @spec LAYERED-VERIFY-020
+  it "does not inherit per-run completion metadata from the interrupted audit" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    audit = failed_audit(project:, obligation:)
+    audit.external_metadata["layered_verification"].merge!(
+      "results_ingested_at" => 1.hour.ago.iso8601,
+      "coverage" => { obligation.id.to_s => { "obligation_coverage" => "supported" } }
+    )
+    audit.save!
+
+    successor = described_class.call(agent_run: audit, user:)
+
+    metadata = successor.external_metadata.fetch("layered_verification")
+    expect(metadata).not_to have_key("results_ingested_at")
+    expect(metadata).not_to have_key("coverage")
+  end
+
   # @spec LAYERED-VERIFY-019 LAYERED-VERIFY-020
   it "invalidates old evidence and stamps the successor when the execution environment changes" do
     user = create(:user, :owner)
