@@ -235,6 +235,52 @@ budget when confidence is good, but degraded or missing snapshot paths fall
 back conservatively, and sampling-budget exhaustion fails closed for that
 admission pass.
 
+### Backing-storage pressure
+
+Docker-requested disk ceilings do not account for the daemon's image, build,
+volume, WAL, or unrelated-workload consumption. Each execution backend may
+therefore expose a bounded `backing_storage_observation` capability. A known
+observation contains only its scope, available bytes, and observation time.
+It never exposes daemon paths, mounts, credentials, or workload names.
+
+The local Docker backend supports the capability only when an operator has
+created an empty `.paid-capacity-probe` directory inside the selected daemon's
+`DockerRootDir`, mounted only that directory read-only, and configured
+`PAID_DOCKER_BACKING_STORE_PROBE_PATH` plus
+`PAID_DOCKER_BACKING_STORE_DAEMON_ROOT`. Before measuring, the backend compares
+the configured root with `Docker.info["DockerRootDir"]` from its selected Unix
+socket daemon and verifies the probe mount metadata identifies that root's
+`.paid-capacity-probe` child as the source for the configured probe path. The
+backend decodes kernel mountinfo octal path escapes before comparing either
+source or target, so daemon roots and probe paths containing spaces remain
+verifiable. The supported devcontainer uses that verified root to mount only
+`.paid-capacity-probe` at `/mnt/paid-docker-backing-store`; it never mounts the
+daemon data-root tree. Missing daemon root evidence, a root mismatch, a remote
+endpoint, an invalid source, or unverifiable mount provenance is an explicit
+unavailable observation. It MUST
+NOT treat the control-plane container's root filesystem as the Docker daemon's
+backing store or guess a Docker root. Remote and unsupported backends report an
+explicit unavailable/unsupported reason rather than inspecting local disk.
+Kernel mount roots can name a different namespace path from `DockerRootDir`.
+When those paths differ, bounded inspection through the selected daemon must
+bind the current container's ID and hostname to the exact read-only bind
+source and destination. A read-only kernel mount at that destination is still
+required. An arbitrary matching basename, another container's inspection or
+a writable mount cannot establish provenance.
+The probe executes in a bounded process group that is terminated and reaped at
+its deadline. Only a nonnegative integer byte count is known headroom;
+missing, malformed, negative, or stale observations remain distinguishable
+from known headroom and do not claim capacity.
+
+Normal run admission applies a 5 GiB backing-storage reserve to every mode,
+including provisioning and build consumers. A fresh known observation at or
+below the reserve denies new execution with a one-minute bounded recheck and
+an operator action to reclaim or expand the measured backing store. This does
+not alter requested-resource ceilings, increase concurrency, or grant cleanup
+authority. Existing runs, cancellation, and cleanup stay runnable. Operators
+can inspect the safe scope, available bytes, timestamp, reason, and action in
+the Docker-host capacity diagnostics.
+
 ## Accepted Divergence
 
 RDR-005's host-side "one git worktree per agent run" model is superseded for

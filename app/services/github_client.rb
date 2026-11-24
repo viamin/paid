@@ -2296,15 +2296,20 @@ class GithubClient
     end
   end
 
+  # Blob SHAs and rename provenance ride along so downstream consumers can
+  # mechanically verify byte-identical imports without re-fetching diffs
+  # (@spec AUTO-MERGE-013).
   def compare_files_payload(files)
     files.map do |file|
       {
         filename: file.filename.to_s,
+        sha: file.sha.to_s,
         status: file.status.to_s,
         additions: file.additions.to_i,
         deletions: file.deletions.to_i,
         changes: file.changes.to_i,
-        patch: file.patch.to_s
+        patch: file.patch.to_s,
+        previous_filename: file.previous_filename.to_s
       }
     end
   end

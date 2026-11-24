@@ -22,6 +22,7 @@ module Tools
       "Tools::StartMaintenanceRun",
       "Tools::TriggerReadinessBootstrap",
       "Tools::RequestIssueContinuation",
+      "Tools::PrioritizeCodingRetry",
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
       "Tools::ManageSharedDeliveryEvidence",

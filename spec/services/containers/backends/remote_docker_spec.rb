@@ -65,6 +65,15 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_containers(all: true)).to eq([ container ])
   end
 
+  # @spec LLM-ROUTING-013
+  it "does not require a mutable connection when stopping without a deadline" do
+    allow(container).to receive(:stop).with(timeout: 0)
+
+    backend.stop_container(container, timeout: 0)
+
+    expect(container).to have_received(:stop).with(timeout: 0)
+  end
+
   it "routes upgraded stdin exec through the remote container handle" do
     input = StringIO.new("hello")
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
@@ -74,6 +83,17 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(result).to eq([ [ "hello" ], [], 0 ])
     expect(Containers::DockerExecWithStdin).to have_received(:call)
       .with(container:, command: [ "cat" ], stdin: input, wait: 5)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "passes the supplied deadline to the upgraded stdin exec sequence" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [], [], 0 ])
+
+    backend.exec_in_container_with_stdin(container, [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
+
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container:, command: [ "cat" ], stdin: input, wait: 5, deadline: 0.1)
   end
 
   it "delegates network, image, and volume access through the remote connection" do
@@ -90,6 +110,22 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.get_volume("paid-workspace-1")).to eq(volume)
     expect(backend.create_volume("paid-workspace-1", "Labels" => { "paid.managed" => "true" })).to eq(volume)
     expect(backend.list_volumes).to eq([ volume ])
+  end
+
+  # @spec LLM-ROUTING-013
+  it "scopes network lookup and creation to the supplied deadline" do
+    timed_connection = instance_double(Docker::Connection)
+    allow(connection).to receive_messages(url: "tcp://worker-1.internal:2376", options: { read_timeout: 60 })
+    allow(Docker::Connection).to receive(:new)
+      .with("tcp://worker-1.internal:2376", { read_timeout: 60, timeout: 0.1, retry_limit: 0 })
+      .and_return(timed_connection)
+    allow(Docker::Network).to receive_messages(get: network, create: network)
+
+    backend.get_network("paid_agent", deadline: 0.1)
+    backend.create_network("paid_agent", { "Driver" => "bridge" }, deadline: 0.1)
+
+    expect(Docker::Network).to have_received(:get).with("paid_agent", {}, timed_connection)
+    expect(Docker::Network).to have_received(:create).with("paid_agent", { "Driver" => "bridge" }, timed_connection)
   end
 
   it "builds an image from a Dockerfile string via docker-api's string-body build API" do

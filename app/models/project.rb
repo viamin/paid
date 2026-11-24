@@ -837,10 +837,12 @@ class Project < ApplicationRecord
   # Returns the set of PR numbers that have unclaimed queued automatic agent runs,
   # used by both the controller and Turbo broadcasts to drive the "Bump Priority" UI.
   # Excludes claimed runs (temporal_workflow_id set) since those are already being
-  # processed and should not be reprioritized.
+  # processed, and runs with an existing request since neither should be reprioritized.
+  # @spec QUEUE-TIER-008
   def pr_numbers_with_queued_auto_continue
     agent_runs
-      .where(trigger_type: "automatic", status: "queued", temporal_workflow_id: nil)
+      .where(trigger_type: "automatic", goal: "create_pr", status: "queued", temporal_workflow_id: nil,
+        operator_coding_priority_requested_at: nil)
       .where.not(source_pull_request_number: nil)
       .distinct
       .pluck(:source_pull_request_number)
