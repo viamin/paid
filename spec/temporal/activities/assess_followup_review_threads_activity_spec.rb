@@ -57,6 +57,23 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
   end
 
   # @spec FOCUSED-RUN-011
+  it "refuses malformed comparison file metadata before requesting model authorization" do
+    agent_run
+    allow(GithubClient).to receive(:new).and_call_original
+    comparison_client = GithubClient.new(token: "fixture-only")
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    stub_request(:get, "https://api.github.com/repos/#{project.full_name}/compare/base-sha...current-head")
+      .to_return(status: 200, body: { files: [ { patch: "+fixed" } ] }.to_json,
+        headers: { "Content-Type" => "application/json" })
+    allow(github_client).to receive(:detailed_compare_files) { |*args| comparison_client.detailed_compare_files(*args) }
+
+    result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+    expect(result[:authorized]).to be(false)
+    expect(Llm::Request).not_to have_received(:call)
+  end
+
+  # @spec FOCUSED-RUN-011
   it "refuses authorization for a thread omitted from the bounded prompt" do
     stub_const("Activities::AssessFollowupReviewThreadsActivity::THREAD_EVIDENCE_BYTES", 200)
     allow(github_client).to receive(:review_threads).and_return([ thread, thread.merge(id: "thread_2") ])

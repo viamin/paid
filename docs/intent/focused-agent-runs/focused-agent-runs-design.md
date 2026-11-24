@@ -148,7 +148,9 @@ Follow-up thread resolution binds its semantic assessment to a complete
 immutable comparison file list within the request's file ceiling. The GitHub
 client raises a typed unavailable error when the local ceiling or upstream
 file-list cap prevents proving completeness, rather than silently dropping
-paths. Patch and thread excerpts retain explicit byte-budget markers. Only
+paths. Required per-file path/status, blob identity, nonnegative change counts
+and rename provenance are checked before returning evidence; absent binary
+patch text is permitted. Patch and thread excerpts retain explicit byte-budget markers. Only
 thread IDs actually included in the bounded prompt receive content-version
 bindings and may be authorized; omitted findings remain actionable.
 

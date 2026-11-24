@@ -491,7 +491,8 @@ class GithubClient
       files = comparison.files
       # GitHub only returns up to 300 changed files, even with pagination:
       # https://docs.github.com/en/rest/commits/commits#compare-two-commits
-      if !files.is_a?(Array) || files.size > max_files || files.size >= COMPARE_FILE_LIMIT
+      if !files.is_a?(Array) || files.size > max_files || files.size >= COMPARE_FILE_LIMIT ||
+          !files.all? { |file| complete_comparison_file?(file) }
         raise IncompleteComparisonError, "GitHub comparison file evidence is incomplete"
       end
 
@@ -2430,6 +2431,18 @@ class GithubClient
         message: commit.commit&.message.to_s
       }
     end
+  end
+
+  def complete_comparison_file?(file)
+    return false unless file.respond_to?(:to_h) && !file.is_a?(Array)
+
+    metadata = file.to_h.symbolize_keys
+    return false unless %i[filename status sha].all? { |key| metadata[key].is_a?(String) && metadata[key].present? }
+    return false unless metadata[:sha].match?(/\A[0-9a-f]{40}\z/i)
+    return false unless %i[additions deletions changes].all? { |key| metadata[key].is_a?(Integer) && metadata[key] >= 0 }
+    return true unless %w[renamed copied].include?(metadata[:status])
+
+    metadata[:previous_filename].is_a?(String) && metadata[:previous_filename].present?
   end
 
   # Blob SHAs and rename provenance ride along so downstream consumers can

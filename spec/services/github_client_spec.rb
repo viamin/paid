@@ -2200,6 +2200,46 @@ RSpec.describe GithubClient do
   describe "#detailed_compare_files" do
     let(:repo) { "owner/repo" }
 
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            files: [
+              { filename: "app/models/provider.rb", sha: "b" * 40, status: "modified",
+                additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+
+    {
+      filename: { filename: nil }, status: { status: nil }, blob: { sha: nil },
+      counts: { additions: "3" }, rename: { status: "renamed", previous_filename: nil }
+    }.each do |field, invalid|
+      it "refuses malformed comparison file metadata for #{field}" do
+        metadata = { filename: "app/models/provider.rb", status: "modified", sha: "b" * 40,
+          additions: 3, deletions: 1, changes: 4, patch: "+fixed" }.merge(invalid)
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456") }
+          .to raise_error(GithubClient::IncompleteComparisonError)
+      end
+    end
+
+    it "refuses malformed comparison file metadata for a non-object entry" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ nil ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect { client.detailed_compare_files(repo, "base123", "head456") }
+        .to raise_error(GithubClient::IncompleteComparisonError)
+    end
+
     [ [ 101, 100 ], [ 300, 500 ] ].each do |file_count, limit|
       it "refuses incomplete comparison evidence at #{file_count} files with limit #{limit}" do
         files = file_count.times.map { |index| { filename: "file_#{index}.rb", status: "modified", patch: "+fixed" } }
@@ -2211,22 +2251,10 @@ RSpec.describe GithubClient do
       end
     end
 
-    before do
-      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
-        .to_return(
-          status: 200,
-          body: {
-            files: [
-              { filename: "app/models/provider.rb", status: "modified", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
-            ]
-          }.to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
-    end
 
     it "returns detailed file metadata bound to the immutable commit range" do
       expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([
-        { filename: "app/models/provider.rb", previous_filename: "", sha: "", status: "modified",
+        { filename: "app/models/provider.rb", previous_filename: "", sha: "b" * 40, status: "modified",
           additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
       ])
     end
@@ -2239,6 +2267,17 @@ RSpec.describe GithubClient do
           headers: { "Content-Type" => "application/json" })
 
       expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([ metadata ])
+    end
+
+    it "accepts complete binary-file metadata without a textual patch" do
+      metadata = { filename: "image.png", sha: "b" * 40, status: "modified",
+        additions: 0, deletions: 0, changes: 0 }
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect(client.detailed_compare_files(repo, "base123", "head456"))
+        .to eq([ metadata.merge(previous_filename: "", patch: "") ])
     end
 
     it "refuses to return a partial comparison at max_files" do

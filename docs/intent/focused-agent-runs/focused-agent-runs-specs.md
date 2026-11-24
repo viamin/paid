@@ -153,7 +153,10 @@
   concurrently changed, over-budget, or no-op assessment cannot resolve it.
   Immutable comparison file lists SHALL be complete within their configured
   limit; a local cutoff or an unprovable upstream file-list limit SHALL refuse
-  assessment. A thread omitted from the bounded prompt SHALL NOT be authorized.
+  assessment. Required per-file path, status, blob identity, change counts and
+  rename provenance SHALL be structurally valid before model authorization;
+  binary metadata does not require a textual patch. A thread omitted from the
+  bounded prompt SHALL NOT be authorized.
   This does not prohibit a supported no-code disposition such as invalid,
   outdated, or already-fixed feedback.
   *Code:* `AgentExecutionWorkflow#execute`,
