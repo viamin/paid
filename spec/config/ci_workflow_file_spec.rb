@@ -312,6 +312,9 @@ RSpec.describe CiWorkflowFile, :no_db do
       expect(run).to include(
         "bash -lc 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 4 --network-timeout 300000 && bin/yarn-postinstall'"
       )
+      expect(run).to match(
+        /"JavaScript dependency install timed out or failed" \\\n+\s+bash -lc/
+      )
     end
   end
 
