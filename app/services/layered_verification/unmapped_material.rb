@@ -33,6 +33,7 @@ module LayeredVerification
     TRUNCATED_SCOPE = "Structural and semantic discovery inspected only the first 100 tracked files " \
       "in the declared scope."
     TRUNCATED_MATERIAL = "Discovery recorded only the first 100 unmapped material references."
+    TRUNCATED_SEMANTIC_FILES = "Semantic read-through inspected only the first 10 referenced files."
     TRUNCATED_CONTENT = "Semantic read-through file content was truncated at the 20,000-byte evidence bound."
 
     def self.call(...) = new(...).call
@@ -142,6 +143,7 @@ module LayeredVerification
       limitations << UNINSPECTED_SCOPE unless inspected == scope_references.size
       limitations << TRUNCATED_SCOPE if @scope_truncated
       limitations << TRUNCATED_MATERIAL if @material_truncated
+      limitations << TRUNCATED_SEMANTIC_FILES if @semantic_files_truncated
       limitations << TRUNCATED_CONTENT if @content_truncated
       limitations
     end
@@ -174,7 +176,9 @@ module LayeredVerification
     end
 
     def referenced_files(files)
-      files.select { |path| referenced_paths.include?(path) }.first(SEMANTIC_FILE_LIMIT)
+      referenced = files.select { |path| referenced_paths.include?(path) }
+      @semantic_files_truncated = referenced.size > SEMANTIC_FILE_LIMIT
+      referenced.first(SEMANTIC_FILE_LIMIT)
     end
 
     def append_file_evidence(evidence, path)

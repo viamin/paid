@@ -8,6 +8,11 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
       def success? = true
     end
   end
+  let(:dependencies) do
+    { "environment" => { "immutable" => true, "digest" => "sha256:runtime" },
+      "producer_versions" => { "paid" => "1.2.3" },
+      "tool_versions" => { "tlc_runtime_image_digest" => "sha256:runtime" } }
+  end
 
   def stub_discovery(audit:, scope_output: "", semantic_unmapped: [], scope_directories: [ "docs/intent/payments" ])
     allow(audit).to receive(:execute_in_execution_environment).with(
@@ -146,9 +151,10 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     obligation = create(:layered_verification_obligation, external_revision: "intent123")
     prior_run = create(:agent_run, goal: "layered_verification_audit", status: "completed", project: obligation.project)
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
-      execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space")
+      execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space",
+      input_revision: { "code" => "code123", "external_revision" => "intent123", "dependencies" => dependencies })
     audit = formal_audit(obligation,
-      "dependencies" => { "environment" => "isolated_execution_environment" },
+      "dependencies" => dependencies,
       "input_revisions" => { obligation.id.to_s => "intent123" },
       "impact" => { "reused_check_result_ids" => [ prior.id ] })
     stub_discovery(audit:)

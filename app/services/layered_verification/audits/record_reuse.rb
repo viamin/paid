@@ -20,11 +20,13 @@ module LayeredVerification
       end
 
       def call
-        reused = reusable_result
-        return unless reused
+        obligation.with_lock do
+          reused = reusable_result
+          return unless reused && reusable_now?(reused)
 
-        LayeredVerificationCheckResult.create!(result_attributes(reused))
-        true
+          LayeredVerificationCheckResult.create!(result_attributes(reused))
+          true
+        end
       end
 
       private
@@ -42,6 +44,13 @@ module LayeredVerification
 
       def recorded_for_this_run?
         LayeredVerificationCheckResult.where(agent_run:, obligation:, producer: PRODUCER).exists?
+      end
+
+      def reusable_now?(result)
+        return false unless metadata.fetch("input_revisions").fetch(obligation.id.to_s) == obligation.external_revision
+
+        Invalidation.new(obligations: [], target_revision: metadata["target_revision"],
+          dependencies: metadata.fetch("dependencies", {})).reusable?(result)
       end
 
       def result_attributes(reused)

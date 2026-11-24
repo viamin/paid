@@ -134,6 +134,28 @@ RSpec.describe LayeredVerification::UnmappedMaterial do
     expect(discovery.limitations).to include(a_string_matching(/file content was truncated/i))
   end
 
+  # @spec LAYERED-VERIFY-009
+  it "discloses when referenced files exceed the semantic read-through bound" do
+    project = create(:project)
+    obligation = scoped_obligation(project:)
+    10.times do |index|
+      obligation.correspondence_claims.create!(
+        claim_type: "business_to_model", source_reference: "docs/intent/payments/clause-#{index}.md",
+        target_reference: "app/models/payment.rb", abstraction_boundaries: "Text maps to API surface.",
+        assumptions: "Single-currency checkout."
+      )
+    end
+    run = create(:agent_run, goal: "layered_verification_audit")
+    files = obligation.correspondence_claims.pluck(:source_reference).map { |reference| reference.split("#").first }.uniq
+
+    discovery = described_class.call(obligation:, agent_run: run,
+      command_runner: command_runner(scope_output: files.join("\n"), cat_output: "bounded evidence"),
+      llm: semantic_llm("unmapped" => []))
+
+    expect(files.size).to eq(11)
+    expect(discovery.limitations).to include(a_string_matching(/first 10 referenced files/i))
+  end
+
   it "keeps structural findings and discloses a limitation when the semantic read-through fails or returns invalid JSON" do
     project = create(:project)
     obligation = scoped_obligation(project:)

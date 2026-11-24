@@ -3,12 +3,18 @@
 require "rails_helper"
 
 RSpec.describe LayeredVerification::Audits::RecordReuse do
+  let(:dependencies) do
+    { "environment" => { "immutable" => true, "digest" => "sha256:runtime" },
+      "producer_versions" => { "paid" => "1.2.3" },
+      "tool_versions" => { "tlc_runtime_image_digest" => "sha256:runtime" } }
+  end
+
   def audit_with_impact(project:, obligation:, reused_ids:)
     create(:agent_run, issue: nil, project:, goal: "layered_verification_audit",
       external_metadata: { "layered_verification" => {
         "obligation_ids" => [ obligation.id ], "target_revision" => "code-v2",
         "input_revisions" => { obligation.id.to_s => obligation.external_revision },
-        "dependencies" => { "environment" => "isolated_execution_environment" },
+        "dependencies" => dependencies,
         "impact" => { "reused_check_result_ids" => reused_ids }
       } })
   end
@@ -19,9 +25,9 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
     prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
     prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
-      execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space")
+      execution_state: "completed", obligation_coverage: "supported", limitations: "bounded state space",
+      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
-    obligation.update!(external_revision: "intent-v3")
 
     expect(described_class.call(obligation:, agent_run: audit, metadata: audit.external_metadata.fetch("layered_verification"))).to be(true)
 
@@ -31,6 +37,21 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     expect(carried.recorder_verified).to eq("reused_result_id" => prior.id)
     expect(carried.input_revision).to include("code" => "code-v2", "external_revision" => "intent-v2")
     expect(carried.limitations).to include("Reuses check result ##{prior.id}")
+  end
+
+  # @spec LAYERED-VERIFY-019
+  it "does not carry prior coverage forward when the obligation changes after admission" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project:, external_revision: "intent-v2")
+    prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
+    prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run,
+      input_revision: { "code" => "code-v2", "external_revision" => "intent-v2", "dependencies" => dependencies })
+    audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
+    obligation.update!(external_revision: "intent-v3")
+
+    expect(described_class.call(obligation:, agent_run: audit,
+      metadata: audit.external_metadata.fetch("layered_verification"))).to be_nil
+    expect(obligation.check_results.where(agent_run: audit)).to be_empty
   end
 
   it "does not reuse when the admission impact marks nothing reusable" do
@@ -46,7 +67,9 @@ RSpec.describe LayeredVerification::Audits::RecordReuse do
     project = create(:project)
     obligation = create(:layered_verification_obligation, project:)
     prior_run = create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "completed")
-    prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run)
+    prior = create(:layered_verification_check_result, obligation:, agent_run: prior_run, input_revision: {
+      "code" => "code-v2", "external_revision" => obligation.external_revision, "dependencies" => dependencies
+    })
     audit = audit_with_impact(project:, obligation:, reused_ids: [ prior.id ])
     metadata = audit.external_metadata.fetch("layered_verification")
     described_class.call(obligation:, agent_run: audit, metadata:)

@@ -21,19 +21,19 @@ module LayeredVerification
       Impact.new(reusable.map(&:id), invalidated.map(&:id), limitations(invalidated))
     end
 
+    def reusable?(result)
+      revision = result.input_revision.to_h.deep_stringify_keys
+      complete_dependency_basis?(revision) && revision["code"] == target_revision &&
+        revision["external_revision"] == result.obligation.external_revision &&
+        revision.fetch("dependencies") == dependencies
+    end
+
     private
 
     attr_reader :dependencies, :obligations, :target_revision
 
     def results
       LayeredVerificationCheckResult.where(obligation: obligations).includes(:obligation).order(:id).to_a
-    end
-
-    def reusable?(result)
-      revision = result.input_revision.to_h.deep_stringify_keys
-      complete_dependency_basis?(revision) && revision["code"] == target_revision &&
-        revision["external_revision"] == result.obligation.external_revision &&
-        revision.fetch("dependencies") == dependencies
     end
 
     def complete_dependency_basis?(revision)
