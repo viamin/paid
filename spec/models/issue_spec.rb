@@ -3024,5 +3024,19 @@ RSpec.describe Issue do
 
       expect(issue.auto_pick_create_pr_admission_hold).to be_nil
     end
+
+    # @spec EAGER-QUEUE-018
+    it "stops at a newer partial-closeout re-audit with recorded gaps" do
+      issue = create(:issue)
+      create(:agent_run, :failed, project: issue.project, issue:, goal: "create_pr",
+        trigger_type: "manual", auto_pick: false, result_commit_sha: "a" * 40,
+        created_at: 2.hours.ago)
+      create(:agent_run, :failed, project: issue.project, issue:, goal: "create_pr",
+        pull_request_number: 42,
+        reconciliation: { "status" => "retryable_failure", "assessment" => { "gaps" => [ "coverage" ] } },
+        created_at: 1.hour.ago)
+
+      expect(issue.auto_pick_create_pr_admission_hold).to be_nil
+    end
   end
 end

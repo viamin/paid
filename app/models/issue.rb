@@ -1523,7 +1523,12 @@ class Issue < ApplicationRecord
   # +auto_pick+. Rate-limit recovery remains owned by automatic producers.
   # @spec EAGER-QUEUE-018 AGENT-RETRY-017
   def auto_pick_create_pr_admission_hold
-    failed_create_pr_runs.find { |run| admission_hold?(run) }
+    failed_create_pr_runs.each do |run|
+      return if retry_window_cleared_for?(run) || run.partial_closeout_reaudit_failure?
+      return run if admission_hold?(run)
+    end
+
+    nil
   end
 
   # @spec EAGER-QUEUE-010
@@ -1558,9 +1563,6 @@ class Issue < ApplicationRecord
   end
 
   def admission_hold?(run)
-    return false if retry_window_cleared_for?(run)
-    return false if run.partial_closeout_reaudit_failure?
-
     run.implementation_work_produced? || (run.auto_pick? && run.recoverable_rate_limited?)
   end
 
