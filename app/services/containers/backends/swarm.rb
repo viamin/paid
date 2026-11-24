@@ -500,6 +500,8 @@ module Containers
         return nil if container_id.blank? || node.blank?
 
         Docker::Container.get(container_id, {}, node_connection(node, deadline: remaining_time(deadline_at))).json
+      rescue Docker::Error::TimeoutError
+        raise
       rescue Docker::Error::DockerError
         nil
       end
@@ -586,7 +588,8 @@ module Containers
       end
 
       def node_connection(node, deadline: nil)
-        options = deadline ? connection_options.merge(timeout: deadline) : connection_options
+        options = deadline ? connection_options.merge(timeout: deadline, read_timeout: deadline,
+          connect_timeout: deadline, write_timeout: deadline, retry_limit: 0) : connection_options
         Docker::Connection.new(node_url(node), options)
       end
 
@@ -692,7 +695,7 @@ module Containers
         timeout = remaining_time(deadline_at)
         return manager_connection unless timeout
 
-        Docker::Connection.new(manager_connection.url, manager_connection.options.merge(timeout: timeout))
+        Docker::Connection.new(manager_connection.url, manager_connection.options.merge(timeout:, retry_limit: 0))
       end
 
       def swarm_network_config(config)

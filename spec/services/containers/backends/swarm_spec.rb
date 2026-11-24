@@ -304,6 +304,32 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
       hash_including(timeout: be_between(0, 4.0))).at_least(:twice)
   end
 
+  # @spec LLM-ROUTING-013
+  it "disables node transport retries while refreshing deadline-bound metadata" do
+    allow(Docker::Connection).to receive(:new).and_call_original
+    service = backend.get_container(service_id)
+
+    backend.start_container(service, deadline: 3.0)
+
+    expect(Docker::Connection).to have_received(:new).with(worker_url,
+      hash_including(
+        timeout: be_between(0, 3.0),
+        read_timeout: be_between(0, 3.0),
+        connect_timeout: be_between(0, 3.0),
+        write_timeout: be_between(0, 3.0),
+        retry_limit: 0
+      )).at_least(:once)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not treat a timed-out metadata refresh as successful startup" do
+    service = backend.get_container(service_id)
+    allow(Docker::Container).to receive(:get).and_raise(Docker::Error::TimeoutError, "deadline reached")
+
+    expect { backend.start_container(service, deadline: 3.0) }
+      .to raise_error(Docker::Error::TimeoutError, "deadline reached")
+  end
+
   it "waits for a runnable task before returning from start_container" do
     pending_task = task_payload.deep_dup
     pending_task["Status"] = { "State" => "pending", "ContainerStatus" => {} }
