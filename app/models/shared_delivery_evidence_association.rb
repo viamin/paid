@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec PARTIAL-CLOSEOUT-060
+# @spec PARTIAL-CLOSEOUT-063
 class SharedDeliveryEvidenceAssociation < ApplicationRecord
   def self.canonical_url_for(pull_request)
     repository = if pull_request.source == Issue::UPSTREAM_PULL_REQUEST_SOURCE

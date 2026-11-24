@@ -629,7 +629,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
-    # @spec PARTIAL-CLOSEOUT-060
+    # @spec PARTIAL-CLOSEOUT-063
     it "suppresses replacement coding for current shared delivery evidence" do
       issue = create(:issue, project:, paid_state: "completed")
       pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,
@@ -642,7 +642,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
     end
 
-    # @spec PARTIAL-CLOSEOUT-060
+    # @spec PARTIAL-CLOSEOUT-063
     it "permits replacement coding when shared delivery evidence is reopened" do
       issue = create(:issue, project:, paid_state: "completed")
       pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,
@@ -655,7 +655,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
     end
 
-    # @spec PARTIAL-CLOSEOUT-060
+    # @spec PARTIAL-CLOSEOUT-063
     it "fails open to replacement coding for legacy evidence with a wrong repository URL" do
       issue = create(:issue, project:, paid_state: "completed")
       pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,

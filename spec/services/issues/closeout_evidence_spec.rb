@@ -66,7 +66,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(result.terminal_at).to be_present
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "accepts a current, authorized shared merged PR without reparenting it" do
     source = create(:issue, project:, github_state: "open")
     pr = merged_pr(project:, number: 5305, parent_issue_id: source.id, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
@@ -77,7 +77,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(described_class.call(issue).merged_prs.map(&:url)).to contain_exactly(pr.github_html_url)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "fails closed when a shared delivery PR revision changes" do
     pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
     Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
@@ -86,7 +86,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(described_class.call(issue).present?).to be(false)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "fails closed when a shared delivery PR is reopened" do
     pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
     Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
@@ -95,7 +95,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(described_class.call(issue).present?).to be(false)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "refuses to associate a reopened PR with a historical merged phase" do
     pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
     pr.update!(github_state: "open")
@@ -105,7 +105,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     }.to raise_error(ActiveRecord::RecordInvalid, /must be a merged pull request/)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "rejects a stored PR URL outside the pull request repository" do
     pr = merged_pr(project:, number: 5305,
       github_html_url: "https://github.com/other/repository/pull/5305", merged_commit_sha: "a" * 40)
@@ -115,7 +115,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     }.to raise_error(ActiveRecord::RecordInvalid, /canonical GitHub URL/)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "rejects an actor without project issue-management permission" do
     viewer = create(:user, :viewer, account:)
     pr = merged_pr(project:, number: 5305,
@@ -293,7 +293,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(after.pr_body_revision).not_to eq(before.pr_body_revision)
   end
 
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   it "tracks a replacement association pinned to a new merge revision" do
     pr = merged_pr(project:, number: 5305,
       github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40,

@@ -2,7 +2,7 @@
 
 module Issues
   # Records a deliberate operator authorization without changing the PR's true parent.
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   class AssociateSharedDeliveryEvidence
     def self.call(...) = new(...).call
     def initialize(issue:, pull_request:, actor:) = (@issue = issue; @pull_request = pull_request; @actor = actor)
@@ -18,7 +18,7 @@ module Issues
     private
     attr_reader :actor, :issue, :pull_request
 
-    # PARTIAL-CLOSEOUT-060 admits associations only from open source issues;
+    # PARTIAL-CLOSEOUT-063 admits associations only from open source issues;
     # the guard runs under the issue lock so a concurrently closed target
     # cannot slip past admission.
     def assert_open_source_issue!

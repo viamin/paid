@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Tools
-  # @spec PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-063
   class ManageSharedDeliveryEvidence < BaseTool
     authorize :manage_issues?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
 

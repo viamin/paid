@@ -78,7 +78,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     end
   end
 
-  # @spec POSTGRESQL-PERSISTENCE-001 PARTIAL-CLOSEOUT-060
+  # @spec POSTGRESQL-PERSISTENCE-001 PARTIAL-CLOSEOUT-063
   it "forces tenant isolation for shared delivery evidence reads and writes" do
     evidence_b = described_class.with_system_access { create_shared_delivery_evidence(account_b) }
     evidence_a = described_class.with_system_access { create_shared_delivery_evidence(account_a) }
