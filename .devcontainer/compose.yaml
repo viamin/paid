@@ -58,7 +58,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     restart: unless-stopped
+    volumes:
+    - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -133,6 +136,7 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:
   # Agent CLI tool state (see rails-app service volumes above).
   agent-claude:
   agent-codex:

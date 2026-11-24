@@ -141,6 +141,26 @@ RSpec.describe Activities::MarkEscalatedActivity do
         allow(github_client).to receive(:add_labels_to_issue)
       end
 
+      # @spec PR-ESCALATION-028
+      it "rejects queued token and ready follow-up escalations after suspension is enabled" do
+        issue.project.update!(pr_escalation_limits_suspended_until: 1.week.from_now)
+        issue.update!(pr_review_phase: "ready")
+
+        %w[pr_auto_continue_token_limit failure_streak].each do |reason_key|
+          expect(activity.execute(issue_id: issue.id, reason_key: reason_key)).to include(updated: false)
+          expect(issue.reload.pr_review_phase).to eq("ready")
+        end
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      # @spec PR-ESCALATION-028
+      it "preserves draft escalation while ready follow-up limits are suspended" do
+        issue.project.update!(pr_escalation_limits_suspended_until: 1.week.from_now)
+
+        expect(activity.execute(issue_id: issue.id, reason_key: "failure_streak")).to include(updated: true)
+        expect(issue.reload.pr_review_phase).to eq("escalated")
+      end
+
       it "updates pr_review_phase to escalated" do
         activity.execute(issue_id: issue.id)
 
