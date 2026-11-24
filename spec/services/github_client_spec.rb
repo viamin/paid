@@ -1821,6 +1821,44 @@ RSpec.describe GithubClient do
           .to raise_error(GithubClient::IncompleteTreeError, /omitted its original comment/)
       end
 
+      # @spec FOCUSED-RUN-011
+      it "fails closed when comment pagination repeats a cursor" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        pagination = stub_repeated_review_thread_cursor(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /repeated cursor/)
+        expect(pagination).to have_been_requested.twice
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed when complete thread evidence exceeds the finite comment budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_oversized_review_thread_page(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /evidence budget/)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed without issuing a request beyond the page budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        pagination = stub_review_thread_pages_to_limit(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /page budget/)
+        expect(pagination).to have_been_requested.times(GithubClient::REVIEW_THREAD_MAX_PAGES)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed when serialized thread evidence exceeds the byte budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_oversized_review_thread_body(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /evidence budget/)
+      end
+
       def stub_long_thread_response(api_base, first_comments:)
         stub_request(:post, "#{api_base}/graphql").to_return(
           status: 200,
@@ -1844,6 +1882,68 @@ RSpec.describe GithubClient do
             status: 200,
             body: { data: { node: { comments: {
               nodes: comments,
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      def stub_repeated_review_thread_cursor(api_base)
+        page = lambda do |cursor|
+          {
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "comment_#{cursor}", body: "Context" } ],
+              pageInfo: { hasNextPage: true, endCursor: "same-cursor" }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        end
+
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(page.call("first"), page.call("second"))
+      end
+
+      def stub_oversized_review_thread_page(api_base)
+        comments = Array.new(GithubClient::REVIEW_THREAD_MAX_COMMENTS + 1) do |index|
+          { id: "comment_#{index}", body: "Context" }
+        end
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: comments,
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      def stub_review_thread_pages_to_limit(api_base)
+        pages = Array.new(GithubClient::REVIEW_THREAD_MAX_PAGES) do |index|
+          {
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "comment_#{index}", body: "Context" } ],
+              pageInfo: { hasNextPage: true, endCursor: "cursor_#{index}" }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        end
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(*pages)
+      end
+
+      def stub_oversized_review_thread_body(api_base)
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "original", body: "x" * (GithubClient::REVIEW_THREAD_MAX_BYTES + 1) } ],
               pageInfo: { hasNextPage: false, endCursor: nil }
             } } } }.to_json,
             headers: { "Content-Type" => "application/json" }

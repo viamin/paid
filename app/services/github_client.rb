@@ -33,6 +33,9 @@ class GithubClient
   ACTIONS_LOG_TOTAL_TIMEOUT = 30
   MAX_ACTIONS_LOG_BYTES = 5.megabytes
   ACTIONS_LOG_BLOB_HOST_SUFFIX = ".blob.core.windows.net"
+  REVIEW_THREAD_MAX_PAGES = 10
+  REVIEW_THREAD_MAX_COMMENTS = 1_000
+  REVIEW_THREAD_MAX_BYTES = 2.megabytes
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -1518,18 +1521,33 @@ class GithubClient
 
     comments = []
     after = nil
+    cursors = {}
+    page_count = 0
+    evidence_bytes = 0
     loop do
+      raise IncompleteTreeError, "review thread #{thread_id} exceeded its page budget" if page_count >= REVIEW_THREAD_MAX_PAGES
+
       data = graphql_request(query, threadId: thread_id, after:)
+      page_count += 1
       raise_graphql_errors(data, context: "fetching comments for review thread #{thread_id}")
       connection = data.dig("data", "node", "comments")
       raise IncompleteTreeError, "review thread #{thread_id} was unavailable" unless connection
 
-      comments.concat(connection["nodes"] || [])
+      nodes = connection["nodes"] || []
+      evidence_bytes += JSON.generate(nodes).bytesize
+      comments.concat(nodes)
+      if comments.size > REVIEW_THREAD_MAX_COMMENTS || evidence_bytes > REVIEW_THREAD_MAX_BYTES
+        raise IncompleteTreeError, "review thread #{thread_id} exceeded its evidence budget"
+      end
+
       page_info = connection["pageInfo"] || {}
       break unless page_info["hasNextPage"]
 
       after = page_info["endCursor"]
-      raise ApiError, "review thread #{thread_id} pagination returned no cursor" if after.blank?
+      raise IncompleteTreeError, "review thread #{thread_id} pagination returned no cursor" if after.blank?
+      raise IncompleteTreeError, "review thread #{thread_id} pagination repeated cursor" if cursors.key?(after)
+
+      cursors[after] = true
     end
     comments.uniq { |comment| comment["id"] }
   end
