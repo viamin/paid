@@ -64,7 +64,7 @@ to that same pool: an idle unrelated pool cannot make occupied or excluded
 work look stalled, and another pool's completions cannot hide a stalled pool.
 The progress window resets when the pool has no eligible waiting work or no
 available thread. When eligible work continuously waits for an available
-thread in its pool without a bounded progress update, or when the GoodJob process heartbeat is stale, the
+thread in its pool without a bounded GoodJob dispatch or completion update, or when the GoodJob process heartbeat is stale, the
 worker withdraws readiness and requests GoodJob's graceful shutdown.  This
 preserves active execution ownership during the configured drain window; a
 replacement must let GoodJob's normal ownership and expiry mechanisms decide

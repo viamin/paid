@@ -47,6 +47,20 @@ RSpec.describe Paid::GoodJobWorker do
       expect(result.reason).to eq(:stalled_queue_progress)
     end
 
+    it "treats a GoodJob dispatch as progress before the execution completes" do
+      monitor = described_class.new(now: -> { now }, progress_timeout: 30)
+      waiting = process[:schedulers].first.merge(runnable_jobs: 1, execution_at: now - 60)
+      before = snapshot.merge(process: process.merge(schedulers: [ waiting ]), runnable_jobs: 1)
+      after_dispatch = before.merge(process: process.merge(schedulers: [ waiting.merge(execution_at: now + 15) ]))
+
+      expect(monitor.observe(before)).to be_healthy
+      expect(monitor.observe(after_dispatch, now: now + 31)).to be_healthy
+      expect(monitor.observe(after_dispatch, now: now + 62)).to have_attributes(
+        degraded?: true,
+        reason: :stalled_queue_progress
+      )
+    end
+
     it "keeps mixed scheduler pools healthy when only an occupied pool has waiting work" do
       monitor = described_class.new(now: -> { now }, progress_timeout: 30)
       occupied = { queues: "shadow_evaluation", active_threads: 1, available_threads: 0, runnable_jobs: 1 }
