@@ -28,6 +28,7 @@ RSpec.describe Tools::Registry do
       request_acceptance_audit
       request_layered_verification_audit
       reassess_conflict_repair_scope
+      manage_shared_delivery_evidence
       approve_layered_verification_review_package
       start_cycle_analysis
       repair_cycle_analysis

@@ -4,6 +4,18 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-063** — When an authorized operator records a durable shared-delivery association from an open source issue to one same-account, same-project merged pull request, Paid SHALL bind the association to that pull request's canonical URL and immutable merged revision without changing its original parent or producer history. Only while that exact PR remains merged at that revision and the association is unrevoked SHALL `Issues::CloseoutEvidence` admit it as terminal delivery evidence and the eager queue suppress replacement implementation work; a changed, revoked, unmerged, cross-project, or otherwise mismatched association SHALL fail closed. SQL admission SHALL bind both referenced issue rows to the association project, including same-account cross-project attempts; freshness and evidence consumption SHALL independently reject legacy project mismatches. The association SHALL admit only the ordinary, bounded report-only acceptance-audit path; it SHALL not satisfy acceptance criteria, bypass closure gates, or infer authority from dependencies or issue text.
+  *Code:* `app/mcp/tools/manage_shared_delivery_evidence.rb`,
+  `app/models/shared_delivery_evidence_association.rb`,
+  `app/services/issues/associate_shared_delivery_evidence.rb`,
+  `app/services/issues/closeout_evidence.rb`.
+  *Test:* `spec/models/shared_delivery_evidence_association_spec.rb`,
+  `spec/mcp/tools/manage_shared_delivery_evidence_spec.rb`,
+  `spec/services/issues/request_acceptance_audit_shared_delivery_evidence_spec.rb`,
+  `spec/services/issues/closeout_evidence_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/security/tenant_context_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
   attempt under one logical audit identity — the issue plus the closeout-evidence
   source revision — fails transiently because transport or infrastructure was
