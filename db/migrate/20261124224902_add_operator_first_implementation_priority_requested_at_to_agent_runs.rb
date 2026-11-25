@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # @spec QUEUE-TIER-010
 class AddOperatorFirstImplementationPriorityRequestedAtToAgentRuns < ActiveRecord::Migration[8.1]
   def change
