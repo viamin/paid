@@ -99,3 +99,21 @@
   worker, or pin state.
   *Tests:* `spec/tasks/sdk_build_environment_preflight_rake_spec.rb`.
   *Code:* `lib/tasks/sdk_build_environment.rake`.
+
+- [x] **RUST-SDK-BUILD-012** — When the metadata probe's disposable
+  container requirements are handed to a backend, every isolation
+  requirement SHALL be enforced by that backend or rejected before the
+  container starts: read-only root filesystem and direct CPU limits
+  expressed in Engine `HostConfig` form SHALL survive the Swarm
+  service-spec translation, and a backend that cannot enforce a
+  network-disabled container (the Swarm service API has no equivalent —
+  a service with no network attachments lands its task on the node's
+  default bridge network) SHALL be refused before any probe container is
+  created, the receipt recording the refusal as a probe failure naming
+  the backend, and the Swarm translation SHALL raise a named error for
+  configs requesting `NetworkDisabled` instead of silently dropping it.
+  *Tests:* `spec/services/sdk_build_environments/metadata_probe_spec.rb`,
+  `spec/services/containers/backends/swarm_spec.rb`.
+  *Code:* `SdkBuildEnvironments::MetadataProbe`,
+  `Containers::Backends::Base#supports_network_disabled_containers?`,
+  `Containers::Backends::Swarm`.
