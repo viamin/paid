@@ -120,6 +120,35 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
       expect(facts[:toolchains].first[:interpreter_path]).to be_nil
     end
 
+    # @spec RUST-SDK-BUILD-010
+    it "returns unverifiable facts when Docker metadata collection fails" do
+      backend = backend_with(exec_stdout: successful_probe_output)
+      allow(backend).to receive(:system_info).and_raise(Docker::Error::DockerError.new("daemon unavailable"))
+
+      facts = described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
+
+      expect(facts).to include(
+        backend_identifier: "local",
+        engine_architecture: nil,
+        image: { reference: "rust:1.95.0-bookworm", id: nil, digest: nil, platform: nil },
+        process_architecture: nil,
+        toolchains: []
+      )
+      expect(facts[:probe_error]).to include("daemon unavailable")
+      expect(backend).not_to have_received(:create_container)
+    end
+
+    it "returns unverifiable facts when the selected image cannot be inspected" do
+      backend = backend_with(exec_stdout: successful_probe_output)
+      allow(backend).to receive(:get_image).and_raise(Docker::Error::DockerError.new("image not found"))
+
+      facts = described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
+
+      expect(facts[:probe_error]).to include("image not found")
+      expect(facts[:image]).to eq(reference: "rust:1.95.0-bookworm", id: nil, digest: nil, platform: nil)
+      expect(backend).not_to have_received(:create_container)
+    end
+
     it "hardens the disposable metadata container" do
       backend = backend_with(exec_stdout: script_output(uname: "aarch64", tools: []))
 
