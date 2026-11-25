@@ -23,6 +23,7 @@ require "uri"
 class GithubClient
   DEFAULT_CHECK_RUNS_PER_PAGE = 100
   DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  PULL_REQUEST_REVIEWS_MAX_PAGES = 10
   WORKFLOW_RUNS_PER_PAGE = 100
   RETRY_MAX = 3
   RETRY_INTERVAL = 0.5
@@ -79,6 +80,7 @@ class GithubClient
   # Raised when GitHub cannot provide a complete tree listing for an exact path lookup.
   class IncompleteTreeError < Error; end
 
+  class IncompleteReviewsError < Error; end
   class IncompleteComparisonError < Error; end
 
   COMPARE_FILE_LIMIT = 300
@@ -135,6 +137,7 @@ class GithubClient
     def add_labels_to_issue(...) = write_or_suppressed { __getobj__.add_labels_to_issue(...) }
     def remove_label_from_issue(...) = write_or_suppressed { __getobj__.remove_label_from_issue(...) }
     def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
+    def pull_request_reviews(...) = __getobj__.pull_request_reviews(...)
 
     # Issue creation is not itself a label write, so it must survive
     # suppression — but the create request's `labels:` argument adds labels
@@ -1168,9 +1171,34 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
+  # @raise [IncompleteReviewsError] if pagination cannot prove the listing complete
+  # @spec PROMPT-ASSEMBLY-026
   def pull_request_reviews(repo, number)
     handle_errors do
-      reviews = with_auto_paginate { client.pull_request_reviews(repo, number, per_page: 100) }
+      pages = 0
+      truncated = false
+      reviews = with_auto_paginate do
+        client.paginate("/repos/#{repo}/pulls/#{number}/reviews", per_page: 100) do |collected, response|
+          pages += 1
+          if pages + 1 >= PULL_REQUEST_REVIEWS_MAX_PAGES
+            truncated = response.rels[:next].present?
+            break collected.concat(Array(response.data))
+          end
+
+          collected.concat(Array(response.data))
+        end
+      end
+      last_response = client.last_response
+      if truncated || last_response.nil? || last_response.rels[:next].present?
+        Rails.logger.warn(
+          message: "github_client.pull_request_reviews_pagination_truncated",
+          repo: repo,
+          pr_number: number,
+          max_pages: PULL_REQUEST_REVIEWS_MAX_PAGES,
+          pages_observed: pages + 1
+        )
+        raise IncompleteReviewsError, "GitHub review listing is incomplete within its page or rate budget"
+      end
       reviews.map do |r|
         {
           id: r.id,

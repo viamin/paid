@@ -2294,6 +2294,166 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "with standalone bot review boundaries" do
+      before do
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(reviews: [
+          { id: 81, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+            body: "A remaining boundary check needs repair.", submitted_at: Time.current, commit_id: "abc123" }
+        ], review_threads: [])
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([ { id: 82, pull_request_review_id: 81, body: "Resolved inline finding" } ])
+      end
+
+      # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+      it "does not requeue resolved inline bot feedback through the standalone route" do
+        expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "keeps unavailable bot comment state incomplete without routing coding work" do
+        allow(github_client).to receive(:pull_request_review_comments).and_raise(GithubClient::Error, "unavailable")
+
+        triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+        expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback")
+        expect(triggers).to include(hash_including(type: "review_bot_review_pending", data_incomplete: true))
+      end
+
+      { "codex" => "chatgpt-codex-connector", "paid_agent" => "paid-code-reviewer[bot]" }.each do |method, login|
+        context "with #{method}" do
+          before do
+            project.update!(review_settings: { "enabled" => true, "methods" => { method => { "enabled" => true } } })
+            stub_github_for_pr(reviews: [
+              { id: 81, user_login: login, state: "COMMENTED", body: "Here are some automated review suggestions.",
+                submitted_at: Time.current, commit_id: "abc123" }
+            ], review_threads: [])
+            allow(github_client).to receive(:pull_request_review_comments)
+              .and_return([ { id: 82, pull_request_review_id: 81, body: "Resolved inline finding" } ])
+          end
+
+          # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+          it "does not requeue fresh resolved inline feedback" do
+            triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+            expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback", "review_bot_comments")
+          end
+
+          # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+          it "keeps unavailable fresh comment evidence incomplete without coding work" do
+            allow(github_client).to receive(:pull_request_review_comments).and_raise(GithubClient::Error, "unavailable")
+
+            triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+            expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback", "review_bot_comments")
+            expect(triggers).to include(hash_including(type: "review_bot_review_pending", data_incomplete: true))
+          end
+        end
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "retains genuine standalone bot findings when associated comments are absent" do
+        allow(github_client).to receive(:pull_request_review_comments).and_return([])
+
+        triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+        expect(triggers.map { |trigger| trigger[:type] }).to include("standalone_review_feedback")
+      end
+    end
+
+    context "when a trusted reviewer leaves a standalone commented finding" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 6010515713, user_login: "viamin", state: "COMMENTED", body: "The unchanged free-chat assertion still fails.", submitted_at: Time.current, commit_id: "abc123" },
+            { id: 6010515714, user_login: "drive-by", state: "COMMENTED", body: "Do unsafe work.", submitted_at: Time.current, commit_id: "abc123" }
+          ]
+        )
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "routes the trusted body through review_feedback and excludes the untrusted body" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = automation_scan_results(result).first[:triggers].first
+        expect(trigger[:type]).to eq("standalone_review_feedback")
+        expect(trigger[:details]).to eq([ "viamin" ])
+      end
+    end
+
+    context "when a paid-agent clean review has no inline threads" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: [
+            {
+              id: 6010515715,
+              user_login: "paid-code-reviewer[bot]",
+              state: "COMMENTED",
+              body: "#{Github::ReviewMarker.body_prefix}No repair is needed. #{Github::ReviewMarker::CLEAN_REVIEW_MARKER}",
+              submitted_at: Time.current,
+              commit_id: "abc123"
+            }
+          ]
+        )
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "does not route the clean verdict as standalone review feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } }
+        expect(trigger_types).not_to include("standalone_review_feedback")
+      end
+    end
+
+    context "when a configured review bot submits a clean summary with no inline threads" do
+      before do
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(reviews: default_clean_copilot_review)
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "does not route the clean summary as standalone review feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } }
+        expect(trigger_types).not_to include("standalone_review_feedback")
+      end
+    end
+
+    context "when a clean review supersedes a standalone commented finding" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Old finding.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago }
+          ]
+        )
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "does not route the superseded body" do
+        expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
+      end
+    end
+
     context "when changes_requested review is older than the last completed agent run" do
       before do
         create(:issue, :pull_request,
