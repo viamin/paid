@@ -97,6 +97,7 @@ module Containers
         pool_entry: entry,
         **options.slice(*RECONNECT_OPTIONS)
       )
+      service.materialize_claimed_runner_credentials!
       PoolReplenishmentJob.perform_later(project.id)
       record_runtime_image_selection(entry, agent_run)
       Provision::Result.success(

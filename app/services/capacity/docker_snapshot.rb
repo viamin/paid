@@ -25,6 +25,10 @@ module Capacity
       :usage_buckets,
       :available_memory_bytes,
       :agent_container_count,
+      :backing_storage_scope,
+      :backing_storage_available_bytes,
+      :backing_storage_observed_at,
+      :backing_storage_reason,
       :snapshot_at,
       :confidence,
       :degraded,
@@ -98,6 +102,10 @@ module Capacity
           usage_buckets: usage_buckets.transform_values(&:to_h),
           available_memory_bytes: available_memory_bytes,
           agent_container_count: agent_container_count,
+          backing_storage_scope: backing_storage_scope,
+          backing_storage_available_bytes: backing_storage_available_bytes,
+          backing_storage_observed_at: backing_storage_observed_at,
+          backing_storage_reason: backing_storage_reason,
           snapshot_at: snapshot_at,
           confidence: confidence,
           degraded: degraded,
@@ -105,7 +113,7 @@ module Capacity
         }
       end
 
-      def to_run_admission_h
+      def to_run_admission_h(now: Time.current)
         control_plane_memory_bytes = paid_control_plane_memory_bytes
         service_container_memory_bytes = paid_service_container_memory_bytes
         unrelated_container_memory_bytes = other_docker_memory_bytes
@@ -128,6 +136,11 @@ module Capacity
           backend_identifier: backend_identifier,
           docker_memory_bytes: docker_memory_bytes,
           agent_container_count: agent_container_count,
+          backing_storage_available: backing_storage_available?(now: now),
+          backing_storage_scope: backing_storage_scope,
+          backing_storage_available_bytes: backing_storage_available_bytes,
+          backing_storage_observed_at: backing_storage_observed_at,
+          backing_storage_reason: backing_storage_reason_for(now: now),
           agent_memory_bytes: agent_memory_bytes,
           paid_control_plane_memory_bytes: control_plane_memory_bytes,
           service_container_memory_bytes: service_container_memory_bytes,
@@ -141,10 +154,29 @@ module Capacity
           error_message: nil
         }
       end
+
+      def backing_storage_available?(now: Time.current)
+        backing_storage_scope.present? && DockerSnapshot.valid_backing_storage_available_bytes?(backing_storage_available_bytes) &&
+          backing_storage_fresh?(now: now)
+      end
+
+      def backing_storage_reason_for(now: Time.current)
+        return backing_storage_reason if backing_storage_reason.present?
+        return "backing_storage_measurement_invalid" unless DockerSnapshot.valid_backing_storage_available_bytes?(backing_storage_available_bytes)
+
+        "backing_storage_stale" unless backing_storage_available?(now: now)
+      end
+
+      def backing_storage_fresh?(now: Time.current)
+        backing_storage_observed_at.present? && backing_storage_observed_at >= now - DockerSnapshot::BACKING_STORAGE_STALE_AFTER
+      rescue ArgumentError, TypeError
+        false
+      end
     end
 
     CACHE_TTL = 15.seconds
     STALE_CACHE_TTL = 2.minutes
+    BACKING_STORAGE_STALE_AFTER = 30.seconds
     DOCKER_INFO_TIMEOUT = 2.seconds
     DOCKER_LIST_TIMEOUT = 2.seconds
     # Docker's non-streaming stats endpoint samples two CPU counters across
@@ -208,6 +240,10 @@ module Capacity
         usage_buckets: deserialize_buckets(fetch_value(data, :usage_buckets)),
         available_memory_bytes: fetch_value(data, :available_memory_bytes),
         agent_container_count: fetch_value(data, :agent_container_count),
+        backing_storage_scope: fetch_value(data, :backing_storage_scope),
+        backing_storage_available_bytes: fetch_value(data, :backing_storage_available_bytes),
+        backing_storage_observed_at: fetch_value(data, :backing_storage_observed_at),
+        backing_storage_reason: fetch_value(data, :backing_storage_reason),
         snapshot_at: fetch_value(data, :snapshot_at),
         confidence: fetch_value(data, :confidence),
         degraded: fetch_value(data, :degraded),
@@ -237,6 +273,10 @@ module Capacity
       default
     end
 
+    def self.valid_backing_storage_available_bytes?(value)
+      value.is_a?(Integer) && value >= 0
+    end
+
     def initialize(backend: Containers.backend, now: Time.current, cache: Rails.cache, force_refresh: false)
       @backend = backend
       @now = now
@@ -254,7 +294,7 @@ module Capacity
       snapshot
     rescue Timeout::Error, Docker::Error::DockerError, Excon::Error => e
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
-    rescue => e
+    rescue StandardError => e
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
     end
 
@@ -311,6 +351,7 @@ module Capacity
     def collect_snapshot
       inventory = docker_container_inventory
       system_info = docker_info
+      backing_storage = backing_storage_observation
       references = inventory.build_references
       buckets = deep_dup_buckets
       degraded_reasons = []
@@ -378,6 +419,10 @@ module Capacity
         usage_buckets: buckets,
         available_memory_bytes: available_memory_bytes,
         agent_container_count: buckets.fetch(:paid_agents).container_count,
+        backing_storage_scope: backing_storage[:scope],
+        backing_storage_available_bytes: backing_storage[:available_bytes],
+        backing_storage_observed_at: backing_storage[:observed_at],
+        backing_storage_reason: backing_storage[:reason],
         snapshot_at: now,
         confidence: confidence_for(degraded_reasons),
         degraded: degraded_reasons.any?,
@@ -387,6 +432,17 @@ module Capacity
 
     def docker_info
       with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
+    end
+
+    def backing_storage_observation
+      observation = backend.backing_storage_observation(now: now).symbolize_keys
+      return { reason: observation[:reason] } if observation[:reason].present?
+      return { reason: "backing_storage_unavailable" } unless observation[:scope].present? && observation[:observed_at].present?
+      return { reason: "backing_storage_measurement_invalid" } unless self.class.valid_backing_storage_available_bytes?(observation[:available_bytes])
+
+      observation.slice(:scope, :available_bytes, :observed_at)
+    rescue SystemCallError, IOError, Timeout::Error, Docker::Error::DockerError, Excon::Error
+      { reason: "backing_storage_unavailable" }
     end
 
     def container_list_drift_during_sampling(inventory, original_containers)
@@ -467,6 +523,10 @@ module Capacity
           usage_buckets: cached_snapshot.usage_buckets,
           available_memory_bytes: 0,
           agent_container_count: cached_snapshot.agent_container_count,
+          backing_storage_scope: cached_snapshot.backing_storage_scope,
+          backing_storage_available_bytes: cached_snapshot.backing_storage_available_bytes,
+          backing_storage_observed_at: cached_snapshot.backing_storage_observed_at,
+          backing_storage_reason: cached_snapshot.backing_storage_reason,
           snapshot_at: cached_snapshot.snapshot_at,
           confidence: 0.1,
           degraded: true,
@@ -482,6 +542,7 @@ module Capacity
           usage_buckets: deep_dup_buckets,
           available_memory_bytes: 0,
           agent_container_count: 0,
+          backing_storage_reason: "backing_storage_unavailable",
           snapshot_at: now,
           confidence: 0.0,
           degraded: true,

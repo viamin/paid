@@ -2327,7 +2327,7 @@ class GithubClient
 
   # Blob SHAs and rename provenance ride along so downstream consumers can
   # mechanically verify byte-identical imports without re-fetching diffs
-  # (@spec AUTO-MERGE-011).
+  # (@spec AUTO-MERGE-013).
   def compare_files_payload(files)
     files.map do |file|
       {

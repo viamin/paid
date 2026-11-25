@@ -115,6 +115,17 @@ module Runners
         end
       end
 
+      # Classifies the canonical managed credential that an isolated text
+      # container could use without attempting a refresh. This deliberately
+      # does not infer anything from a host smoke test or host-forwarded state.
+      # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+      def standalone_readiness(account:, runner_key:)
+        credential = credential_for(account:, runner_key:)
+        return readiness(credential, runner_key:) if credential
+
+        readiness(latest_credential(account:, runner_key:), runner_key:)
+      end
+
       def near_expiry?(credential, runner_key:)
         return false unless credential
 
@@ -258,6 +269,12 @@ module Runners
       def credential_scope(account:, runner_key:)
         account.runner_credentials.where(revoked_at: nil, auth_kind: "oauth_token").for_runner(runner_key)
           .order(created_at: :desc, id: :desc)
+      end
+
+      def latest_credential(account:, runner_key:)
+        credential_scope(account:, runner_key:).first ||
+          account.runner_credentials.where(auth_kind: "oauth_token").for_runner(runner_key)
+            .order(created_at: :desc, id: :desc).first
       end
 
       def parsed_secret(credential, runner_key:)

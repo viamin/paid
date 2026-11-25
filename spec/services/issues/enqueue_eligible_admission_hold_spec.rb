@@ -28,6 +28,16 @@ RSpec.describe Issues::EnqueueEligible do
       expect(AgentRun.where(issue:, goal: "create_pr")).to contain_exactly(producer)
     end
 
+    it "refuses replacement coding when a manual producer retains an unpublished result" do # @spec EAGER-QUEUE-018
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+        auto_pick: false, branch_name: "paid/5372-retained-unpublished-result",
+        unpublished_result_commit_sha: "b" * 40)
+
+      expect(described_class.call(issue, project:)).to be_nil
+      expect(AgentRun.where(issue:, goal: "create_pr")).to contain_exactly(producer)
+    end
+
     it "refuses a fresh implementation attempt after observable main-agent work" do
       issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
       failed_create_pr_run(issue: issue,

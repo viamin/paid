@@ -190,6 +190,27 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     end
   end
 
+  describe ".standalone_readiness" do
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+    it "reports refreshable canonical Codex auth without performing a refresh" do
+      create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 1.minute.ago)
+      stub_codex_harness_exchange(JSON.parse(valid_codex_auth))
+
+      expect(described_class).not_to receive(:refresh_if_near_expiry!)
+      expect(described_class.standalone_readiness(account:, runner_key: "codex")).to eq(:refreshable)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+    it "does not let an expired unusable credential shadow a fresh canonical credential" do
+      create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 1.hour.from_now)
+      missing_refresh = JSON.parse(valid_codex_auth).tap { |payload| payload["tokens"].delete("refresh_token") }
+      create_credential(runner_key: "codex", token: JSON.generate(missing_refresh), expires_at: 1.minute.ago)
+      stub_codex_harness_exchange(JSON.parse(valid_codex_auth))
+
+      expect(described_class.standalone_readiness(account:, runner_key: "codex")).to eq(:fresh)
+    end
+  end
+
   describe ".harvest" do
     let(:backend) { instance_double(Containers::Backends::LocalDocker) }
     let(:container) { instance_double(Docker::Container) }
