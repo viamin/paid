@@ -135,7 +135,8 @@
   system SHALL create at most one queued manual successor through the shared
   locked retry mechanism, retaining source, actor, runner, and bounded lineage
   without enabling unrelated discovery. It SHALL recheck source eligibility,
-  trust, dependencies, active ownership, policy, opt-out, and pauses. Partial
+  trust, dependencies, active ownership, policy, opt-out, pauses, and the
+  current hard-stop project cost budget. Partial
   work, changed source, active issue ownership (including a rate-limited sibling
   with any goal that can resume in place), duplicate delivery, or execution
   budget exhaustion SHALL refuse blind replacement. The final eligibility

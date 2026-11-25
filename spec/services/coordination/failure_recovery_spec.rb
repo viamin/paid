@@ -44,7 +44,7 @@ RSpec.describe Coordination::FailureRecovery do
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("retry")
         expect(decision.actor).to eq("coordination_failure_recovery")
-        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.context["decision_status"]).to eq("noop")
         expect(decision.inputs).to include(
           "failure_category" => "rate_limit",
           "chosen_action" => "retry_alternate_runner",
@@ -205,7 +205,7 @@ RSpec.describe Coordination::FailureRecovery do
 
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("retry")
-        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.context["decision_status"]).to eq("noop")
         expect(decision.inputs).to include(
           "failure_category" => "timeout",
           "agent_run_status" => "timeout"
@@ -307,7 +307,7 @@ RSpec.describe Coordination::FailureRecovery do
 
         decision = OrchestrationDecision.last
         expect(decision.decision_type).to eq("escalate")
-        expect(decision.context["decision_status"]).to eq("applied")
+        expect(decision.context["decision_status"]).to eq("noop")
         expect(decision.inputs).to include(
           "failure_category" => "timeout",
           "chosen_action" => "escalate_model",

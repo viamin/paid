@@ -228,6 +228,13 @@ decisions; the path's evidence-sufficiency decisions remain audit events on
 the partial-closeout reconciliation record, and the two record types stay
 distinct.
 
+`FailureClassification` is a recommendation record, not an execution claim.
+Its coordination decision uses `status: "noop"` while `action_status` remains
+`pending`; scheduling, locked claiming, completion, and refusal are recorded
+by the owning retry path as separate decisions. This preserves prior audit
+history without representing a classifier-only recommendation as an applied
+retry.
+
 ## Cancellation and side-effect safety
 
 A superseded attempt's terminal marking and the next attempt's creation

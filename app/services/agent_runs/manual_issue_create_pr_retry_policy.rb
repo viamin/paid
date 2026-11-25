@@ -24,6 +24,7 @@ module AgentRuns
       return Assessment.new(false, :implementation_work_produced, retry_number, nil) if agent_run.implementation_work_produced?
       return Assessment.new(false, :project_retry_disabled, retry_number, nil) unless agent_run.project.retry_failed_manual_runs?
       return Assessment.new(false, :project_or_issue_paused, retry_number, nil) if paused?(agent_run)
+      return Assessment.new(false, :cost_budget_exhausted, retry_number, nil) unless cost_budget_allows_recovery?(agent_run)
       return Assessment.new(false, :issue_not_eligible, retry_number, nil) unless issue_eligible?(agent_run)
 
       existing_run = existing_active_run_for(agent_run)
@@ -107,6 +108,10 @@ module AgentRuns
 
     def paused?(agent_run)
       agent_run.project.paused? || agent_run.project.quality_paused? || agent_run.issue.paused?
+    end
+
+    def cost_budget_allows_recovery?(agent_run)
+      CostBudgets::Check.call(agent_run.project).fetch(:allowed)
     end
 
     def issue_eligible?(agent_run)

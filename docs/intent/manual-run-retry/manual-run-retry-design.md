@@ -189,7 +189,7 @@ claim without calling `Issues::EnqueueEligible`, preserving the source issue,
 initiating actor, runner, and manual retry lineage without setting `auto_pick`
 or fabricating a new manual trigger. Claim-time eligibility rechecks the source
 issue, trust, dependencies, active owners, model/phase/privacy policy, retry
-opt-out, and project or issue pause.
+opt-out, project or issue pause, and the current hard-stop project cost budget.
 Active ownership covers every goal for the issue. A rate-limited sibling retains
 its slot while waiting to resume, even when its goal differs from `create_pr`.
 The successor claim rechecks eligibility under the existing issue row admission
