@@ -11,7 +11,7 @@ module Issues
   # rationale of DefaultCandidateSource#merged_pr_terminal_audit_at_by_issue_id:
   # later syncs bump PR `updated_at` and must not advance the evidence
   # generation.
-  # @spec PARTIAL-CLOSEOUT-001 PARTIAL-CLOSEOUT-047
+  # @spec PARTIAL-CLOSEOUT-001 PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-064
   class CloseoutEvidence
     ISSUE_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(issues.body, ''), 'UTF8')), 'hex')")
     MERGED_PR_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(merged_prs.body, ''), 'UTF8')), 'hex')")
@@ -189,9 +189,11 @@ module Issues
       SharedDeliveryEvidenceAssociation.where(issue_id: issue_ids, revoked_at: nil)
         .joins("INNER JOIN issues merged_prs ON merged_prs.id = shared_delivery_evidence_associations.pull_request_id")
         .joins("INNER JOIN issues target_issues ON target_issues.id = shared_delivery_evidence_associations.issue_id")
+        .joins("INNER JOIN users shared_delivery_authorizers ON shared_delivery_authorizers.id = shared_delivery_evidence_associations.authorized_by_id")
         .where("target_issues.project_id = shared_delivery_evidence_associations.project_id")
         .where("merged_prs.project_id = shared_delivery_evidence_associations.project_id")
         .where("projects.account_id = shared_delivery_evidence_associations.account_id")
+        .where("shared_delivery_authorizers.account_id = shared_delivery_evidence_associations.account_id")
         .where("merged_prs.is_pull_request = TRUE AND merged_prs.github_state = 'closed' AND merged_prs.pr_review_phase = 'merged'")
         .where("merged_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url")
         .where(<<~SQL.squish)

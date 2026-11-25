@@ -41,6 +41,13 @@ Audit visibility is part of that customer surface: recent activity is rendered
 in the UI and exportable as JSON so account owners/admins can inspect tenant
 history without operator access.
 
+Membership revocation may delete a user when that user has no membership in a
+successor account. Historical request, audit, run, and delivery-evidence rows
+therefore retain their immutable business lineage while their deleted actor
+reference becomes absent. Those historical rows are not a current authority:
+new work always authorizes its live actor and queued continuation work rechecks
+its ordinary evidence, tenant, policy, and freshness gates before execution.
+
 ## What this is not
 
 - **Not a shared operator/customer admin role.** Product account ownership does

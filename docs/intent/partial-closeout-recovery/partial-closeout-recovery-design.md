@@ -72,6 +72,16 @@ project, even when another project belongs to the same tenant. Model freshness
 and evidence consumption independently reject legacy project mismatches;
 model validation alone is not the persisted evidence boundary.
 
+The authorizer is required at association creation, but is historical
+attribution after genuine membership revocation deletes that user. The durable
+association keeps its account, project, issue, pull request, URL, revision, and
+revocation lineage; its actor reference becomes absent through the database
+foreign key. An absent authorizer is never current: closeout evidence and every
+subsequent audit admission fail closed while preserving the record for audit.
+The same distinction applies to continuation-request requester attribution:
+the request and run lineage remain inspectable, while current execution keeps
+using its existing evidence, pause, tenant, policy, and freshness rechecks.
+
 One value object computes the *closeout evidence* for an issue and a stable
 *outcome-generation digest*:
 

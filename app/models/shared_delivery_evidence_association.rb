@@ -15,7 +15,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   belongs_to :project
   belongs_to :issue
   belongs_to :pull_request, class_name: "Issue"
-  belongs_to :authorized_by, class_name: "User"
+  belongs_to :authorized_by, class_name: "User", optional: true
 
   validates :pull_request_url, :revision, presence: true
   validates :revision, format: { with: /\A[0-9a-f]{40}\z/i }
@@ -25,7 +25,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
 
   def current?
     [ issue, pull_request ].all? { |record| record.project_id == project_id } &&
-      project.account_id == account_id && authorized_by.account_id == account_id &&
+      project.account_id == account_id && authorized_by&.account_id == account_id &&
       revoked_at.nil? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged" &&
       pull_request.github_html_url == canonical_pull_request_url &&
       canonical_pull_request_url == pull_request_url && pull_request.merged_commit_sha == revision

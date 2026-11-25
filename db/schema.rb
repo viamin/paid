@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2693,7 +2693,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
     t.bigint "issue_id", null: false, comment: "The issue whose terminal evidence the request authorizes continuing past."
     t.bigint "project_id", null: false, comment: "Denormalized project for scoped admission queries; always matches issue.project_id."
     t.text "reason", null: false, comment: "Required operator/agent justification recorded with the authorization."
-    t.bigint "requested_by_id", null: false, comment: "Actor who requested the deliberate continuation."
+    t.bigint "requested_by_id", comment: "Actor who requested the deliberate continuation."
     t.string "status", default: "queued", null: false, comment: "queued (run in flight) / consumed (run terminal, guards re-armed) / superseded (authorization invalidated)."
     t.datetime "updated_at", null: false
     t.index ["issue_id"], name: "index_issue_continuation_requests_on_issue_id"
@@ -4580,7 +4580,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
 
   create_table "shared_delivery_evidence_associations", comment: "Operator-authorized, revision-bound use of a merged PR as delivery evidence for another issue.", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "authorized_by_id", null: false
+    t.bigint "authorized_by_id"
     t.datetime "created_at", null: false
     t.bigint "issue_id", null: false
     t.bigint "project_id", null: false
@@ -5637,7 +5637,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
   add_foreign_key "intent_conformance_verdicts", "projects"
   add_foreign_key "issue_continuation_requests", "issues"
   add_foreign_key "issue_continuation_requests", "projects"
-  add_foreign_key "issue_continuation_requests", "users", column: "requested_by_id"
+  add_foreign_key "issue_continuation_requests", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"
@@ -5812,7 +5812,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
   add_foreign_key "shared_delivery_evidence_associations", "issues"
   add_foreign_key "shared_delivery_evidence_associations", "issues", column: "pull_request_id"
   add_foreign_key "shared_delivery_evidence_associations", "projects"
-  add_foreign_key "shared_delivery_evidence_associations", "users", column: "authorized_by_id"
+  add_foreign_key "shared_delivery_evidence_associations", "users", column: "authorized_by_id", on_delete: :nullify
   add_foreign_key "staged_closeout_enrollments", "accounts"
   add_foreign_key "staged_closeout_enrollments", "projects"
   add_foreign_key "staged_closeout_enrollments", "users", column: "reviewed_by_id"
@@ -10652,9 +10652,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
   WHERE ((issues.id = shared_delivery_evidence_associations.issue_id) AND (issues.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
    FROM (issues pull_requests
      JOIN projects ON ((projects.id = pull_requests.project_id)))
-  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (pull_requests.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (pull_requests.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND ((authorized_by_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
-  WHERE ((users.id = shared_delivery_evidence_associations.authorized_by_id) AND (users.account_id = paid_current_account_id())))))));
+  WHERE ((users.id = shared_delivery_evidence_associations.authorized_by_id) AND (users.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL

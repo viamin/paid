@@ -191,11 +191,12 @@ module AgentRuns
         )
     end
 
-    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-051
+    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-051 PARTIAL-CLOSEOUT-064
     def recheck_continuation
       issue.reload
       request = agent_run.continuation_request
       return cancel_continuation("Continuation authorization is no longer open.") unless request&.open?
+      return cancel_continuation("Continuation requester no longer has execution authority.") unless continuation_requester_authorized?(request)
       if issue.closeout_closing?
         return cancel_continuation("Continuation superseded: GitHub closure is in progress.")
       end
@@ -222,6 +223,11 @@ module AgentRuns
       end
 
       Issues::CloseoutEvidence.call(issue).digest
+    end
+
+    def continuation_requester_authorized?(request)
+      requester = request.requested_by
+      requester && ProjectPolicy.new(requester, agent_run.project).run_agent?
     end
 
     def acceptance_audit_source_changed?(request)

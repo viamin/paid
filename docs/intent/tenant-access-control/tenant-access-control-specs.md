@@ -19,3 +19,13 @@
   allow viewer access only when the user also holds an explicit project role.
   *Tests:* `spec/policies/project_policy_spec.rb`.
   *Code:* `ProjectPolicy`, `ApplicationPolicy`.
+
+- [x] **TENANT-ACCESS-003** — When a deleted user's historical attribution is
+  retained after account-membership revocation, the authorization layer SHALL
+  treat the absent actor as no current authority. Queued work SHALL retain its
+  normal tenant, policy, evidence, and freshness rechecks, and historical
+  delivery evidence with an absent authorizer SHALL fail closed.
+  *Tests:* `spec/services/accounts/remove_membership_spec.rb`,
+  `spec/models/shared_delivery_evidence_association_spec.rb`.
+  *Code:* `AgentRuns::RecheckIssueEligibility`,
+  `SharedDeliveryEvidenceAssociation`.
