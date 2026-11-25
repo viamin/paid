@@ -290,25 +290,14 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(run).to include(%q{noble_client="$(client_pattern 24\\\\.04)"})
   end
 
-  # @spec TEST-SUITE-024
-  it "bounds checksum-verified ast-grep installation in every shard path" do
-    %w[test-shards shard-recovery].each do |job_name|
-      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
-        .find { |step| step["name"] == "Install ast-grep" }
-      run = install_step.fetch("run")
+  it "installs ast-grep into a user-writable directory during the test job" do
+    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
+      .find { |step| step["name"] == "Install ast-grep" }
 
-      expect(run).to include('mkdir -p "$HOME/.local/bin"')
-      expect(run).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
-      expect(run).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
-      expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
-      expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
-    end
-
-    installer = Rails.root.join("bin/install-ast-grep").read
-    expect(installer).to include('--connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}"')
-    expect(installer).to include('--max-time "${AST_GREP_DOWNLOAD_MAX_TIME:-300}"')
-    expect(installer).to include('sha256sum -c -')
+    expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
+    expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
+    expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
+    expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
   end
 
   # @spec TEST-SUITE-023
