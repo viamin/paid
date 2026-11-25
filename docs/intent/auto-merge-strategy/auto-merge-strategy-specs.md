@@ -239,6 +239,12 @@
   SHALL re-read both base and head before publishing. Unavailable and stale
   outcomes are immutable, idempotent records, while a later successful bounded
   request may supersede unavailable evidence for the same artifact range.
+  Deleting the requesting user, including normal final-account-membership
+  revocation, SHALL nullify optional historical attribution without deleting or
+  changing the artifact decision. The model and database SHALL both preserve
+  that deletion behavior; a retained user with another membership keeps
+  historical attribution without retaining authority in the removed account.
+  *Test:* `spec/services/accounts/remove_membership_scope_evidence_spec.rb`.
 
 - [x] **AUTO-MERGE-011** — When an automatic merge-conflict repair run
   reaches existing-PR completion, the completion activity SHALL bound the

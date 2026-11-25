@@ -127,6 +127,12 @@ assessment refuses further work and publication. Repeated unavailable
 or stale observations are idempotently retained; a recovered provider may add a
 later approved result without mutating that history. This gate does not change the
 separate review-freshness classifier or its policy exceptions.
+The requesting user is optional historical attribution. Removing that user's
+final account membership must still revoke access: both the model association
+and database foreign key nullify the attribution when the user is deleted,
+while retaining the evidence's producer, revision binding and decision. Removing
+one of several memberships keeps the historical attribution while revoking the
+removed account's authority. Historical attribution never authorizes new work.
 It persists separate base-import and repair-authored paths so the normal update
 comment can make that distinction legible to reviewers. A repair does not carry
 an approval across substantive conflict-resolution content and does not change the separate auto-merge policy:
