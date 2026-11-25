@@ -20,10 +20,12 @@ RSpec.describe Activities::RunAgentActivity do
     # Ensure fallback is disabled by default so tests behave like single-runner runs
     user.settings.update!(fallback_enabled: false)
 
-    # Stub github_client so effective_prompt → prompt_for_issue → BuildForIssue
-    # does not make real HTTP calls (blocked by WebMock).
-    github_client = instance_double(GithubClient, issue_comments: [])
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    # The run's admission guard locks and reloads the project, which reloads
+    # its token association too. Stub the external boundary rather than the
+    # discarded cached association.
+    comments_url = %r{https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/comments}
+    stub_request(:get, comments_url)
+      .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
