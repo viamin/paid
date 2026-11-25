@@ -299,8 +299,10 @@ RSpec.describe CiWorkflowFile, :no_db do
 
       expect(run).to include('mkdir -p "$HOME/.local/bin"')
       expect(run).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
+      expect(run).to include("DEPENDENCY_SETUP_TIMEOUT=90s")
+      expect(run).to include("DEPENDENCY_SETUP_BACKOFF_SECONDS=10")
+      expect(run).to include("bin/retry-with-process-group bash -c")
       expect(run).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
-      expect(run).to include("for attempt in 1 2 3 4 5")
       expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
       expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
     end
