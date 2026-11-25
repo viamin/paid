@@ -24,19 +24,17 @@ module Tools
       }
     end
 
-    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060
+    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-064
     def perform(agent_run_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to retry source closure" unless confirmed
 
       run = run_for(agent_run_id).reload
       raise ArgumentError, "This run is not waiting for source-closure recovery" unless run.waiting_recovery?
 
-      job = SourceClosureRecoveryJob.perform_later(run.id, operator_id: user.id)
-      unless job && job.successfully_enqueued?
-        raise ArgumentError, "Source-closure recovery could not be queued. Please try again."
-      end
+      result = PartialCloseouts::RequestSourceClosureRecovery.call(agent_run: run, actor: user, boundary: "mcp")
+      raise ArgumentError, "Source-closure recovery could not be queued. Please try again." if result.enqueue_failed?
 
-      { agent_run_id: run.id, status: run.status, queued: true }
+      { agent_run_id: run.id, status: run.status, queued: true, audit_persisted: result.queued? }
     end
 
     private

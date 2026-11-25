@@ -215,6 +215,16 @@ existing waiting run and never creates a replacement AgentRun. The authorized
 run-detail tool exposes only the recovery step, pinned branch and commit,
 attempt counts, category, and retry/claim timestamps; arbitrary reconciliation
 payloads are not exposed. Enqueue refusal remains actionable on both surfaces.
+An accepted request is an account-scoped audit event, not a recovery claim or
+execution: both boundaries use the shared request service and the existing
+`Audit::RecordEvent` recorder to persist
+`agent_run.source_closure_recovery_requested` against the original AgentRun.
+The event retains the actor, original run, pinned branch and result/source
+commit identities, request phase and boundary, and the accepted queue job ID.
+An enqueue refusal records no accepted-request event. If the job was accepted
+but the audit write fails, the boundary reports that specific partial outcome
+without retrying or representing it as a claim, started recovery, or completed
+recovery.
 
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through

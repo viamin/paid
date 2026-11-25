@@ -60,6 +60,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.first_implementation_priority_requested" => "run",
     "agent_run.cancelled" => "run",
     "agent_run.execution_parked" => "run",
+    "agent_run.source_closure_recovery_requested" => "run",
     "agent_run.retried" => "run",
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
@@ -208,6 +209,8 @@ class AccountActivityEvent < ApplicationRecord
       "Cancelled agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.execution_parked"
       "Parked agent run ##{metadata_value('agent_run_id')}"
+    when "agent_run.source_closure_recovery_requested"
+      "Requested source-closure recovery for agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.retried"
       "Retried agent run ##{metadata_value('agent_run_id')} -> ##{metadata_value('new_agent_run_id')}"
     when "agent_run.terminated"
@@ -272,6 +275,10 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["details"]).compact
     when "agent_run.execution_parked"
       Array(metadata.to_h["result"]).compact
+    when "agent_run.source_closure_recovery_requested"
+      [ "Requested phase: #{metadata_value('request_phase')}",
+        "Request boundary: #{metadata_value('request_boundary')}",
+        "Queued job: #{metadata_value('queue_job_id')}" ]
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
     when "propose_pull_request.executed"

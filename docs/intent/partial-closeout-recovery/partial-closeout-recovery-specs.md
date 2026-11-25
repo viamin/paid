@@ -426,6 +426,25 @@
   `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-064** — When an authorized operator's waiting
+  source-closure recovery request is accepted through either the run-detail or
+  confirmed MCP boundary, Paid SHALL persist an account-scoped
+  `agent_run.source_closure_recovery_requested` audit event through the
+  existing audit recorder. The event SHALL identify the actor and original
+  AgentRun and retain the pinned branch, result/source commit identity,
+  requested phase, boundary, and queued job provenance; it SHALL NOT represent
+  an execution or claim. An enqueue refusal, unconfirmed request, authorization
+  denial, tenant denial, or non-waiting run SHALL create no accepted-request
+  event. If queueing succeeds but audit persistence fails, Paid SHALL report
+  the queued-but-unaudited partial outcome without retrying the job or
+  misrepresenting a recovery execution.
+  *Code:* `app/services/partial_closeouts/request_source_closure_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/mcp/tools/retry_source_closure.rb`, `app/models/account_activity_event.rb`.
+  *Test:* `spec/services/partial_closeouts/request_source_closure_recovery_spec.rb`,
+  `spec/requests/projects/source_closure_recovery_spec.rb`.
+  *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
   tier model, and configured credentials through `agent_harness`,
