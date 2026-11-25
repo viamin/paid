@@ -350,10 +350,22 @@ jobs:
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
-        # @spec TEST-SUITE-024
+        # @spec TEST-SUITE-024 TEST-SUITE-025
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.local/bin
+          key: ast-grep-0.45.1-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Verify or install ast-grep
+        # @spec TEST-SUITE-024 TEST-SUITE-025
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          if [ -x "$HOME/.local/bin/ast-grep" ] && "$HOME/.local/bin/ast-grep" --version | grep -Fqx 'ast-grep 0.45.1'; then
+            ln -sf "$HOME/.local/bin/ast-grep" "$HOME/.local/bin/sg"
+            exit 0
+          fi
+          rm -f "$HOME/.local/bin/ast-grep" "$HOME/.local/bin/sg"
           # Bound a stalled GitHub release-asset transfer well below the
           # outer retry attempt so a later retry can use a fresh connection.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
@@ -744,10 +756,22 @@ jobs:
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
-        # @spec TEST-SUITE-024
+        # @spec TEST-SUITE-024 TEST-SUITE-025
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.local/bin
+          key: ast-grep-0.45.1-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Verify or install ast-grep
+        # @spec TEST-SUITE-024 TEST-SUITE-025
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          if [ -x "$HOME/.local/bin/ast-grep" ] && "$HOME/.local/bin/ast-grep" --version | grep -Fqx 'ast-grep 0.45.1'; then
+            ln -sf "$HOME/.local/bin/ast-grep" "$HOME/.local/bin/sg"
+            exit 0
+          fi
+          rm -f "$HOME/.local/bin/ast-grep" "$HOME/.local/bin/sg"
           # Keep dropped-shard recovery on the same bounded release download
           # contract as the matrix shards.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
