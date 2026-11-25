@@ -47,13 +47,15 @@ this segment does not represent metadata classification as build evidence.
 
 The reported failure is a class, not a one-off: a dynamically linked
 binary records its interpreter path in the ELF program header, and the
-kernel refuses to exec it when that loader is absent. An x86-64 binary
-records `/lib64/ld-linux-x86-64.so.2`; an aarch64 binary records
-`/lib/ld-linux-aarch64.so.1`. On an aarch64 host the x86-64 path never
-exists, so the error text names the *binary's* architecture, not the
-host's — which is why the agent's retry with an "aarch64 default host"
-changed nothing: the host was already aarch64; the downloaded toolchain
-artifact was not.
+kernel refuses to exec it when that loader is absent. The GNU/Linux
+glibc toolchains use `/lib64/ld-linux-x86-64.so.2` for x86-64 and
+`/lib/ld-linux-aarch64.so.1` for aarch64. When the selected environment
+lacks that interpreter, execution fails.
+The named path is evidence about the requested loader, not independent
+proof of the historical host, image contents, or downloaded artifact.
+The original container and artifact were not retained; an architecture
+mismatch is a diagnosis to test against actual process and ELF metadata,
+not an established cause of that historical attempt.
 
 `SdkBuildEnvironments::ArchitectureCompatibility` owns this mapping:
 
@@ -144,9 +146,21 @@ into the service spec so those requirements survive translation too.
 
 `rake sdk_build_environment:preflight` runs the same classification
 against a real backend and prints the receipt as JSON. It performs
-metadata probes only, provisions nothing, and requires no run, project,
+metadata probes only, creates only the bounded disposable probe described
+above rather than a build environment, and requires no run, project,
 or worker state — the environment prerequisite stays independently
 runnable, per the issue's "no explicit dependency on #5326" constraint.
+
+## Job-local baseline handoff
+
+The existing SDK owner can also install an explicitly pinned toolchain
+inside its isolated job-owned workspace without changing the agent image
+or requiring a Docker socket. The [job-local baseline recipe](job-local-baseline/README.md)
+contains the exact successful install, fetch and offline Core-check bodies,
+public artifact URLs, checksums, source revisions and runtime profile.
+This is an environment baseline and a handoff to #5326, not evidence that
+the Ruby bridge, server harness or task-safe quiescence contract passed.
+The assigned job limits and canonical attempt history remain authoritative.
 
 ## Decisions & Alternatives
 

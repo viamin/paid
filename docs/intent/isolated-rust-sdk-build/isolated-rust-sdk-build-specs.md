@@ -95,8 +95,9 @@
 - [x] **RUST-SDK-BUILD-011** — When the rake task
   `sdk_build_environment:preflight` runs, it SHALL execute the same
   classification as the service against a real backend and SHALL emit the
-  receipt as JSON, provisioning no containers and mutating no run,
-  worker, or pin state.
+  receipt as JSON, provisioning no build containers and mutating no run,
+  worker, or pin state. Any disposable metadata-probe container SHALL obey
+  RUST-SDK-BUILD-012 and be cleaned up.
   *Tests:* `spec/tasks/sdk_build_environment_preflight_rake_spec.rb`.
   *Code:* `lib/tasks/sdk_build_environment.rake`.
 
