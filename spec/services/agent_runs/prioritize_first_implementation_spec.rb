@@ -42,6 +42,7 @@ RSpec.describe AgentRuns::PrioritizeFirstImplementation do # @spec QUEUE-TIER-01
   end
 
   [
+    { temporal_workflow_id: "retained-workflow" },
     { started_at: 1.minute.ago },
     { container_id: "retained-container" },
     { runner_handle: { "identifier" => "retained-runner" } },
