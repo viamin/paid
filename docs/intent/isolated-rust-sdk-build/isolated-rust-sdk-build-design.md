@@ -12,8 +12,9 @@ prefix: RUST-SDK-BUILD
 > build container is provisioned. It exists because of issue #5358: an
 > agent attempted Rust SDK work on an ARM64 runner, found no cargo in the
 > agent image, installed a toolchain ad hoc, and hit
-> `Dynamic loader not found: /lib64/ld-linux-x86-64.so.2` — an x86-64
-> dynamic loader requested on an aarch64 host. The historical container
+> `Dynamic loader not found: /lib64/ld-linux-x86-64.so.2`. That loader path
+> establishes that the failed binary was x86-64; it does not, by itself,
+> establish the runner process architecture. The historical container
 > and its mutable-tag image are gone, so the original provisioning failure
 > cannot be reproduced; what Paid can own is the supported path that makes
 > that failure class impossible to hit silently.
@@ -49,11 +50,12 @@ The reported failure is a class, not a one-off: a dynamically linked
 binary records its interpreter path in the ELF program header, and the
 kernel refuses to exec it when that loader is absent. An x86-64 binary
 records `/lib64/ld-linux-x86-64.so.2`; an aarch64 binary records
-`/lib/ld-linux-aarch64.so.1`. On an aarch64 host the x86-64 path never
-exists, so the error text names the *binary's* architecture, not the
-host's — which is why the agent's retry with an "aarch64 default host"
-changed nothing: the host was already aarch64; the downloaded toolchain
-artifact was not.
+`/lib/ld-linux-aarch64.so.1`. The error text names the *binary's*
+architecture, not the runner's; the runner profile must be collected
+separately before compatibility can be determined. The recorded x86-64
+loader signature is therefore diagnostic evidence of the downloaded
+toolchain artifact, while the original runner architecture remains
+unverified by that line alone.
 
 `SdkBuildEnvironments::ArchitectureCompatibility` owns this mapping:
 
@@ -65,10 +67,11 @@ artifact was not.
 - classify an observed toolchain against the runner architecture as
   `:compatible`, `:architecture_mismatch`, or `:unknown`, with the
   mismatch naming both sides;
-- recognize the reported failure signature from container output so a
-  raw `Dynamic loader not found: <path>` line is classified as a
-  foreign-architecture binary execution, attributed to the loader path's
-  architecture, never to the runner.
+- recognize the reported failure signature from container output; when a
+  recognized loader and runner profile differ, classify it as a
+  foreign-architecture binary execution attributed to the loader path's
+  architecture, and when the runner profile is unavailable, retain an
+  unknown-process classification rather than asserting compatibility.
 
 ## The pinned recipe
 

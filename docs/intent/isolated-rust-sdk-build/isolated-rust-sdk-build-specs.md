@@ -30,10 +30,14 @@
   *Code:* `SdkBuildEnvironments::ArchitectureCompatibility.classify_toolchain`.
 
 - [x] **RUST-SDK-BUILD-004** — When container output contains a dynamic
-  loader failure (`Dynamic loader not found: <interpreter path>`), the
-  system SHALL classify it as foreign-architecture binary execution
-  attributed to the interpreter path's implied architecture, and SHALL
-  return no classification when the output carries no such signature.
+  loader failure (`Dynamic loader not found: <interpreter path>`) and both
+  the interpreter path and runner process architecture are recognized, the
+  system SHALL classify differing architectures as foreign-architecture
+  binary execution attributed to the interpreter path's implied architecture.
+  When the interpreter architecture is recognized but the runner process
+  architecture is unavailable, the system SHALL retain an unknown-process
+  classification and SHALL NOT assert compatibility. The system SHALL return
+  no classification when the output carries no such signature.
   *Tests:* `spec/services/sdk_build_environments/architecture_compatibility_spec.rb`.
   *Code:* `SdkBuildEnvironments::ArchitectureCompatibility.classify_loader_failure`.
 

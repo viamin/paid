@@ -128,5 +128,16 @@ RSpec.describe SdkBuildEnvironments::ArchitectureCompatibility, :no_db do
       expect(result[:loader_architecture]).to eq("arm64")
       expect(result[:process_architecture]).to eq("arm64")
     end
+
+    # @spec RUST-SDK-BUILD-004
+    it "does not assert loader compatibility when the runner architecture is unavailable" do
+      output = "Dynamic loader not found: /lib64/ld-linux-x86-64.so.2"
+
+      result = described_class.classify_loader_failure(output)
+
+      expect(result[:kind]).to eq("unknown_process_architecture")
+      expect(result[:loader_architecture]).to eq("amd64")
+      expect(result[:process_architecture]).to be_nil
+    end
   end
 end
