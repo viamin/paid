@@ -433,7 +433,7 @@ jobs:
           apt_with_retry() {
             local attempt
             for attempt in 1 2 3; do
-              if sudo timeout 10m apt-get \
+              if sudo timeout 5m apt-get \
                 -o Acquire::http::Timeout=30 \
                 -o Acquire::https::Timeout=30 \
                 -o Acquire::Retries=3 "$@"; then
@@ -837,7 +837,7 @@ jobs:
           apt_with_retry() {
             local attempt
             for attempt in 1 2 3; do
-              if sudo timeout 10m apt-get \
+              if sudo timeout 5m apt-get \
                 -o Acquire::http::Timeout=30 \
                 -o Acquire::https::Timeout=30 \
                 -o Acquire::Retries=3 "$@"; then

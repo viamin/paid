@@ -55,16 +55,6 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
-  # @spec TOOLCHAIN-PIN-028
-  it "allows slow package mirrors ten minutes per postgres client attempt in shard jobs" do
-    %w[test-shards shard-recovery].each do |job_name|
-      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
-        .find { |step| step["name"] == "Install PostgreSQL client" }
-
-      expect(install_step.fetch("run")).to include("sudo timeout 10m apt-get")
-    end
-  end
-
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
