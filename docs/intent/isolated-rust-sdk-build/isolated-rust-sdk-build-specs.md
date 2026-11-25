@@ -117,3 +117,16 @@
   *Code:* `SdkBuildEnvironments::MetadataProbe`,
   `Containers::Backends::Base#supports_network_disabled_containers?`,
   `Containers::Backends::Swarm`.
+
+- [x] **RUST-SDK-BUILD-013** — When an authorized agent confirms the
+  pinned Rust SDK Core baseline for its acting run, the system SHALL resolve
+  that run's selected Paid backend, require a compatible preflight, build only
+  the immutable SDK/Core source recipe, run `cargo check --locked --offline
+  --package temporalio-sdk-core` in a separate network-disabled,
+  capability-dropped bounded container, return its command, bounded output,
+  exit status, preflight, and cleanup receipt, and remove its temporary
+  container and image without exposing Docker or host access to the agent.
+  *Tests:* `spec/services/sdk_build_environments/pinned_core_build_spec.rb`,
+  `spec/mcp/tools/build_pinned_rust_sdk_core_spec.rb`.
+  *Code:* `SdkBuildEnvironments::PinnedCoreBuild`,
+  `Tools::BuildPinnedRustSdkCore`.

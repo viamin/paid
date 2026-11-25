@@ -73,6 +73,7 @@ module Tools
       "Tools::GitBranchCreate",
       "Tools::ProposePullRequest",
       "Tools::RunShell",
+      "Tools::BuildPinnedRustSdkCore",
       "Tools::GetIntent",
       "Tools::KnowledgeMap",
       "Tools::KnowledgeBrowse",
