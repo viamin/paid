@@ -159,6 +159,8 @@ module Activities
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       else
+        return conflict_repair_scope_blocked_result(project, issue, pr_number) unless conflict_repair_scope_allowed?(project, issue, pr_data)
+
         attempt_merge(provider, project, issue, pr_data)
       end
 
@@ -206,6 +208,34 @@ module Activities
     # cannot bypass the gate (RDR-067 §Merge enforcement and race safety).
     def intent_conformance_blocker(project, issue, pr_data)
       IntentConformance::VerifyAtMerge.call(project: project, issue: issue, pr_head_sha: pr_data.head_sha)
+    end
+
+    # @spec AUTO-MERGE-010
+    def conflict_repair_scope_allowed?(project, issue, pr_data)
+      @conflict_repair_scope_gate = PullRequests::ConflictRepairScopeGate.call(
+        project:, issue:, head_sha: pr_data.head_sha, integration_base_sha: pr_data.base_sha
+      )
+      @conflict_repair_scope_gate.allowed?
+    end
+
+    def conflict_repair_scope_blocked_result(project, issue, pr_number)
+      gate = @conflict_repair_scope_gate
+      logger.info(
+        message: "pr_review.conflict_repair_scope_blocked",
+        project_id: project.id,
+        pr_number: pr_number,
+        reason_code: gate.reason_code,
+        agent_run_id: gate.agent_run_id
+      )
+      record_attempt(
+        project,
+        issue,
+        status: "blocked",
+        reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED,
+        message: "Automatic conflict-repair scope for the current HEAD is unresolved; complete the bounded repair assessment before retrying auto-merge.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project)
+      )
+      { merged: false, skipped: true, pr_number: pr_number }
     end
 
     def refresh_source_closure(project, issue, pr_data)

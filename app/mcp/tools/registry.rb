@@ -38,6 +38,7 @@ module Tools
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
       "Tools::RetrySourceClosure",
+      "Tools::ReassessConflictRepairScope",
       "Tools::ManageFeatureIntent",
       "Tools::PublishHeldIssue",
       "Tools::CloneProject",

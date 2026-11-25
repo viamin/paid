@@ -5,6 +5,7 @@ class AutoMergeAttempt < ApplicationRecord
   REASON_AUTO_MERGE_DISABLED = "auto_merge_disabled"
   REASON_DELEGATED_BOUNDARY_BLOCKED = "delegated_boundary_blocked"
   REASON_CHECKS_NOT_GREEN = "checks_not_green"
+  REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED = "conflict_repair_scope_unresolved"
   REASON_EXPECTED_MERGE_FAILURE = "expected_merge_failure"
   REASON_GRANULARITY_MISMATCH = "granularity_mismatch"
   REASON_HOLD_FOR_REVIEW = "hold_for_review"

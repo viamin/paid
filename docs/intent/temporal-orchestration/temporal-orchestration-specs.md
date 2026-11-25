@@ -246,6 +246,30 @@
   *Code:* `Workflows::AgentExecutionWorkflow#execute`,
   `Activities::CompleteExistingPrRunActivity`.
 
+- [x] **TEMPORAL-ORCHESTRATION-019** — When `CreateAgentRunActivity` resumes
+  an existing `AgentRun` that is `queued` or in the scheduler's pre-agent
+  `running` state, Paid SHALL record secret-free,
+  per-stage start, completion, and failure diagnostics for runner
+  revalidation, feature assessment, issue-state publication, model selection,
+  prompt preparation, user-settings/tier validation, marketplace attachment,
+  policy evaluation, configuration-bundle assignment, and strategy selection.
+  Each diagnostic SHALL identify only the run, tenant/project scope, Temporal
+  attempt, stage, outcome, and elapsed time; it SHALL NOT include prompts,
+  credentials, provider payloads, or exception messages. Before every resumed
+  setup stage, Paid SHALL verify that the activity attempt still owns the
+  queued-run resume attempt and that the run is not terminal. A superseded, cancelled, or
+  late attempt SHALL stop before it can admit `RunAgent` work or overwrite a
+  newer terminal outcome. Paid SHALL recheck this condition immediately before
+  returning the resumed setup result, and `RunAgent` SHALL reject an already
+  terminal run before it starts agent work. Retried setup SHALL retain the original run and
+  workflow identity, tolerate already-persisted idempotent side effects, and
+  remain bounded by the existing activity deadline and retry policy (#5356).
+  *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+  *Code:* `Activities::CreateAgentRunActivity#resume_queued_run`,
+  `Activities::RunAgentActivity#execute`, `Workflows::AgentExecutionWorkflow#execute`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

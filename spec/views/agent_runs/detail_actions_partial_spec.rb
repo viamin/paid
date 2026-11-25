@@ -5,7 +5,10 @@ require "rails_helper"
 RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
   let(:project) { Struct.new(:id).new(1) }
   let(:agent_run) do
-    Struct.new(:id, :project, :status, :error_message, :diagnosis_status, keyword_init: true) do
+    Struct.new(
+      :id, :project, :status, :error_message, :diagnosis_status, :focus, :result_commit_sha, :trigger_type,
+      keyword_init: true
+    ) do
       def finished? = true
 
       def paused? = false
@@ -15,12 +18,17 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
       def auth_provider = nil
 
       def waiting_recovery? = status == "waiting_recovery"
+
+      def automatic? = trigger_type == "automatic"
     end.new(
       id: 123,
       project: project,
       status: "failed",
       error_message: nil,
-      diagnosis_status: nil
+      diagnosis_status: nil,
+      focus: nil,
+      result_commit_sha: nil,
+      trigger_type: "automatic"
     )
   end
   let(:retry_runner_options) do
@@ -65,5 +73,15 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
     action = fragment.at_css("[data-when-waiting-recovery]")
     expect(action).to be_present
     expect(action).not_to have_attribute("hidden")
+  end
+
+  it "does not offer reassessment for a manual conflict-repair run" do # @spec AUTO-MERGE-011
+    agent_run.focus = "merge_conflict"
+    agent_run.result_commit_sha = "a" * 40
+    agent_run.trigger_type = "manual"
+
+    render partial: "agent_runs/detail_actions", locals: { agent_run:, show_retry: true }
+
+    expect(rendered).not_to include("Reassess conflict-repair scope")
   end
 end

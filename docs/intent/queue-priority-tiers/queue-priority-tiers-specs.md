@@ -133,9 +133,14 @@
   workflow, start timestamp, container, runner handle, service container, worktree
   path, or associated worktree SHALL refuse the request without a priority
   timestamp or actor audit event.
+  The run detail page SHALL show the confirmation-gated request only to an
+  operator with project run permission for an eligible run; submitting it SHALL
+  still apply the service's locked authorization and eligibility checks.
   *Code:* `AgentRuns::PrioritizeFirstImplementation`,
-  `Tools::PrioritizeFirstImplementation`, `AgentRun#queue_priority_tier`.
+  `Tools::PrioritizeFirstImplementation`, `AgentRun#queue_priority_tier`,
+  `Projects::AgentRunsController`, `app/views/projects/agent_runs/show.html.erb`.
   *Test:* `spec/services/agent_runs/prioritize_first_implementation_spec.rb`,
   `spec/requests/agent_runs_spec.rb`,
   `spec/mcp/tools/prioritize_first_implementation_spec.rb`,
-  `spec/models/agent_run_spec.rb`.
+  `spec/models/agent_run_spec.rb`,
+  `spec/system/first_implementation_priority_spec.rb`.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_083805) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1154,6 +1154,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
     t.index ["account_id"], name: "index_configuration_experiments_on_account_id"
     t.index ["config_key"], name: "index_global_config_experiments_one_running_per_key", unique: true, where: "(((status)::text = 'running'::text) AND (account_id IS NULL))"
     t.index ["winner_variant_id"], name: "index_configuration_experiments_on_winner_variant_id"
+  end
+
+  create_table "conflict_repair_scope_evidences", comment: "Immutable, provider-head-bound scope decisions for existing conflict-repair artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.jsonb "base_imported_paths", default: [], null: false
+    t.datetime "created_at", null: false
+    t.text "explanation", null: false
+    t.string "integration_base_sha", null: false
+    t.bigint "issue_id", null: false
+    t.string "pre_run_sha", null: false
+    t.bigint "project_id", null: false
+    t.string "provider_head_sha", null: false
+    t.jsonb "repair_authored_paths", default: [], null: false
+    t.bigint "requested_by_id"
+    t.string "result_sha", null: false
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_conflict_repair_scope_evidences_on_account_id"
+    t.index ["agent_run_id", "pre_run_sha", "integration_base_sha", "result_sha", "provider_head_sha", "status"], name: "index_conflict_repair_scope_evidence_identity", unique: true
+    t.index ["agent_run_id"], name: "index_conflict_repair_scope_evidences_on_agent_run_id"
+    t.index ["issue_id"], name: "index_conflict_repair_scope_evidences_on_issue_id"
+    t.index ["project_id"], name: "index_conflict_repair_scope_evidences_on_project_id"
+    t.index ["requested_by_id"], name: "index_conflict_repair_scope_evidences_on_requested_by_id"
   end
 
   create_table "container_metrics", force: :cascade do |t|
@@ -5444,6 +5468,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   add_foreign_key "configuration_experiment_variants", "configuration_experiments", on_delete: :cascade
   add_foreign_key "configuration_experiments", "accounts", on_delete: :cascade
   add_foreign_key "configuration_experiments", "configuration_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "conflict_repair_scope_evidences", "accounts"
+  add_foreign_key "conflict_repair_scope_evidences", "agent_runs"
+  add_foreign_key "conflict_repair_scope_evidences", "issues"
+  add_foreign_key "conflict_repair_scope_evidences", "projects"
+  add_foreign_key "conflict_repair_scope_evidences", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "container_pool_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "container_pool_entries", "projects", on_delete: :cascade
@@ -7122,12 +7151,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -7182,12 +7211,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
-  SQL
-
   create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
@@ -7416,6 +7445,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   execute <<~SQL
     ALTER TABLE "public"."configuration_experiments" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."configuration_experiments" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."conflict_repair_scope_evidences" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."conflict_repair_scope_evidences" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -8920,6 +8954,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
       WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."conflict_repair_scope_evidences"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = conflict_repair_scope_evidences.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM issues
+  WHERE ((issues.id = conflict_repair_scope_evidences.issue_id) AND (issues.project_id = conflict_repair_scope_evidences.project_id)))) AND (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = conflict_repair_scope_evidences.agent_run_id) AND (agent_runs.project_id = conflict_repair_scope_evidences.project_id) AND (agent_runs.issue_id = conflict_repair_scope_evidences.issue_id)))) AND ((requested_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = conflict_repair_scope_evidences.requested_by_id) AND (users.account_id = paid_current_account_id()))))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = conflict_repair_scope_evidences.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM issues
+  WHERE ((issues.id = conflict_repair_scope_evidences.issue_id) AND (issues.project_id = conflict_repair_scope_evidences.project_id)))) AND (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = conflict_repair_scope_evidences.agent_run_id) AND (agent_runs.project_id = conflict_repair_scope_evidences.project_id) AND (agent_runs.issue_id = conflict_repair_scope_evidences.issue_id)))) AND ((requested_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = conflict_repair_scope_evidences.requested_by_id) AND (users.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL

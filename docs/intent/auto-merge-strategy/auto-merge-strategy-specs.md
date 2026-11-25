@@ -196,13 +196,51 @@
   the exact pre-run-to-result comparison, and explain that the existing
   fail-closed freshness classifier — not the repair or a re-approval alone —
   decides whether current-head review is required or automatic merging is
-  possible.
+  possible. A matching automatic repair result SHALL make complete approved
+  scope evidence mandatory for that HEAD: unavailable, malformed, rejected, or
+  missing evidence SHALL remain a blocker in scan-time eligibility and the
+  final merge executor recheck, irrespective of review-freshness classification,
+  self-authored approval exceptions, or other auto-merge policy exceptions. An
+  assessment for another HEAD SHALL not block a newer independent HEAD; a later
+  complete approved assessment for the same HEAD is the bounded recovery route.
   *Code:* `app/services/prompts/build_for_pr.rb`,
   `app/services/conflict_repairs/assess_scope.rb`,
-  `app/temporal/activities/complete_existing_pr_run_activity.rb`.
+  `app/services/pull_requests/conflict_repair_scope_gate.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`,
+  `app/jobs/dependabot_auto_merge_job.rb`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
-  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
+  `spec/jobs/dependabot_auto_merge_job_spec.rb`.
+
+- [x] **AUTO-MERGE-011** — When an authorized operator or agent requests a
+  reassessment of an immutable failed automatic conflict-repair artifact, Paid
+  SHALL run only a finite artifact-only scope assessment through `agent_harness`
+  and SHALL neither rerun coding nor alter the producer run's terminal status,
+  origin, or attempts. The decision SHALL be a separate record bound to the
+  producer, exact pre-run SHA, integration base SHA, result SHA, and a freshly
+  read current provider HEAD; a changed provider HEAD, invalid artifact,
+  rejected result, unavailable provider evidence, cancellation, pause, trust,
+  tenant authorization, cost admission, or concurrent duplicate request SHALL
+  fail closed. The normal conflict-repair scope gate SHALL consume only a
+  complete current-head decision record and preserve original evidence when no
+  reassessment exists.
+  *Code:* `app/services/conflict_repairs/reassess_scope.rb`,
+  `app/models/conflict_repair_scope_evidence.rb`,
+  `app/services/pull_requests/conflict_repair_scope_gate.rb`.
+
+  Reuse and merge admission SHALL additionally bind the decision to the
+  current integration base. Paid SHALL reauthorize the recorded requesting
+  actor immediately before each provider or semantic operation and after
+  external work before publishing evidence; a nil, removed, or
+  no-longer-authorized actor cannot publish evidence. Deleting the requesting
+  actor SHALL nullify its optional attribution without deleting immutable
+  evidence or preventing final account-membership revocation. After semantic work it
+  SHALL re-read both base and head before publishing. Unavailable and stale
+  outcomes are immutable, idempotent records, while a later successful bounded
+  request may supersede unavailable evidence for the same artifact range.
 
 - [x] **AUTO-MERGE-011** — When an automatic merge-conflict repair run
   reaches existing-PR completion, the completion activity SHALL bound the

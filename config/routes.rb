@@ -350,6 +350,7 @@ Rails.application.routes.draw do
       post :diagnose_error, on: :member
       post :resume, on: :member
       post :retry_source_closure, on: :member
+      post :reassess_conflict_repair_scope, on: :member
       post :terminate, on: :member
       post :promote_session_summary, on: :member
       get :provenance, on: :member

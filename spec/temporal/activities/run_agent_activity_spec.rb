@@ -20,10 +20,12 @@ RSpec.describe Activities::RunAgentActivity do
     # Ensure fallback is disabled by default so tests behave like single-runner runs
     user.settings.update!(fallback_enabled: false)
 
-    # Stub github_client so effective_prompt → prompt_for_issue → BuildForIssue
-    # does not make real HTTP calls (blocked by WebMock).
-    github_client = instance_double(GithubClient, issue_comments: [])
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    # The run's admission guard locks and reloads the project, which reloads
+    # its token association too. Stub the external boundary rather than the
+    # discarded cached association.
+    comments_url = %r{\Ahttps://api\.github\.com/repos/.+/issues/\d+/comments(?:\?.*)?\z}
+    stub_request(:get, comments_url)
+      .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
@@ -160,6 +162,22 @@ RSpec.describe Activities::RunAgentActivity do
     reset_at = Time.now.utc.change(hour: 6, min: 10)
     reset_at += 1.day if reset_at <= Time.now.utc
     reset_at
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-019
+  it "rejects a terminal run before starting agent execution" do
+    agent_run.update!(status: "failed", error_message: "newer terminal failure")
+
+    expect(activity).not_to receive(:run_agent_with_runner)
+
+    expect {
+      activity.execute(agent_run_id: agent_run.id)
+    }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+      expect(error.type).to eq("RunAgentAdmissionSuperseded")
+      expect(error.non_retryable).to be(true)
+    }
+
+    expect(agent_run.reload).to have_attributes(status: "failed", error_message: "newer terminal failure")
   end
 
   def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
@@ -2799,6 +2817,39 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def codex_mcp_tool_output(content:, structured_content: nil, error: nil, status: "completed")
+    JSON.generate(
+      type: "item.completed",
+      item: {
+        type: "mcp_tool_call",
+        server: "private-fixture",
+        tool: "inspect_source",
+        arguments: { query: "authentication_error" },
+        result: {
+          content: [ { type: "text", text: content } ],
+          structured_content: structured_content
+        },
+        error: error,
+        status: status
+      }
+    )
+  end
+
+  def codex_command_output(content:)
+    JSON.generate(
+      type: "item.completed",
+      item: {
+        type: "command_execution",
+        command: "rg authentication_error",
+        aggregated_output: content
+      }
+    )
+  end
+
+  def codex_provider_auth_error
+    JSON.generate(type: "error", message: "authentication_error")
+  end
+
   def prepare_verification_fixture(repo_path)
     FileUtils.mkdir_p(File.join(repo_path, ".paid"))
     FileUtils.mkdir_p(File.join(repo_path, "bin"))
@@ -3576,7 +3627,10 @@ expect(container_service).to receive(:execute).with(
 
     context "when agent fails in container" do
       before do
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         allow(container_service).to receive(:execute).and_return(exec_failure)
       end
 
@@ -3599,7 +3653,10 @@ expect(container_service).to receive(:execute).with(
 
     shared_examples "externally cancelled run" do |params|
       before do
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         allow(container_service).to receive(:execute) do
           AgentRun.where(id: agent_run.id).update_all(
             status: "timeout",
@@ -3812,11 +3869,15 @@ expect(container_service).to receive(:execute).with(
         user.runners.find_or_create_by!(runner_key: "cursor")
         user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
         allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
-        allow(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false
+        )
         # Re-enable the real preflight method; the shared before stubs it away.
         allow(activity).to receive(:run_runner_preflight!).and_call_original
         # By default harness preflight passes (no-op); individual tests override.
         allow(activity).to receive(:run_harness_preflight!)
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
       end
 
       it "falls back when harness preflight detects expired auth" do
@@ -3876,6 +3937,8 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("auth_expired")
         expect(agent_run.auth_provider).to eq("codex")
         expect(agent_run.error_message).to include("refresh_token_reused")
+        attempt = agent_run.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        expect(attempt.dig("diagnostics", "classification_provenance", "terminal_diagnostic")).to include("refresh_token_reused")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
         )
@@ -3906,6 +3969,156 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
         )
+      end
+
+      it "records the late stderr refresh-token diagnostic without startup or trailing noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "refresh_token_reused", "private-terminal-noise" ]).join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        diagnostic = agent_run.reload.runners_attempted
+          .find { |entry| entry["error_type"] == "auth_expired" }
+          .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("refresh_token_reused")
+        expect(diagnostic).not_to include("Codex startup diagnostic")
+        expect(diagnostic).not_to include("private-terminal-noise")
+      end
+
+      it "records the late multiline stderr refresh diagnostic without startup or trailing noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "Failed to refresh token:", "invalid_client", "private-terminal-noise" ]).join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        diagnostic = agent_run.reload.runners_attempted
+          .find { |entry| entry["error_type"] == "auth_expired" }
+          .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("Failed to refresh token:")
+        expect(diagnostic).to include("invalid_client")
+        expect(diagnostic).not_to include("Codex startup diagnostic")
+        expect(diagnostic).not_to include("private-terminal-noise")
+      end
+
+      it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
+      end
+
+      it "keeps nested MCP structured content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "completed",
+            structured_content: { "nested" => [ { "detail" => "authentication_error" } ] }
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "keeps nested MCP quota and rate-limit results out of provider classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "completed",
+            structured_content: { "nested" => [ { "detail" => "quota exceeded: rate limit reached" } ] }
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
+      end
+
+      it "keeps a failed MCP tool's auth-shaped error out of provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "unavailable",
+            error: { "message" => "authentication_error" },
+            status: "failed"
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "preserves command output redaction without classifying it as provider auth" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_command_output(content: "authentication_error in source fixture"),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+        expect(agent_run.reload).not_to be_auth_expired
+      end
+
+      it "classifies a real provider error after malformed and MCP stdout data" do # @spec RUNNER-FALLBACK-015
+        stdout = [
+          "{malformed JSONL",
+          codex_mcp_tool_output(content: "authentication_error in tool result"),
+          codex_provider_auth_error
+        ].join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: stdout, stderr: "", exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        expect(agent_run).to be_auth_expired
+        expect(attempt).to include("error_type" => "auth_expired")
+        expect(attempt.fetch("diagnostics")).to include(
+          "classification_provenance" => include(
+            "origin" => "stdout",
+            "category" => "auth_expired",
+            "event_path" => "error.message",
+            "terminal_diagnostic" => include("authentication_error")
+          )
+        )
+      end
+
+      it "records the matched provider envelope instead of trailing MCP task data" do # @spec RUNNER-FALLBACK-015
+        stdout = [
+          codex_provider_auth_error,
+          codex_mcp_tool_output(content: "authentication_error authored by the completed MCP tool")
+        ].join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: stdout, stderr: "", exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        diagnostic = attempt.dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("authentication_error")
+        expect(diagnostic).not_to include("completed MCP tool")
       end
 
       it "marks the run as auth_expired when preflight exits 0 with auth error output" do
@@ -6753,7 +6966,9 @@ expect(container_service).to receive(:execute).with(
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
-        allow(orphan_token).to receive(:client).and_return(instance_double(GithubClient, issue_comments: []))
+        comments_url = %r{https://api.github.com/repos/#{project_without_creator.full_name}/issues/#{issue_for_orphan.github_number}/comments}
+        stub_request(:get, comments_url)
+          .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
         expect {
           activity.execute(agent_run_id: orphan_run.id)

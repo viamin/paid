@@ -96,6 +96,11 @@ preexisting coding priority request are refused. The service writes the shared
 operator-coding marker plus a first-implementation request timestamp and one
 actor audit event; concurrent/repeated requests preserve the first event.
 
+The run detail page exposes a confirmation-gated request only when the viewer
+has project run permission and the existing run is eligible. Rendering checks
+are read-only; the POST action still authorizes and rechecks under the service
+lock. The MCP action uses the same service and confirmation requirement.
+
 Unclaimed means the run has no workflow or start timestamp, retained container
 or runner handle, service-container references, worktree path, or associated
 worktree. A queued status cannot hide retained execution ownership. The service
