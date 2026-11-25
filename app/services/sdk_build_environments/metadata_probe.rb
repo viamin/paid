@@ -10,8 +10,9 @@ module SdkBuildEnvironments
   # Toolchain observation runs
   # in a disposable hardened container — network-disabled, read-only root,
   # all capabilities dropped, bounded memory/CPU/PIDs — and the container
-  # is always removed, success or failure. Receipts are metadata-only;
-  # no credential material is read or returned.
+  # is always removed, success or failure. Backends that cannot enforce
+  # that isolation are rejected before any container starts. Receipts are
+  # metadata-only; no credential material is read or returned.
   class MetadataProbe
     # @spec RUST-SDK-BUILD-010
     DEFAULT_COMMANDS = %w[cargo rustc rustup].freeze
@@ -67,10 +68,28 @@ module SdkBuildEnvironments
     end
 
     def container_facts
+      return unsupported_isolation_facts unless backend.supports_network_disabled_containers?
+
       stdout = run_disposable_probe
       parse(stdout)
     rescue Docker::Error::DockerError => e
       { process_architecture: nil, toolchains: [], probe_error: "#{e.class}: #{e.message}" }
+    end
+
+    # @spec RUST-SDK-BUILD-012
+    # The probe executes toolchain binaries from an operator-selected
+    # image, so a network-disabled container is part of its contract, not
+    # decoration. Backends that cannot enforce it (the Swarm service API
+    # has no NetworkDisabled equivalent) are rejected before any container
+    # is created: the receipt records the refusal as a probe failure
+    # instead of silently probing on the backend's default network.
+    def unsupported_isolation_facts
+      {
+        process_architecture: nil,
+        toolchains: [],
+        probe_error: "backend #{backend.identifier.inspect} cannot enforce a network-disabled probe container; " \
+                     "run preflight on a Docker Engine backend (local or remote)"
+      }
     end
 
     def run_disposable_probe
