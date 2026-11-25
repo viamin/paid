@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-23
+last_updated: 2026-11-25
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -403,6 +403,15 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-04
+  workspace-agent-chat:
+    title: Workspace Agent Chat
+    path: docs/intent/workspace-agent-chat/workspace-agent-chat-design.md
+    specs: docs/intent/workspace-agent-chat/workspace-agent-chat-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: MAPPED
+    blockedBy: [api-mode-chat, chat-session-reopen, containerized-multi-repo-chat]
+    next: "Proposed RDR-064 handoff: owner acceptance of the exact RDR revision and Final LID handoff are required before #5351 may implement runtime behavior."
   chat-scroll:
     title: Chat Transcript Navigation
     path: docs/intent/chat-scroll/chat-scroll-design.md
