@@ -230,6 +230,10 @@
   consume only remaining manual lineage allowance through a locked shared claim
   when no observable work or execution-budget exhaustion exists. It preserves
   manual authority without Auto-Pick discovery and records recommendation,
-  claim, completion, and refusal as distinct audit states.
+  claim, completion, and refusal as distinct audit states. A pending
+  `FailureClassification` is a recommendation only; its
+  `coordination_failure_recovery` decision SHALL be recorded as `noop` until a
+  retry scheduler records a distinct scheduled, claimed, completed, or refused
+  execution decision.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
   `RetryFailedManualIssueCreatePrJob`.

@@ -95,7 +95,9 @@ module Coordination
         agent_run: agent_run,
         decision_point: "coordination_failure_recovery",
         action: orchestration_action_for(service_result.chosen_action),
-        status: "applied",
+        # Classification recommends a recovery; the retry scheduler and its
+        # locked claim record any actual execution separately.
+        status: "noop",
         signals: build_decision_signals(service_result),
         result: build_decision_result(classification, service_result)
       )
