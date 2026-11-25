@@ -816,7 +816,7 @@ module Activities
         # Only check changes_requested if still no triggers.
         if all_triggers.empty?
           reviews ||= fetch_reviews(client, project, issue)
-          all_triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run))
+          all_triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client))
         end
 
         # A COMMENTED review body can carry a finding where GitHub could not
@@ -1701,7 +1701,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
-      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run))
+      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, issue, pr_data))
@@ -2431,7 +2431,7 @@ module Activities
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: focused_run, client: client, issue: issue))
-      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, focused_run))
+      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
       triggers.concat(check_conversation_comments(client, project, issue, focused_run))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
@@ -2467,7 +2467,7 @@ module Activities
       ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
       resolved = ci_passed == 1.0 &&
         human_review_thread_triggers(project, unresolved_threads).empty? &&
-        standalone_review_feedback_from_reviews(project, reviews, focused_run).empty? &&
+        standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
         check_conversation_comments(client, project, issue, focused_run).empty? &&
         check_actionable_labels(project, issue).empty? &&
@@ -2836,17 +2836,6 @@ module Activities
             triggers << { type: "review_bot_comments", details: "Latest review bot review generated comments" }
             triggers.concat(bot_thread_triggers)
             triggers
-          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
-              body_only_review_needs_followup?(latest, last_run)
-            # Body-only bots (e.g. Codex): the review feedback lives in
-            # the top-level review body with no inline threads, so thread
-            # resolution cannot gate re-review. Use submitted_at vs the
-            # last agent run's completed_at as the anti-loop guard — a
-            # review post-dating the last run is unaddressed feedback.
-            # The "(body-only)" suffix on review_bot_comments lets
-            # structured-log consumers distinguish this path from the
-            # thread-based Copilot flow above.
-            paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
           elsif body_only_review_bot?(latest&.dig(:user_login))
             state = pull_request_collector(project, client:)
               .review_inline_comment_state(issue:, review: latest)
@@ -2854,6 +2843,11 @@ module Activities
               data_incomplete_review_trigger
             elsif state == :present
               resolved_inline_review_triggers(project, issue, latest)
+            elsif body_only_review_needs_followup?(latest, last_run)
+              # A fresh timestamp cannot turn resolved inline comments into
+              # body-only work. Apply this cutoff only after proving there
+              # are no associated inline comments.
+              paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
             elsif paid_agent_limit_reached_for_latest_review
               body_only_exhausted_triggers
             elsif RunnerSupport.runner_bot_username_for?("paid_agent", latest&.dig(:user_login))
@@ -3344,16 +3338,24 @@ module Activities
     end
 
     # @spec FOCUSED-RUN-013
-    def standalone_review_feedback_from_reviews(project, reviews, last_run)
+    def standalone_review_feedback_from_reviews(project, reviews, last_run, issue:, client:)
       return [] if reviews.nil?
 
       cutoff = last_run&.completed_at
+      incomplete = false
       findings = latest_trusted_reviews(reviews, project).select do |review|
-        review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
+        eligible = review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
           !paid_agent_clean_review?(review) &&
           !(review_bot?(review[:user_login]) && REVIEW_BOT_CLEAN_PATTERN.match?(review[:body].to_s)) &&
           (!cutoff || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
+        next false unless eligible
+        next true unless review_bot?(review[:user_login])
+
+        state = pull_request_collector(project, client:).review_inline_comment_state(issue:, review:)
+        incomplete ||= state == :unavailable
+        state == :absent
       end
+      return data_incomplete_review_trigger if incomplete
       return [] if findings.empty?
 
       [ { type: "standalone_review_feedback", details: findings.map { |review| review[:user_login] } } ]
@@ -3409,7 +3411,7 @@ module Activities
       return false if human_review_thread_triggers(project, unresolved_threads).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
-      return false if standalone_review_feedback_from_reviews(project, reviews, last_run).any?
+      return false if standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
       effective_checks = checks || []

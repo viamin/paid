@@ -105,6 +105,13 @@ limits. They are context only: unlike inline threads, they carry no resolvable
 thread ID and do not authorize resolution or alter review, merge, retry, or
 allowance policy.
 
+A configured bot's `COMMENTED` body associated with inline review comments is
+not standalone context; the existing trusted thread path supplies its
+actionable findings. Unavailable inline-comment state cannot establish a
+standalone body and blocks focused review-feedback preparation in either
+builder. Comment-state evidence is fetched once per builder, with only typed,
+body-free failure diagnostics. Human review bodies retain their existing rules.
+
 The chronological review listing must be complete within the finite page and
 rate budgets. A remaining next page when either budget stops collection makes
 the read unavailable rather than

@@ -2294,6 +2294,77 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "with standalone bot review boundaries" do
+      before do
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(reviews: [
+          { id: 81, user_login: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+            body: "A remaining boundary check needs repair.", submitted_at: Time.current, commit_id: "abc123" }
+        ], review_threads: [])
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([ { id: 82, pull_request_review_id: 81, body: "Resolved inline finding" } ])
+      end
+
+      # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+      it "does not requeue resolved inline bot feedback through the standalone route" do
+        expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "keeps unavailable bot comment state incomplete without routing coding work" do
+        allow(github_client).to receive(:pull_request_review_comments).and_raise(GithubClient::Error, "unavailable")
+
+        triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+        expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback")
+        expect(triggers).to include(hash_including(type: "review_bot_review_pending", data_incomplete: true))
+      end
+
+      { "codex" => "chatgpt-codex-connector", "paid_agent" => "paid-code-reviewer[bot]" }.each do |method, login|
+        context "with #{method}" do
+          before do
+            project.update!(review_settings: { "enabled" => true, "methods" => { method => { "enabled" => true } } })
+            stub_github_for_pr(reviews: [
+              { id: 81, user_login: login, state: "COMMENTED", body: "Here are some automated review suggestions.",
+                submitted_at: Time.current, commit_id: "abc123" }
+            ], review_threads: [])
+            allow(github_client).to receive(:pull_request_review_comments)
+              .and_return([ { id: 82, pull_request_review_id: 81, body: "Resolved inline finding" } ])
+          end
+
+          # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+          it "does not requeue fresh resolved inline feedback" do
+            triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+            expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback", "review_bot_comments")
+          end
+
+          # @spec FOCUSED-RUN-012 FOCUSED-RUN-013
+          it "keeps unavailable fresh comment evidence incomplete without coding work" do
+            allow(github_client).to receive(:pull_request_review_comments).and_raise(GithubClient::Error, "unavailable")
+
+            triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+            expect(triggers.map { |trigger| trigger[:type] }).not_to include("standalone_review_feedback", "review_bot_comments")
+            expect(triggers).to include(hash_including(type: "review_bot_review_pending", data_incomplete: true))
+          end
+        end
+      end
+
+      # @spec FOCUSED-RUN-013
+      it "retains genuine standalone bot findings when associated comments are absent" do
+        allow(github_client).to receive(:pull_request_review_comments).and_return([])
+
+        triggers = automation_scan_results(activity.execute(project_id: project.id)).flat_map { |entry| entry[:triggers] }
+
+        expect(triggers.map { |trigger| trigger[:type] }).to include("standalone_review_feedback")
+      end
+    end
+
     context "when a trusted reviewer leaves a standalone commented finding" do
       before do
         create(:issue, :pull_request,

@@ -156,7 +156,11 @@
   inline-thread IDs or authority. Review collection SHALL remain complete
   within its finite page and rate budgets; a remaining next page at either budget SHALL
   report unavailable context rather than expose an old prefix as the latest
-  review state.
+  review state. A configured bot's `COMMENTED` body with associated inline
+  comments SHALL not be rendered as standalone context; its trusted inline
+  threads retain their existing lifecycle. Unavailable associated-comment
+  state SHALL block focused review-feedback preparation in both builders,
+  rather than being treated as a successful empty comment inventory.
   *Code:* `GithubClient#pull_request_reviews`, `Prompts::BuildForPr`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/github_client_spec.rb`,

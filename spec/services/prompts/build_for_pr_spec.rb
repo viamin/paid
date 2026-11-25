@@ -105,6 +105,7 @@ RSpec.describe Prompts::BuildForPr do
       check_runs_for_ref: [],
       review_threads: [],
       pull_request_reviews: [],
+      pull_request_review_comments: [],
       recent_issue_comments: []
     )
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
@@ -443,6 +444,54 @@ RSpec.describe Prompts::BuildForPr do
 
   # @spec PROMPT-ASSEMBLY-018
   describe "#review_feedback_context_blocked?" do
+    context "with standalone bot review boundaries" do
+      before do
+        enable_copilot_reviews(project)
+        allow(github_client).to receive(:pull_request_reviews).and_return([
+          standalone_review(id: 81, author: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
+            body: "Attached bot finding already resolved inline.", submitted_at: Time.current),
+          standalone_review(id: 83, author: "trusteduser", state: "COMMENTED",
+            body: "Separate actionable human finding.", submitted_at: Time.current)
+        ])
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([ { id: 82, pull_request_review_id: 81, body: "Resolved inline finding" } ])
+      end
+
+      %w[legacy_prompt_builder prompt_assembly].each do |mode|
+        context "with #{mode}" do
+          let(:builder) do
+            described_class.new(project: project, pr_number: 42, github_client: github_client,
+              rebase_succeeded: true, focus: "review_feedback", prompt_builder: mode)
+          end
+
+          # @spec PROMPT-ASSEMBLY-026 FOCUSED-RUN-012
+          it "excludes the attached bot summary while retaining the human standalone finding" do
+            prompt = builder.build
+
+            expect(prompt).not_to include("Attached bot finding already resolved inline.")
+            expect(prompt).to include("Separate actionable human finding.")
+          end
+
+          # @spec PROMPT-ASSEMBLY-026
+          it "blocks focused preparation when bot comment state is unavailable" do
+            allow(github_client).to receive(:pull_request_review_comments).and_raise(GithubClient::Error, "unavailable")
+
+            expect(builder.review_feedback_context_blocked?).to be(true)
+          end
+
+          # @spec PROMPT-ASSEMBLY-026
+          it "retains genuine bot bodies when their associated comment inventory is empty" do
+            allow(github_client).to receive(:pull_request_review_comments).and_return([])
+
+            expect(builder.review_feedback_context_blocked?).to be(false)
+            expect(builder.build).to include("Attached bot finding already resolved inline.")
+            expect(github_client).to have_received(:pull_request_review_comments).once
+          end
+        end
+      end
+    end
+
     # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-013
     it "admits a trusted current standalone commented review with no inline threads" do
       allow(github_client).to receive(:pull_request_reviews)

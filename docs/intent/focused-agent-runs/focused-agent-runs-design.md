@@ -87,7 +87,9 @@ The PR scanner consumes that public thread state at the next admission
 boundary. A body-only-capable reviewer is not assumed to have produced only a
 top-level finding: when its latest review has inline comments and none of their
 threads remains unresolved, the scanner treats that inline feedback as closed
-and does not enqueue the same coding follow-up again. A genuine top-level-only
+and does not enqueue the same coding follow-up again. Associated-comment state
+is checked before timestamp-based body-only follow-up decisions, including for
+a fresh review. A genuine top-level-only
 finding remains actionable, as does any review whose comment data cannot be
 fetched. Changed files are not closure evidence; partial or unrelated changes
 continue to require an open thread or a fresh reviewer disposition.
@@ -134,6 +136,14 @@ GitHub represents either as a nonblank `COMMENTED` review. A later clean review 
 the earlier body, and reviews observed before the completed-run cutoff are not
 requeued. This is prompt context only: it does not manufacture a review-thread
 identifier, resolve review state, or renew retry and allowance budgets.
+
+A configured bot's `COMMENTED` review that has associated inline comments is
+not an independent standalone finding. It continues through the existing
+thread lifecycle, including resolved-inline suppression. The standalone route
+requires a known absence of associated inline comments for such bot reviews;
+unavailable comment state remains an incomplete review gate, not coding work
+or an all-clear result. Human standalone findings retain their existing trust
+and cutoff rules.
 
 ## `focus_resolved` attribution
 

@@ -153,7 +153,7 @@ module Prompts
     def review_feedback_context_blocked?
       return false unless focus == "review_feedback"
 
-      top_level_reviews
+      trusted_top_level_reviews
       @top_level_reviews_unavailable || (human_review_threads_present? && !review_feedback_present?)
     end
 
@@ -1151,10 +1151,39 @@ module Prompts
           review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) &&
             review[:body].to_s.strip.present? &&
             !paid_agent_clean_review?(review) &&
-            !review_bot_clean_review?(review)
+            !review_bot_clean_review?(review) &&
+            standalone_review_body?(review)
         end
         .sort_by { |review| [ review[:submitted_at] || Time.at(0), review[:id].to_i ] }
         .last(max_prompt_comments)
+    end
+
+    def standalone_review_body?(review)
+      return true unless review[:state] == "COMMENTED" && RunnerSupport.runner_bot_username?(review[:user_login])
+
+      if review[:id].nil?
+        @top_level_reviews_unavailable = true
+        return false
+      end
+
+      comments = standalone_bot_review_comments
+      return false if @top_level_reviews_unavailable
+
+      comments.none? { |comment| comment[:pull_request_review_id].to_s == review[:id].to_s }
+    end
+
+    def standalone_bot_review_comments
+      @standalone_bot_review_comments ||= begin
+        comments = github_client.pull_request_review_comments(project.full_name, pr_number)
+        raise GithubClient::Error, "Review comment inventory unavailable" if comments.nil?
+
+        comments
+      end
+    rescue GithubClient::Error => error
+      @top_level_reviews_unavailable = true
+      Rails.logger.warn(message: "prompts.pr_review_comment_context_unavailable", project_id: project.id,
+        pr_number: pr_number, error_class: error.class.name)
+      @standalone_bot_review_comments = []
     end
 
     # The paid-agent verifier's clean marker records an agent_harness semantic

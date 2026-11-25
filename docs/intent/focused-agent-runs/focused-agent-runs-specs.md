@@ -149,7 +149,11 @@
   clean verdict or configured review-bot summary matching the shared
   clean-review classifier SHALL NOT route a follow-up despite its nonblank
   `COMMENTED` state. An excluded author, an empty state, a superseded finding, or a review
-  at or before that cutoff SHALL NOT route a follow-up. Existing review, merge,
+  at or before that cutoff SHALL NOT route a follow-up. A configured bot's
+  `COMMENTED` review with associated inline comments SHALL retain the existing
+  thread lifecycle rather than emit standalone feedback. Unavailable inline
+  comment state SHALL remain an incomplete review gate; only a known absence
+  of associated comments SHALL admit that bot body as standalone. Existing review, merge,
   retry, and allowance decisions remain unchanged.
   *Code:* `ScanPaidPrsActivity#standalone_review_feedback_from_reviews`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
@@ -187,7 +191,8 @@
 
 - [x] **FOCUSED-RUN-012** — When the latest review from a body-only-capable
   reviewer has inline comments but no unresolved review threads, Paid SHALL NOT
-  admit another coding follow-up for those resolved comments. Paid SHALL keep a
+  admit another coding follow-up for those resolved comments, even when the
+  review post-dates the last completed run. Paid SHALL keep a
   genuine top-level-only finding actionable, fail closed when review-comment
   data is unavailable, and SHALL NOT infer resolution from a changed related or
   unrelated file.
