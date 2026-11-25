@@ -72,11 +72,13 @@
 
 - [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
   completes or terminates `no_output` with the `no_changes` reason, the PR
-  scanner SHALL use the newest successful prompt-preparation start across
+  scanner SHALL use a cutoff immediately before the start second of the newest
+  successful prompt preparation across
   eligible terminal runs as the conversation-comment cutoff, so comments
   arriving after preparation remain actionable even when they precede run
   completion. Only legacy runs without any recorded prompt preparation may
-  use `completed_at`; failed or post-completion preparation SHALL NOT
+  use a cutoff immediately before their completion second; same-second provider timestamps
+  SHALL remain actionable when ordering is ambiguous. Failed or post-completion preparation SHALL NOT
   acknowledge feedback. Eligibility requires a focus that includes the conversation section (the
   `conversation` focus, plus the unscoped `general` and `label_action`
   focuses that include every applicable section). A completed or no-change

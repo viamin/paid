@@ -84,11 +84,16 @@ re-admitting follow-ups (#5180).
 and `create_pr`/`no_output`/`no_changes` runs whose focus includes the
 conversation section — `conversation` itself, plus unscoped `general` and
 `label_action` (the same rule as `Prompts::BuildForPr#include_section?`).
-For recorded prompt preparation, the cutoff is the latest successful
-preparation's start, provided it finished before terminal completion.
+For recorded prompt preparation, the cutoff is immediately before the start
+second of the latest successful preparation, provided it finished before
+terminal completion. Provider comments can have whole-second timestamps while
+phase clocks retain fractions; same-second ordering is therefore ambiguous.
+Retain those comments conservatively rather than claiming they were shown.
 Completion time cannot acknowledge a comment that arrived after the prompt
 was assembled. A failed or late preparation supplies no acknowledgment;
-legacy runs with no preparation record retain their completion-time cutoff.
+legacy runs with no preparation record retain a cutoff immediately before
+their completion second. A subsequent preparation in a later second consumes
+already-shown feedback normally; no run timestamp or allowance is changed.
 Take the maximum context cutoff across all eligible run history, rather than
 choosing by completion order, so a late-finishing older prompt does not hide
 a newer context or cause duplicate follow-ups. This is a scalar indexed
