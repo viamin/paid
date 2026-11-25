@@ -805,6 +805,24 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "allows the queued-run activity to resume the scheduler-admitted running run" do
+      queued_run = create(:agent_run, :queued, :automatic)
+      resumed_result = nil
+
+      allow(temporal_client).to receive(:start_workflow) do |_workflow, input, **_options|
+        expect(queued_run.reload.status).to eq("running")
+        resumed_result = Activities::CreateAgentRunActivity.new.execute(input)
+        workflow_handle
+      end
+
+      job.perform
+
+      expect(resumed_result).to include(agent_run_id: queued_run.id)
+      expect(queued_run.reload.status).to eq("running")
+      expect(queued_run.temporal_workflow_id).to be_present
+    end
+
     it "dispatches an operator-prioritized coding retry with its Temporal priority" do # @spec QUEUE-TIER-009
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project:, github_state: "open")

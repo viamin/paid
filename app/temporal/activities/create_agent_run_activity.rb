@@ -179,7 +179,7 @@ module Activities
     def claim_queued_resume_attempt!(agent_run, attempt)
       agent_run.with_lock do
         agent_run.reload
-        raise_queued_resume_superseded!(agent_run, attempt) unless agent_run.queued?
+        raise_queued_resume_superseded!(agent_run, attempt) unless resumable_queued_run?(agent_run)
 
         previous_attempt = agent_run.external_metadata.dig("queued_run_resume", "attempt").to_i
         raise_queued_resume_superseded!(agent_run, attempt) if previous_attempt > attempt
@@ -209,10 +209,14 @@ module Activities
     def ensure_queued_resume_attempt_current!(agent_run, attempt, allow_paused: false)
       agent_run.reload
       recorded_attempt = agent_run.external_metadata.dig("queued_run_resume", "attempt").to_i
-      current_status = agent_run.queued? || (allow_paused && agent_run.paused?)
+      current_status = resumable_queued_run?(agent_run) || (allow_paused && agent_run.paused?)
       return if current_status && recorded_attempt == attempt
 
       raise_queued_resume_superseded!(agent_run, attempt)
+    end
+
+    def resumable_queued_run?(agent_run)
+      agent_run.queued? || agent_run.running?
     end
 
     def raise_queued_resume_superseded!(_agent_run, _attempt)
@@ -472,7 +476,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       attempt = queued_resume_attempt
 
-      unless agent_run.queued?
+      unless resumable_queued_run?(agent_run)
         logger.warn(
           message: "agent_execution.resume_queued_run_unexpected_status",
           agent_run_id: agent_run.id,
