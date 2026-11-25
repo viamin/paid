@@ -123,13 +123,17 @@ authority for whether current-head review is required.
 
 The completion envelope around that assessment is bounded (#5310): the
 existing-PR completion activity derives one finite deadline from its Temporal
-start-to-close budget, bounds the comparison reads that gather assessment
+start-to-close budget, bounds the initial PR metadata read and the comparison reads that gather assessment
 evidence by that same envelope, deducts their elapsed time before admitting
 the harness assessment request, and gives that request only what remains
 after a deliberate publication reserve. It reuses the already-persisted
 assessment — bound to the exact pre-run, integration-base, and pushed head
 SHAs — on any activity retry rather than spending another request. The
-assessment plus its durable persistence always precede PR publication; a
+assessment plus its durable persistence always precede PR publication. If initial
+metadata is unavailable or its read budget is exhausted, completion records an
+unavailable assessment bound to the recorded pre-run and pushed SHAs, leaves the
+unknown integration base unset, skips publication, and raises the same typed
+stop without requesting semantic assessment. A
 malformed, unavailable, or rejected decision persists the exact pushed commit
 and bound scope status and then raises the typed non-retryable
 `ConflictRepairScopeRejected` review stop. Publication on that stop path runs

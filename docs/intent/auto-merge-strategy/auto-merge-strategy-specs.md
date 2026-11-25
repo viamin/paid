@@ -215,9 +215,12 @@
   reserve, and a retry of that activity SHALL reuse the persisted assessment
   bound to the exact recorded pre-run, integration-base, and pushed head
   SHAs instead of re-assessing, so retries add no LLM spend. When no
-  assessment budget remains after the reserve — or a bounded comparison read
+  assessment budget remains after the reserve — or a bounded initial PR metadata or comparison read
   exhausts it — the activity SHALL record an
-  unavailable assessment without issuing a request. A malformed, unavailable,
+  unavailable assessment without issuing a semantic request. Unavailable initial
+  PR metadata SHALL retain the recorded pre-run and pushed SHAs, leave the
+  unknown integration base unset, skip publication, and raise the same typed
+  stop without completing the run. A malformed, unavailable,
   or rejected assessment SHALL persist the exact pushed head SHA and bound
   scope status before any PR publication and SHALL remain the durable typed
   review stop (`ConflictRepairScopeRejected`) even when PR-body refresh or

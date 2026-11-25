@@ -36,6 +36,8 @@ module Activities
     # @spec AUTO-MERGE-011
     class ComparisonDeadlineExceeded < StandardError; end
 
+    class MetadataDeadlineExceeded < StandardError; end
+
     class << self
       def agent_update_comment?(body)
         normalized = body.to_s
@@ -65,7 +67,7 @@ module Activities
         project = agent_run.project
         client = project.client
 
-        pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        pr = completion_pull_request(client, agent_run)
         enforce_conflict_repair_scope!(client, agent_run, pr)
         record_shipped_verification_result(agent_run)
 
@@ -126,6 +128,41 @@ module Activities
     end
 
     private
+
+    # Initial metadata is part of the conflict-repair assessment envelope.
+    # Without it there is no integration base to assess or safe PR surface
+    # to publish, but the pushed revision still needs its durable typed stop.
+    # @spec AUTO-MERGE-011
+    def completion_pull_request(client, agent_run)
+      project = agent_run.project
+      return client.pull_request(project.full_name, agent_run.source_pull_request_number) unless agent_run.focus == "merge_conflict"
+
+      started = monotonic_now
+      budget = assessment_budget_seconds
+      raise MetadataDeadlineExceeded if budget < MINIMUM_REQUEST_SECONDS
+
+      Timeout.timeout(budget, MetadataDeadlineExceeded) do
+        client.pull_request(project.full_name, agent_run.source_pull_request_number)
+      end
+    rescue GithubClient::Error, MetadataDeadlineExceeded => error
+      raise unless agent_run.focus == "merge_conflict"
+
+      assessment = unavailable_assessment(summary_base_sha(agent_run), nil, agent_run.result_commit_sha)
+        .merge("explanation" => "Initial PR metadata was unavailable within the completion deadline")
+      persist_conflict_repair_scope_assessment(agent_run, assessment)
+      record_assessment_diagnostics(budget: budget, elapsed_seconds: monotonic_now - started, status: "unavailable")
+      record_publication_diagnostics(elapsed_seconds: 0, skipped: true)
+      logger.warn(
+        message: "agent_execution.conflict_repair_metadata_unavailable",
+        agent_run_id: agent_run.id,
+        error_class: error.class.name
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "Automatic conflict repair requires review: #{assessment.fetch("explanation")}",
+        type: "ConflictRepairScopeRejected",
+        non_retryable: true
+      )
+    end
 
     # The enclosing deadline is finite: internal budgets derive from the
     # activity's actual Temporal start-to-close deadline rather than stacking

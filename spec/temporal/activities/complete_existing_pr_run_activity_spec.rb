@@ -67,6 +67,69 @@ allow(GithubClient).to receive(:new).and_return(github_client)
 
 
   describe "#execute" do
+    # @spec AUTO-MERGE-011
+    it "preserves a durable scope stop when no initial metadata budget remains" do
+      original_sha = agent_run.result_commit_sha
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "before-sha" })
+      allow(activity).to receive(:assessment_budget_seconds).and_return(0.0)
+      expect(github_client).not_to receive(:pull_request)
+      expect(github_client).not_to receive(:update_pull_request)
+      expect(github_client).not_to receive(:add_comment)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError) do |error|
+        expect(error.type).to eq("ConflictRepairScopeRejected")
+        expect(error.non_retryable).to be(true)
+      end
+
+      expect(agent_run.reload).to be_running
+      expect(agent_run.result_commit_sha).to eq(original_sha)
+      expect(agent_run.external_metadata.fetch("conflict_repair_scope_assessment")).to include(
+        "status" => "unavailable", "base_sha" => "before-sha", "integration_base_sha" => nil, "head_sha" => original_sha
+      )
+    end
+
+    # @spec AUTO-MERGE-011
+    it "bounds a started initial metadata read before persisting its scope stop" do
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "before-sha" })
+      allow(activity).to receive(:assessment_budget_seconds).and_return(1.0)
+      entered = false
+      allow(github_client).to receive(:pull_request) do
+        entered = true
+        Queue.new.pop
+      end
+      expect(github_client).not_to receive(:compare_summary)
+      expect(github_client).not_to receive(:update_pull_request)
+      outer_guard = Class.new(StandardError)
+
+      expect { Timeout.timeout(3, outer_guard) { activity.execute(agent_run_id: agent_run.id) } }
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.type).to eq("ConflictRepairScopeRejected")
+        end
+
+      expect(entered).to be(true)
+      expect(agent_run.reload).to be_running
+      expect(agent_run.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+      phase = agent_run.agent_run_phases.find_by!(phase_key: "complete_existing_pr_run")
+      expect(phase.metadata["rejection_publication_skipped"]).to be(true)
+    end
+
+    # @spec AUTO-MERGE-011
+    it "preserves the pushed scope stop when initial PR metadata is unavailable" do
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "before-sha" })
+      allow(github_client).to receive(:pull_request).and_raise(GithubClient::Error, "metadata unavailable")
+      expect(github_client).not_to receive(:compare_summary)
+      expect(github_client).not_to receive(:update_pull_request)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError) do |error|
+        expect(error.type).to eq("ConflictRepairScopeRejected")
+      end
+
+      expect(agent_run.reload).to be_running
+      expect(agent_run.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+    end
+
     it "marks the agent run as completed with existing PR details" do
       activity.execute(agent_run_id: agent_run.id)
 
@@ -245,6 +308,8 @@ allow(GithubClient).to receive(:new).and_return(github_client)
           remaining_activity_seconds: described_class::PUBLICATION_RESERVE_SECONDS.to_f,
           publication_budget_seconds: 0.0
         )
+        # Initial metadata succeeds before consuming the assessment reserve.
+        allow(activity).to receive(:assessment_budget_seconds).and_return(1.0, 0.0)
         expect(AgentHarness.conductor).not_to receive(:execute_direct)
         expect(github_client).not_to receive(:compare_summary)
 
