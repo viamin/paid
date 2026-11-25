@@ -66,5 +66,15 @@ RSpec.describe "sdk_build_environment:preflight" do
       .and output(/sdk build environment preflight verdict: toolchain_absent/).to_stderr
       .and raise_error(SystemExit)
   end
+
+  # @spec RUST-SDK-BUILD-010
+  it "prints an unverifiable receipt when Docker metadata collection fails" do
+    allow(backend).to receive(:system_info).and_raise(Docker::Error::DockerError.new("daemon unavailable"))
+
+    expect { task.invoke }
+      .to output(/"verdict": "unverifiable"/).to_stdout
+      .and output(/sdk build environment preflight verdict: unverifiable/).to_stderr
+      .and raise_error(SystemExit)
+  end
 end
 # rubocop:enable RSpec/DescribeClass
