@@ -235,7 +235,9 @@
   current integration base. Paid SHALL reauthorize the recorded requesting
   actor immediately before each provider or semantic operation and after
   external work before publishing evidence; a nil, removed, or
-  no-longer-authorized actor cannot publish evidence. After semantic work it
+  no-longer-authorized actor cannot publish evidence. Deleting the requesting
+  actor SHALL nullify its optional attribution without deleting immutable
+  evidence or preventing final account-membership revocation. After semantic work it
   SHALL re-read both base and head before publishing. Unavailable and stale
   outcomes are immutable, idempotent records, while a later successful bounded
   request may supersede unavailable evidence for the same artifact range.

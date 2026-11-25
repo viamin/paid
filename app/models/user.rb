@@ -50,6 +50,9 @@ class User < ApplicationRecord
   # @spec PROJECT-DELEGATION-001
   has_many :selected_delegation_postures, class_name: "ProjectDelegationPosture",
     foreign_key: :selected_by_id, dependent: :nullify, inverse_of: :selected_by
+  # @spec AUTO-MERGE-011
+  has_many :requested_conflict_repair_scope_evidences, class_name: "ConflictRepairScopeEvidence",
+    foreign_key: :requested_by_id, dependent: :nullify, inverse_of: :requested_by
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable

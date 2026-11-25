@@ -122,8 +122,11 @@ newer independent result, while a later complete approved assessment for the
 same base and HEAD is the bounded recovery route. Reassessment reauthorizes its
 requesting actor before each provider and semantic operation and after external
 work before publication, then fences both provider revisions before persisting
-its immutable result. Revocation during a provider comparison or semantic
-assessment refuses further work and publication. Repeated unavailable
+its immutable result. Requester attribution is optional historical context:
+deleting the requester nullifies that attribution without deleting the evidence
+or preventing the requester's final account-membership revocation. Revocation
+during a provider comparison or semantic assessment refuses further work and
+publication. Repeated unavailable
 or stale observations are idempotently retained; a recovered provider may add a
 later approved result without mutating that history. This gate does not change the
 separate review-freshness classifier or its policy exceptions.

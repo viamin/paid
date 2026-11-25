@@ -10,7 +10,8 @@ class ConflictRepairScopeEvidence < ApplicationRecord
   belongs_to :account
   belongs_to :project
   belongs_to :issue
-  belongs_to :requested_by, class_name: "User", optional: true
+  belongs_to :requested_by, class_name: "User", optional: true,
+    inverse_of: :requested_conflict_repair_scope_evidences
 
   validates :pre_run_sha, :integration_base_sha, :result_sha, :provider_head_sha, :explanation, presence: true
   validates :status, inclusion: { in: STATUSES }
