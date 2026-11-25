@@ -3981,6 +3981,23 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.reload).not_to be_auth_expired
       end
 
+      it "keeps nested MCP quota and rate-limit results out of provider classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            content: "completed",
+            structured_content: { "nested" => [ { "detail" => "quota exceeded: rate limit reached" } ] }
+          ),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
+      end
+
       it "keeps a failed MCP tool's auth-shaped error out of provider auth classification" do # @spec RUNNER-FALLBACK-015
         result = Containers::Provision::Result.success(
           stdout: codex_mcp_tool_output(

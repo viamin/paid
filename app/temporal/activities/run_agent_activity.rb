@@ -2730,7 +2730,7 @@ module Activities
     end
 
     # Codex item types whose fields carry agent-authored content (not provider
-    # errors), mapped to the string fields to blank on that item.
+    # errors), mapped to the fields to blank on that item.
     CODEX_AGENT_AUTHORED_FIELDS = {
       "command_execution" => %w[command aggregated_output],
       "agent_message" => %w[text],
@@ -2756,7 +2756,7 @@ module Activities
       case node
       when Hash
         CODEX_AGENT_AUTHORED_FIELDS.fetch(node["type"], []).each do |field|
-          node[field] = "" if node[field].is_a?(String)
+          node[field] = "" if node.key?(field)
         end
         node.each_value { |value| blank_codex_agent_authored_fields!(value) }
       when Array
