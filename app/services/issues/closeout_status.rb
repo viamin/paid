@@ -172,8 +172,13 @@ module Issues
         INNER JOIN issues dependent_issues ON dependent_issues.id = issue_dependencies.issue_id
         INNER JOIN issues depends_on_issues ON depends_on_issues.id = issue_dependencies.depends_on_issue_id
       SQL
-      local = dependencies.where(issue_id: issue_ids, depends_on_issues: { github_state: "open" })
-        .where.not(depends_on_issues: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+      local = dependencies.where(issue_id: issue_ids).where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        (depends_on_issues.is_pull_request = TRUE AND
+          (depends_on_issues.github_state IS DISTINCT FROM 'closed' OR
+           depends_on_issues.pr_review_phase IS DISTINCT FROM 'merged')) OR
+        (depends_on_issues.is_pull_request = FALSE AND depends_on_issues.github_state = 'open' AND
+          depends_on_issues.paid_state NOT IN (?))
+      SQL
         .where("dependent_issues.parent_issue_id IS DISTINCT FROM issue_dependencies.depends_on_issue_id")
         .pluck(:issue_id, "depends_on_issues.github_number")
       deployment = dependencies.where(issue_id: issue_ids, requires_deployment: true)

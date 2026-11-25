@@ -123,6 +123,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(eligible.id)
     end
 
+    %w[completed recommend_close].each do |paid_state|
+      it "excludes an issue blocked by an open #{paid_state} PR at dequeue" do # @spec DEPENDENCY-DECLARATIONS-011
+        issue = create(:issue, project: project, github_state: "open")
+        pr = create(:issue, :pull_request, project: project, github_state: "open", paid_state: paid_state)
+        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+        queued = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(described_class.eligible_scope(project)).not_to include(issue)
+        expect(described_class.eligible_for_dequeue?(project, issue.id, excluding_run_id: queued.id)).to be(false)
+      end
+    end
+
     it "keeps tracker-like implementation issues with contextual open and unknown references eligible" do # @spec AUTO-PICK-QUEUE-013
       implementation = create(:issue, project: project, github_number: 1,
         title: "feat(inbox): show acceptance evidence and remaining work for partial closeouts",

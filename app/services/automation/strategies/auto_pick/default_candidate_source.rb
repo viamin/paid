@@ -677,14 +677,21 @@ module Automation
               .maximum(Arel.sql("COALESCE(closed_at, parent_issue_linked_at, created_at)"))
             dependency_times = IssueDependency.joins(:depends_on_issue)
               .where(issue_id: issue_ids)
-              .where("issues.github_state = 'closed' OR issues.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+                (issues.is_pull_request = FALSE AND
+                  (issues.github_state = 'closed' OR issues.paid_state IN (?))) OR
+                (issues.is_pull_request = TRUE AND issues.github_state = 'closed' AND issues.pr_review_phase = 'merged')
+              SQL
               .group(:issue_id)
               .maximum(Arel.sql("COALESCE(issues.closed_at, issue_dependencies.created_at)"))
             external_dependency_times = IssueDependency
               .external_resolved_for_account(project.account_id)
               .where(issue_id: issue_ids)
-              .where("ext_issue.github_state = 'closed' OR ext_issue.paid_state IN (?)",
-                Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+              .where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+                (ext_issue.is_pull_request = FALSE AND
+                  (ext_issue.github_state = 'closed' OR ext_issue.paid_state IN (?))) OR
+                (ext_issue.is_pull_request = TRUE AND ext_issue.github_state = 'closed' AND ext_issue.pr_review_phase = 'merged')
+              SQL
               .group(:issue_id)
               .maximum(Arel.sql("COALESCE(ext_issue.closed_at, issue_dependencies.created_at)"))
 
