@@ -6771,7 +6771,10 @@ expect(container_service).to receive(:execute).with(
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
-        allow(orphan_token).to receive(:client).and_return(instance_double(GithubClient, issue_comments: []))
+        repo = Regexp.escape(project_without_creator.full_name)
+        comments_url = %r{\Ahttps://api\.github\.com/repos/#{repo}/issues/#{issue_for_orphan.github_number}/comments(?:\?.*)?\z}
+        stub_request(:get, comments_url)
+          .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
         expect {
           activity.execute(agent_run_id: orphan_run.id)
