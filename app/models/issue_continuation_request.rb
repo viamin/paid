@@ -18,7 +18,7 @@ class IssueContinuationRequest < ApplicationRecord
 
   belongs_to :issue
   belongs_to :project
-  belongs_to :requested_by, class_name: "User"
+  belongs_to :requested_by, class_name: "User", optional: true
   has_many :agent_runs, foreign_key: :continuation_request_id, inverse_of: :continuation_request, dependent: :nullify
 
   validates :reason, presence: true, length: { maximum: 2000 }

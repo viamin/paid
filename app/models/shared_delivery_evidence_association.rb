@@ -15,7 +15,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   belongs_to :project
   belongs_to :issue
   belongs_to :pull_request, class_name: "Issue"
-  belongs_to :authorized_by, class_name: "User"
+  belongs_to :authorized_by, class_name: "User", optional: true
 
   validates :pull_request_url, :revision, presence: true
   validates :revision, format: { with: /\A[0-9a-f]{40}\z/i }
@@ -25,7 +25,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
 
   def current?
     [ issue, pull_request ].all? { |record| record.project_id == project_id } &&
-      project.account_id == account_id && authorized_by.account_id == account_id &&
+      project.account_id == account_id && authorized_by&.account_id == account_id &&
       revoked_at.nil? && pull_request.github_state == "closed" && pull_request.pr_review_phase == "merged" &&
       pull_request.github_html_url == canonical_pull_request_url &&
       canonical_pull_request_url == pull_request_url && pull_request.merged_commit_sha == revision
@@ -36,7 +36,14 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   def same_tenant_and_project
     errors.add(:project, "must own the source and pull request") unless [ issue, pull_request ].all? { |record| record&.project_id == project_id }
     errors.add(:account, "must own the project") unless project&.account_id == account_id
-    errors.add(:authorized_by, "must belong to the account") unless authorized_by&.account_id == account_id
+    return if authorized_by&.account_id == account_id || historical_authorizer_revocation?
+
+    errors.add(:authorized_by, "must belong to the account")
+  end
+
+  def historical_authorizer_revocation?
+    persisted? && authorized_by_id.nil? && authorized_by_id_in_database.nil? &&
+      revoked_at.present? && (changed_attribute_names_to_save - %w[revoked_at updated_at]).empty?
   end
 
   def merged_pull_request

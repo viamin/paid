@@ -30,6 +30,13 @@ update account-scoped resources, owners alone hold destructive or billing-only
 powers, and project actions such as agent execution or issue management also
 permit project-specific roles when the user is still inside the same account.
 
+Historical actor attribution is intentionally distinct from current authority.
+When revocation deletes a user, audit and evidence rows may retain their
+request, run, project, and revision lineage with a null actor reference. A
+missing or revoked historical actor fails closed wherever current authorization
+or evidence freshness is evaluated; it cannot keep a membership alive or
+confer execution authority.
+
 ## What This Is Not
 
 - **Not operator-console authorization.** Global `/admin` access is a separate

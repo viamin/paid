@@ -281,7 +281,7 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
   # @spec PARTIAL-CLOSEOUT-005 — scoped continuation authorization is honored
   # at dequeue/run start even though the run is manual-trigger.
   describe "continuation runs" do
-    let(:user) { create(:user, account: project.account) }
+    let(:user) { create(:user, :member, account: project.account) }
 
     def continuation_run(issue:, request:)
       create(
@@ -317,6 +317,20 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
       expect(described_class.call(run)).to be false
       expect(run.reload.status).to eq("queued")
+    end
+
+    it "refuses a continuation whose requester lacks current execution permission" do # @spec PARTIAL-CLOSEOUT-064 TENANT-ACCESS-003
+      issue = create(:issue, project:, github_state: "open")
+      merged_partial_pr(issue:, number: 72)
+      viewer = create(:user, :viewer, account: project.account)
+      request = create(:issue_continuation_request, issue:, project:, requested_by: viewer)
+      run = continuation_run(issue:, request:)
+
+      expect(ProjectPolicy.new(viewer, project).run_agent?).to be(false)
+      expect(described_class.call(run)).to be(true)
+      expect(run.reload.status).to eq("cancelled")
+      expect(request.reload.status).to eq("superseded")
+      expect(request.closure_reason).to include("no longer has execution authority")
     end
 
     it "keeps a legacy acceptance audit queued without a technical evidence freshness snapshot" do # @spec PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047
