@@ -266,7 +266,7 @@ class DependabotAutoMergeJob < ApplicationJob
     merge_dependabot_pr_with(
       client,
       project,
-      pr_number,
+      pr_data,
       credential_mode: AutoMergeAttempt.primary_credential_mode(project)
     )
   rescue GithubClient::ApiError => e
@@ -278,7 +278,7 @@ class DependabotAutoMergeJob < ApplicationJob
         pr_number: pr_number
       )
       begin
-        return merge_dependabot_pr_with(fallback_client, project, pr_number, credential_mode: "pat_fallback")
+        return merge_dependabot_pr_with(fallback_client, project, pr_data, credential_mode: "pat_fallback")
       rescue GithubClient::ApiError => fallback_error
         return handle_expected_merge_failure(
           project,
@@ -342,7 +342,12 @@ class DependabotAutoMergeJob < ApplicationJob
     false
   end
 
-  def merge_dependabot_pr_with(client, project, pr_number, credential_mode:)
+  # @spec AUTO-MERGE-010
+  def merge_dependabot_pr_with(client, project, pr_data, credential_mode:)
+    pr_number = pr_number_from(pr_data)
+    head_sha = pr_head_sha(pr_data)
+    return false unless conflict_repair_scope_allowed?(project, pr_data, credential_mode)
+
     issue = project.issues.find_by(github_number: pr_number, is_pull_request: true)
     if issue && PullRequests::TechnicalMergeBlockers.blocked?(issue)
       record_attempt(project, pr_number, status: "blocked",
@@ -353,7 +358,8 @@ class DependabotAutoMergeJob < ApplicationJob
 
     primary_merge_client(client).merge_pull_request(
       project.full_name, pr_number,
-      merge_method: project.merge_method
+      merge_method: project.merge_method,
+      expected_head_sha: head_sha
     )
     clear_merge_permission_rejection(project, pr_number)
     add_label(client, project, pr_number)
@@ -371,6 +377,34 @@ class DependabotAutoMergeJob < ApplicationJob
       credential_mode: credential_mode
     )
     true
+  end
+
+  def conflict_repair_scope_allowed?(project, pr_data, credential_mode)
+    pr_number = pr_number_from(pr_data)
+    issue = pull_request_issue(project, pr_number)
+    return true unless issue
+
+    gate = PullRequests::ConflictRepairScopeGate.call(
+      project:, issue:, head_sha: pr_head_sha(pr_data), integration_base_sha: pr_base_sha(pr_data)
+    )
+    return true if gate.allowed?
+
+    Rails.logger.info(
+      message: "dependabot_auto_merge.conflict_repair_scope_blocked",
+      project_id: project.id,
+      pr_number: pr_number,
+      reason_code: gate.reason_code,
+      agent_run_id: gate.agent_run_id
+    )
+    record_attempt(
+      project,
+      pr_number,
+      status: "blocked",
+      reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED,
+      message: "Automatic conflict-repair scope for the current HEAD is unresolved; complete the bounded repair assessment before retrying auto-merge.",
+      credential_mode: credential_mode
+    )
+    false
   end
 
   # Unwraps the project-policy decorators (label-write suppression, quiet-mode

@@ -395,21 +395,6 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq(built_image)
   end
 
-  it "bounds image build and deletion through a deadline-scoped connection" do
-    timed_connection = instance_double(Docker::Connection)
-    allow(Docker).to receive(:connection).and_return(connection = instance_double(Docker::Connection, url: "unix:///var/run/docker.sock", options: {}))
-    allow(Docker::Connection).to receive(:new)
-      .with("unix:///var/run/docker.sock", { timeout: 0.1, retry_limit: 0 })
-      .and_return(timed_connection)
-    allow(Docker::Image).to receive_messages(build: true, remove: true)
-
-    backend.build_image("FROM scratch", { t: "paid-sdk-core-build" }, deadline: 0.1)
-    backend.delete_image("paid-sdk-core-build", deadline: 0.1, force: true)
-
-    expect(Docker::Image).to have_received(:build).with("FROM scratch", { t: "paid-sdk-core-build" }, timed_connection)
-    expect(Docker::Image).to have_received(:remove).with("paid-sdk-core-build", { force: true }, timed_connection)
-  end
-
   it "checks image usage via the ancestor container-list filter" do
     allow(Docker::Container).to receive(:all)
       .with(filters: { ancestor: [ "paid-agent:go-node" ] }.to_json)

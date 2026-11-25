@@ -165,7 +165,7 @@ module Containers
       #   resolve consistently everywhere.
       # @return [Docker::Image, Array<Docker::Image>] the built image, or one
       #   built image per host for backends that build on multiple hosts
-      def build_image(_dockerfile, _opts = {}, deadline: nil)
+      def build_image(_dockerfile, _opts = {})
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
@@ -174,7 +174,7 @@ module Containers
       end
 
       # Removes an image (or a single tag of it) by reference.
-      def delete_image(_name, deadline: nil, **_opts)
+      def delete_image(_name, **_opts)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 

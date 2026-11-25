@@ -31,9 +31,12 @@
 
 - [x] **RUST-SDK-BUILD-004** — When container output contains a dynamic
   loader failure (`Dynamic loader not found: <interpreter path>`), the
-  system SHALL classify it as foreign-architecture binary execution
-  attributed to the interpreter path's implied architecture, and SHALL
-  return no classification when the output carries no such signature.
+  system SHALL attribute the requested loader architecture to the path,
+  classify it as foreign only when the known process architecture differs,
+  and identify a matching architecture's missing loader separately. Unknown
+  loader or process architectures SHALL remain unknown; the signature alone
+  SHALL NOT establish the historical runner or downloaded artifact's cause.
+  It SHALL return no classification when the output carries no such signature.
   *Tests:* `spec/services/sdk_build_environments/architecture_compatibility_spec.rb`.
   *Code:* `SdkBuildEnvironments::ArchitectureCompatibility.classify_loader_failure`.
 
@@ -95,8 +98,9 @@
 - [x] **RUST-SDK-BUILD-011** — When the rake task
   `sdk_build_environment:preflight` runs, it SHALL execute the same
   classification as the service against a real backend and SHALL emit the
-  receipt as JSON, provisioning no containers and mutating no run,
-  worker, or pin state.
+  receipt as JSON, provisioning no build containers and mutating no run,
+  worker, or pin state. Any disposable metadata-probe container SHALL obey
+  RUST-SDK-BUILD-012 and be cleaned up.
   *Tests:* `spec/tasks/sdk_build_environment_preflight_rake_spec.rb`.
   *Code:* `lib/tasks/sdk_build_environment.rake`.
 
@@ -117,19 +121,3 @@
   *Code:* `SdkBuildEnvironments::MetadataProbe`,
   `Containers::Backends::Base#supports_network_disabled_containers?`,
   `Containers::Backends::Swarm`.
-
-- [x] **RUST-SDK-BUILD-013** — When an authorized agent confirms the
-  pinned Rust SDK Core baseline for its acting run, the system SHALL resolve
-  that run's selected Paid backend, require a compatible preflight, build only
-  the immutable SDK/Core source recipe within one finite build deadline and
-  resource envelope, verify each pinned libclang package and library digest,
-  run `cargo check --locked --offline --package temporalio-sdk-core` in the
-  checked-out `temporalio` workspace in a separate network-disabled,
-  capability-dropped bounded container, return its command, bounded output,
-  exit status, preflight, and cleanup receipt, and remove its temporary
-  container and image after both successful and interrupted build phases
-  without exposing Docker or host access to the agent.
-  *Tests:* `spec/services/sdk_build_environments/pinned_core_build_spec.rb`,
-  `spec/mcp/tools/build_pinned_rust_sdk_core_spec.rb`.
-  *Code:* `SdkBuildEnvironments::PinnedCoreBuild`,
-  `Tools::BuildPinnedRustSdkCore`.

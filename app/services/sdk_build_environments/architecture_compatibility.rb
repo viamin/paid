@@ -4,9 +4,9 @@ module SdkBuildEnvironments
   # Pure classification of runner/architecture/loader compatibility for
   # isolated Rust/SDK build environments. An ELF binary names its dynamic
   # loader in its program header, so a loader error identifies the
-  # *binary's* architecture, not the host's — the exact confusion behind
-  # the #5358 failure (`Dynamic loader not found: /lib64/ld-linux-x86-64.so.2`
-  # reported by an aarch64 runner that had acquired an x86-64 toolchain).
+  # requested architecture, not the host's. The historical #5358 artifact
+  # and runner were not retained; its loader signature cannot establish
+  # the original process architecture or provisioning cause by itself.
   #
   # @spec RUST-SDK-BUILD-001
   # @spec RUST-SDK-BUILD-002
@@ -109,10 +109,11 @@ module SdkBuildEnvironments
       end
 
       def loader_failure_kind(loader_architecture, process)
-        return "foreign_architecture_binary" if loader_architecture && process && loader_architecture != process
-        return "missing_compatible_loader" if loader_architecture
+        return "unknown_loader_architecture" unless loader_architecture
+        return "unknown_process_architecture" unless process
+        return "foreign_architecture_binary" if loader_architecture != process
 
-        "unknown_loader_architecture"
+        "missing_compatible_loader"
       end
     end
   end

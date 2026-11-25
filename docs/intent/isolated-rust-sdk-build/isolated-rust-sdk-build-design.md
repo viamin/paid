@@ -24,16 +24,18 @@ Give the SDK prototype owner (#5326) an independently runnable,
 reproducible preflight prerequisite for Rust/SDK builds in Paid's supported
 execution environment — Docker-backed containers with digest-pinned,
 architecture-matched toolchain images — without touching host or
-control-plane SDK pins, operating workers, or the agent image. The build and
-native-artifact load capability remains the prototype's job-scoped concern;
-this segment does not represent metadata classification as build evidence.
+control-plane SDK pins, operating workers, or the agent image. The delivered
+capability includes the version-bound Core baseline through the existing
+isolated job shell, including for automatic owners without MCP access.
+Prototype changes, native-artifact loading and SDK/server acceptance remain
+with #5326; metadata classification alone is not build evidence.
 
 ## Scope boundaries
 
 - **Environment capability only.** The Core/Ruby prototype, the
   finite-attempt harness, and any client/server workflow tests belong to
-  #5326. This segment provides the environment: pins, preflight, and the
-  classification of loader/architecture failures.
+  #5326. This segment provides the environment: pins, preflight, the runnable
+  job-local Core baseline, and classification of loader/architecture failures.
 - **No runtime pin changes.** The recipe lives in versioned data in this
   segment's module. It is not wired into `bin/update`, the agent image
   build, or the combo-image language layers
@@ -47,13 +49,15 @@ this segment does not represent metadata classification as build evidence.
 
 The reported failure is a class, not a one-off: a dynamically linked
 binary records its interpreter path in the ELF program header, and the
-kernel refuses to exec it when that loader is absent. An x86-64 binary
-records `/lib64/ld-linux-x86-64.so.2`; an aarch64 binary records
-`/lib/ld-linux-aarch64.so.1`. On an aarch64 host the x86-64 path never
-exists, so the error text names the *binary's* architecture, not the
-host's — which is why the agent's retry with an "aarch64 default host"
-changed nothing: the host was already aarch64; the downloaded toolchain
-artifact was not.
+kernel refuses to exec it when that loader is absent. The GNU/Linux
+glibc toolchains use `/lib64/ld-linux-x86-64.so.2` for x86-64 and
+`/lib/ld-linux-aarch64.so.1` for aarch64. When the selected environment
+lacks that interpreter, execution fails.
+The named path is evidence about the requested loader, not independent
+proof of the historical host, image contents, or downloaded artifact.
+The original container and artifact were not retained; an architecture
+mismatch is a diagnosis to test against actual process and ELF metadata,
+not an established cause of that historical attempt.
 
 `SdkBuildEnvironments::ArchitectureCompatibility` owns this mapping:
 
@@ -140,33 +144,25 @@ than silently dropping the flag, and it maps the Engine `HostConfig`
 forms of the read-only root filesystem and the direct `NanoCpus` limit
 into the service spec so those requirements survive translation too.
 
-## Independent runnability and consumer invocation
+## Independent runnability
 
 `rake sdk_build_environment:preflight` runs the same classification
 against a real backend and prints the receipt as JSON. It performs
-metadata probes only, provisions nothing, and requires no run, project,
+metadata probes only, creates only the bounded disposable probe described
+above rather than a build environment, and requires no run, project,
 or worker state — the environment prerequisite stays independently
 runnable, per the issue's "no explicit dependency on #5326" constraint.
 
-The existing SDK prototype owner invokes the usable baseline through the
-confirmation-gated `build_pinned_rust_sdk_core` agent tool, supplying its
-authorized project and acting agent-run identifiers. The tool resolves the
-run's selected backend through `Containers.backend_for`; it does not grant
-the agent a Docker socket, host path, or a new native-attempt allowance.
-`SdkBuildEnvironments::PinnedCoreBuild` first requires a compatible
-preflight, builds a temporary image from the immutable SDK/Core source pins,
-then starts a separate capability-dropped, network-disabled container for
-`cargo check --locked --offline --package temporalio-sdk-core`. It returns
-the command, bounded output, exit status, preflight, and cleanup receipt,
-and removes both the container and temporary image in `ensure`. A single
-monotonic deadline covers image build, check, and cleanup transport calls;
-the image build receives the same memory, CPU, and process envelope as the
-check and uses force-removal so an interrupted build cannot leave its job tag
-behind.
-The Dockerfile installs the exact recorded libclang package versions, verifies
-the pinned `libclang.so.1` digest, initializes the Ruby SDK's actual
-`temporalio/ext/sdk-core` gitlink, and runs Cargo from `/sdk/temporalio`, whose
-lockfile is the recipe's recorded source identity.
+## Job-local baseline handoff
+
+The existing SDK owner can also install an explicitly pinned toolchain
+inside its isolated job-owned workspace without changing the agent image
+or requiring a Docker socket. The [job-local baseline recipe](job-local-baseline/README.md)
+contains the exact successful install, fetch and offline Core-check bodies,
+public artifact URLs, checksums, source revisions and runtime profile.
+This is an environment baseline and a handoff to #5326, not evidence that
+the Ruby bridge, server harness or task-safe quiescence contract passed.
+The assigned job limits and canonical attempt history remain authoritative.
 
 ## Decisions & Alternatives
 
@@ -177,13 +173,13 @@ lockfile is the recipe's recorded source identity.
 | Digest-pinned official toolchain images | Root verified the official ARM64 images by immutable digest; mutable tags would reintroduce exactly the unmeasured-identity gap that made the historical failure undiagnosable. | Trusting `rust:latest`-style tags; vendoring a toolchain into the repo. |
 | Injectable facts probe | Keeps classification hermetic and testable without a daemon, following the `AppleVerification::Setup::Shell` precedent. | Requiring a live daemon in unit tests; shelling out from the model layer. |
 | Record Ruby build profile with the pins | The static/shared ABI gap silently invalidates cross-profile load claims (root's ABI control receipts). Recording it makes the limitation structural rather than tribal knowledge. | Treating "Ruby 3.4.13" as sufficient identity. |
-| Dedicated agent tool for the Core baseline | Gives #5326 one job-scoped invocation through its existing authorization and selected backend, while keeping Docker authority inside Paid. | Giving an agent a Docker socket; a generic user-command build service. |
 
 ## What this is not
 
-- **Not an SDK test harness.** The fixed Core check establishes only the
-  version-bound build baseline; client/server workflows and native artifact
-  load evidence remain #5326's finite-attempt harness concern.
+- **Not the prototype's SDK/server harness.** Rails metadata/preflight code
+  does not clone or build SDK source. The owner-executed job recipe does fetch
+  the pinned source and compile its Core baseline; #5326 still owns prototype
+  changes, native loading and its finite-attempt SDK/server harness.
 - **Not a runner selection change.** Preflight classifies whatever
   backend and image it is given; it does not move runs between backends
   or alter scheduling.

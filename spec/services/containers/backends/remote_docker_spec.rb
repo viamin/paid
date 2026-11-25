@@ -134,21 +134,6 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.build_image("FROM scratch", { t: "paid-agent:go" })).to eq(image)
   end
 
-  it "bounds image build and deletion through a deadline-scoped connection" do
-    timed_connection = instance_double(Docker::Connection)
-    allow(connection).to receive_messages(url: "tcp://worker-1.internal:2376", options: {})
-    allow(Docker::Connection).to receive(:new)
-      .with("tcp://worker-1.internal:2376", { timeout: 0.1, retry_limit: 0 })
-      .and_return(timed_connection)
-    allow(Docker::Image).to receive_messages(build: image, remove: true)
-
-    backend.build_image("FROM scratch", { t: "paid-sdk-core-build" }, deadline: 0.1)
-    backend.delete_image("paid-sdk-core-build", deadline: 0.1, force: true)
-
-    expect(Docker::Image).to have_received(:build).with("FROM scratch", { t: "paid-sdk-core-build" }, timed_connection)
-    expect(Docker::Image).to have_received(:remove).with("paid-sdk-core-build", { force: true }, timed_connection)
-  end
-
   it "accepts host keywords for shared volume cleanup paths" do
     allow(Docker::Volume).to receive(:get).with("paid-workspace-1", connection).and_return(volume)
     allow(Docker::Volume).to receive(:create)

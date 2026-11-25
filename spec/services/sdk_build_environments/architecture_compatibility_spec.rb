@@ -100,7 +100,7 @@ RSpec.describe SdkBuildEnvironments::ArchitectureCompatibility, :no_db do
 
   describe ".classify_loader_failure" do
     # @spec RUST-SDK-BUILD-004
-    it "classifies the reported dynamic loader failure as foreign-architecture execution" do
+    it "classifies a loader mismatch against a known process architecture" do
       output = "OrbStack ERROR: Dynamic loader not found: /lib64/ld-linux-x86-64.so.2"
 
       result = described_class.classify_loader_failure(output, process_architecture: "aarch64")
@@ -110,6 +110,18 @@ RSpec.describe SdkBuildEnvironments::ArchitectureCompatibility, :no_db do
       expect(result[:loader_architecture]).to eq("amd64")
       expect(result[:process_architecture]).to eq("arm64")
       expect(result[:detail]).to include("amd64").and include("arm64")
+    end
+
+    [ nil, "unknown" ].each do |process|
+      it "does not claim compatibility when the process architecture is #{process.inspect}" do # @spec RUST-SDK-BUILD-004
+        result = described_class.classify_loader_failure(
+          "Dynamic loader not found: /lib64/ld-linux-x86-64.so.2", process_architecture: process
+        )
+
+        expect(result[:kind]).to eq("unknown_process_architecture")
+        expect(result[:loader_architecture]).to eq("amd64")
+        expect(result[:process_architecture]).to be_nil
+      end
     end
 
     # @spec RUST-SDK-BUILD-004

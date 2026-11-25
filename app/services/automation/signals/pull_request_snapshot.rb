@@ -5,10 +5,11 @@ module Automation
     class PullRequestSnapshot
       HeadRepo = ::Data.define(:fork)
       Head = ::Data.define(:sha, :ref, :repo)
+      Base = ::Data.define(:sha, :ref)
       User = ::Data.define(:login)
 
       attr_reader :number, :title, :body, :state, :draft, :merged, :mergeable,
-        :head_sha, :head_ref, :base_ref, :author_login, :labels, :created_at,
+        :head_sha, :head_ref, :base_sha, :base_ref, :author_login, :labels, :created_at,
         :updated_at, :merged_at, :url, :raw_state, :head_repo_fork
 
       def self.from_provider(pr_data)
@@ -22,6 +23,7 @@ module Automation
           mergeable: pr_data.mergeable,
           head_sha: pr_data.head_sha,
           head_ref: pr_data.head_ref,
+          base_sha: pr_data.base_sha,
           base_ref: pr_data.base_ref,
           author_login: pr_data.author_login,
           labels: pr_data.labels,
@@ -35,7 +37,7 @@ module Automation
       end
 
       def initialize(number:, title:, body:, state:, draft:, merged:, mergeable:,
-        head_sha:, head_ref:, base_ref:, author_login:, labels:, created_at:,
+        head_sha:, head_ref:, base_sha:, base_ref:, author_login:, labels:, created_at:,
         updated_at:, merged_at:, url:, raw_state:, head_repo_fork:)
         @number = number
         @title = title
@@ -46,6 +48,7 @@ module Automation
         @mergeable = mergeable
         @head_sha = head_sha
         @head_ref = head_ref
+        @base_sha = base_sha
         @base_ref = base_ref
         @author_login = author_login
         @labels = labels
@@ -63,6 +66,10 @@ module Automation
 
       def head
         Head.new(sha: head_sha, ref: head_ref, repo: HeadRepo.new(fork: head_repo_fork))
+      end
+
+      def base
+        Base.new(sha: base_sha, ref: base_ref)
       end
 
       def user

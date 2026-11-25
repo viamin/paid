@@ -115,6 +115,21 @@ within the PR's existing task and approved intent; a needed change outside that
 scope is reported for human direction. Before accepting the repair, Paid uses
 the agent harness to assess the bounded diff evidence and fails closed when the
 assessment is unavailable, malformed, or identifies out-of-scope author work.
+The stop is bound to the assessed integration base and HEAD: scan-time eligibility records it as an
+auto-merge blocker and the merge activity rechecks it against a freshly fetched
+HEAD before provider merge I/O. An assessment for another HEAD cannot block a
+newer independent result, while a later complete approved assessment for the
+same base and HEAD is the bounded recovery route. Reassessment reauthorizes its
+requesting actor before each provider and semantic operation and after external
+work before publication, then fences both provider revisions before persisting
+its immutable result. Requester attribution is optional historical context:
+deleting the requester nullifies that attribution without deleting the evidence
+or preventing the requester's final account-membership revocation. Revocation
+during a provider comparison or semantic assessment refuses further work and
+publication. Repeated unavailable
+or stale observations are idempotently retained; a recovered provider may add a
+later approved result without mutating that history. This gate does not change the
+separate review-freshness classifier or its policy exceptions.
 It persists separate base-import and repair-authored paths so the normal update
 comment can make that distinction legible to reviewers. A repair does not carry
 an approval across substantive conflict-resolution content and does not change the separate auto-merge policy:

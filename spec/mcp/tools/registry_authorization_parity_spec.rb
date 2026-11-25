@@ -213,19 +213,6 @@ RSpec.describe Tools::Registry do
         }
       },
       {
-        tool_name: "build_pinned_rust_sdk_core",
-        denied_user: -> {
-          project
-          create(:user, :viewer, account: account)
-        },
-        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id, confirmed: true } },
-        ui_call: ->(user) {
-          project_record = Pundit.policy_scope!(user, Project).find(project.id)
-          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
-          project_record.agent_runs.where(id: agent_run.id, initiating_user: user).find(agent_run.id)
-        }
-      },
-      {
         tool_name: "start_maintenance_run",
         denied_user: -> {
           project
@@ -339,6 +326,15 @@ RSpec.describe Tools::Registry do
       },
       {
         tool_name: "retry_source_closure",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { agent_run_id: agent_run.id, confirmed: true } },
+        ui_call: ->(user) {
+          run_record = Pundit.policy_scope!(user, AgentRun).find(agent_run.id)
+          authorize_record!(user, run_record, :retry?)
+        }
+      },
+      {
+        tool_name: "reassess_conflict_repair_scope",
         denied_user: -> { create(:user, :viewer, account: account) },
         arguments: -> { { agent_run_id: agent_run.id, confirmed: true } },
         ui_call: ->(user) {

@@ -97,6 +97,19 @@ RSpec.describe Automation::Strategies::AutoMerge, :no_db do
       expect(blocker_payloads(analysis, :failed)).to eq(multiple_failed_blockers)
     end
 
+    # @spec AUTO-MERGE-010
+    it "makes unresolved current-head conflict-repair scope evidence an auto-merge blocker" do
+      analysis = strategy.analyze(
+        human_signals(conflict_repair_scope_ok: false),
+        owner_reviewer_login: "viamin"
+      )
+
+      expect(analysis).not_to be_eligible
+      expect(blocker_payloads(analysis, :failed)).to include(
+        include(signal: "conflict_repair_scope_ok", reason_code: "conflict_repair_scope_unresolved")
+      )
+    end
+
     it "reports unsupported dependency-update bots as blocked before later bot gates" do
       analysis = strategy.analyze(
         bot_signals(merge_executor_supported: false, dependencies_resolved: false),

@@ -258,13 +258,12 @@ module Containers
 
       # Builds the image on every healthy node so any node can run it. Docker::Image.build
       # tars the Dockerfile per call, so each node gets its own request body.
-      def build_image(dockerfile, opts = {}, deadline: nil, &block)
+      def build_image(dockerfile, opts = {}, &block)
         nodes = healthy_nodes
         raise Docker::Error::NotFoundError, "Image #{opts[:t] || "unknown"} not built: no healthy swarm nodes available" if nodes.empty?
 
-        deadline_at = operation_deadline(deadline)
         nodes.map do |node|
-          Docker::Image.build(dockerfile, opts, node_connection(node, deadline: remaining_time(deadline_at)), &block)
+          Docker::Image.build(dockerfile, opts, node_connection(node), &block)
         end
       end
 
@@ -290,10 +289,9 @@ module Containers
       # per-node NotFoundError is expected skew, not a failure: skip it and
       # keep deleting on the remaining nodes so partially converged clusters
       # can still clean themselves up.
-      def delete_image(name, deadline: nil, **opts)
-        deadline_at = operation_deadline(deadline)
+      def delete_image(name, **opts)
         healthy_nodes.each do |node|
-          Docker::Image.remove(name, opts, node_connection(node, deadline: remaining_time(deadline_at)))
+          Docker::Image.remove(name, opts, node_connection(node))
         rescue Docker::Error::NotFoundError
           next
         end

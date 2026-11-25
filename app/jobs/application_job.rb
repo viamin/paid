@@ -194,6 +194,7 @@ class ApplicationJob < ActiveJob::Base
       QualityMetricsCollectionJob,
       RetryFailedAutoPickCreatePrJob,
       RetryFailedManualRunJob,
+      ReassessConflictRepairScopeJob,
       RetryTimedOutIssueGoalJob,
       TechnicalPrerequisiteValidationJob
     ].any? { |job_class| is_a?(job_class) }
