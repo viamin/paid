@@ -6,7 +6,7 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
   # @spec AUTO-PICK-QUEUE-019
   it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
     _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
-    edge = cycle.effective_edges.first
+    edge = edge_targeting(cycle, github_number: 999)
     source = Issue.find(edge.from_id)
     target = Issue.find(edge.to_id)
     expect([ source.github_number, target.github_number ]).to eq([ 1000, 999 ])
@@ -14,7 +14,7 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
     allow(client).to receive_messages(issue: live, issue_comments: [])
     allow(client).to receive(:update_issue)
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+    result = described_class.call(agent_run: run, recommendation: recommendation(run, edge:), client_resolver: ->(_) { client })
 
     expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
     expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
@@ -226,13 +226,14 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
   # @spec AUTO-PICK-QUEUE-019
   it "reports a nonmatching live declaration as missing when the target is #999" do
     _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
-    target = Issue.find(cycle.effective_edges.first.to_id)
+    edge = edge_targeting(cycle, github_number: 999)
+    target = Issue.find(edge.to_id)
     expect(target.github_number).to eq(999)
     client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #998" })
     allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+    result = described_class.call(agent_run: run, recommendation: recommendation(run, edge:), client_resolver: ->(_) { client })
 
     expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
     expect(client).not_to have_received(:update_issue)
@@ -351,9 +352,14 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     [ user, cycle, run ]
   end
 
-  def recommendation(run)
+  def edge_targeting(cycle, github_number:)
+    cycle.effective_edges.find { |edge| Issue.find(edge.to_id).github_number == github_number }
+  end
+
+  def recommendation(run, edge: nil)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
-    removed = snapshot.fetch("effective_edges").first
+    removed = snapshot.fetch("effective_edges").find { |candidate| candidate.fetch("id") == edge.id } if edge
+    removed ||= snapshot.fetch("effective_edges").first
     {
       "summary" => "The first declaration is obsolete.",
       "candidates" => [ {
