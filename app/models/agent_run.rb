@@ -1308,7 +1308,7 @@ class AgentRun < ApplicationRecord
     operator_priority_requested_at.present? && goal == "analyze_issue" && continuation_request_id.present?
   end
 
-  # @spec QUEUE-TIER-008 QUEUE-TIER-009
+  # @spec QUEUE-TIER-008 QUEUE-TIER-009 QUEUE-TIER-010
   def operator_coding_priority?
     operator_coding_priority_requested_at.present? && trigger_type == "automatic" && goal == "create_pr"
   end
@@ -1511,7 +1511,7 @@ class AgentRun < ApplicationRecord
   # trigger_type = 'automatic' is not re-checked below the first WHEN:
   # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
   # the second WHEN is already known to be automatic.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001 QUEUE-TIER-009
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001 QUEUE-TIER-009 QUEUE-TIER-010
     CASE
       WHEN trigger_type = 'manual' OR (
         agent_runs.operator_priority_requested_at IS NOT NULL

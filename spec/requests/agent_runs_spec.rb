@@ -2667,6 +2667,32 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/prioritize_first_implementation" do
+    let(:issue) { create(:issue, project:, github_state: "open") }
+    let(:run) do
+      create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+        initiating_user: user, execution_origin: "paid_native")
+    end
+
+    before { sign_in user }
+
+    it "does not record priority without explicit confirmation" do # @spec QUEUE-TIER-010
+      post prioritize_first_implementation_project_agent_runs_path(project), params: { agent_run_id: run.id }
+
+      expect(run.reload.operator_coding_priority_requested_at).to be_nil
+      expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
+      expect(response).to redirect_to(project_path(project))
+    end
+
+    it "records priority after explicit confirmation" do # @spec QUEUE-TIER-010
+      post prioritize_first_implementation_project_agent_runs_path(project),
+        params: { agent_run_id: run.id, confirmed: true }
+
+      expect(run.reload.operator_coding_priority_requested_at).to be_present
+      expect(response).to redirect_to(project_agent_run_path(project, run))
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/unblock_escalation" do
     let(:escalated_pr) do
       create(:issue, :pull_request,
