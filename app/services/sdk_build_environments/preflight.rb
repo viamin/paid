@@ -11,6 +11,8 @@ module SdkBuildEnvironments
   # @spec RUST-SDK-BUILD-009
   # @spec RUST-SDK-BUILD-010
   class Preflight
+    REQUIRED_TOOLCHAINS = %w[cargo rustc].freeze
+
     Check = Struct.new(:name, :healthy, :details, :verdict, :remediation_hint, keyword_init: true) do
       def healthy?
         healthy == true
@@ -34,7 +36,7 @@ module SdkBuildEnvironments
     end
 
     def call
-      checks = [ engine_check, image_check, *toolchain_checks ]
+      checks = [ probe_check, engine_check, image_check, process_check, *toolchain_checks ]
       failing = checks.find { |check| !check.healthy? }
       receipt(checks, failing)
     end
@@ -67,6 +69,17 @@ module SdkBuildEnvironments
       )
     end
 
+    def probe_check
+      healthy = facts[:probe_error].blank?
+      Check.new(
+        name: "probe",
+        healthy: healthy,
+        details: { error: facts[:probe_error] },
+        verdict: :unverifiable,
+        remediation_hint: healthy ? nil : "The metadata probe did not complete; re-run preflight against a reachable Docker backend."
+      )
+    end
+
     def image_check
       platform = facts[:image].to_h[:platform].presence
       image_architecture = ArchitectureCompatibility.normalize(platform)
@@ -76,6 +89,20 @@ module SdkBuildEnvironments
         name: "image_architecture",
         healthy: verdict.nil?,
         details: { platform: platform, image_architecture: image_architecture, engine_architecture: engine },
+        verdict: verdict,
+        remediation_hint: hint
+      )
+    end
+
+    def process_check
+      process = ArchitectureCompatibility.normalize(facts[:process_architecture])
+      engine = normalized_engine_architecture
+      image = ArchitectureCompatibility.normalize(facts[:image].to_h[:platform])
+      verdict, hint = process_verdict(process, engine, image)
+      Check.new(
+        name: "process_architecture",
+        healthy: verdict.nil?,
+        details: { process_architecture: process, engine_architecture: engine, image_architecture: image },
         verdict: verdict,
         remediation_hint: hint
       )
@@ -94,8 +121,18 @@ module SdkBuildEnvironments
       nil
     end
 
+    def process_verdict(process, engine, image)
+      return [ :unverifiable, "The process architecture could not be observed; re-run preflight against the selected image." ] if process.nil?
+      return [ :process_architecture_mismatch,
+        "The process architecture #{process} differs from engine architecture #{engine}; select a matching backend and image." ] if engine && process != engine
+      return [ :process_architecture_mismatch,
+        "The process architecture #{process} differs from image architecture #{image}; select an image matching the observed process." ] if image && process != image
+
+      nil
+    end
+
     def toolchain_checks
-      toolchains.flat_map do |toolchain|
+      toolchains_for_checks.flat_map do |toolchain|
         command = toolchain[:command]
         [ presence_check(command, toolchain), loader_check(command, toolchain) ]
       end
@@ -147,6 +184,13 @@ module SdkBuildEnvironments
 
     def toolchains
       Array(facts[:toolchains])
+    end
+
+    def toolchains_for_checks
+      required = REQUIRED_TOOLCHAINS.map do |command|
+        toolchains.find { |toolchain| toolchain[:command] == command } || { command: command, path: nil, interpreter_path: nil }
+      end
+      required + toolchains.reject { |toolchain| REQUIRED_TOOLCHAINS.include?(toolchain[:command]) }
     end
 
     def normalized_engine_architecture

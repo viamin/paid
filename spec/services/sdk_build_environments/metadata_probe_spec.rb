@@ -41,8 +41,9 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
       "Os" => "linux",
       "RepoDigests" => [ "rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1" ]
     })
-    allow(backend).to receive(:create_container) do |config|
+    allow(backend).to receive(:create_container) do |config, deadline:|
       probe_calls[:created_config] = config
+      probe_calls[:create_deadline] = deadline
       container
     end
     allow(backend).to receive(:start_container).with(container, deadline: kind_of(Numeric))
@@ -118,8 +119,13 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
       )
       host_config = probe_calls[:created_config].fetch("HostConfig")
       expect(host_config).to include("ReadonlyRootfs" => true, "CapDrop" => [ "ALL" ])
-      resources = host_config.fetch("Resources")
-      expect(resources).to include("Memory", "NanoCpus", "PidsLimit")
+      expect(host_config).to include(
+        "Memory" => described_class::CONTAINER_MEMORY_BYTES,
+        "NanoCpus" => described_class::CONTAINER_NANO_CPUS,
+        "PidsLimit" => described_class::CONTAINER_PID_LIMIT
+      )
+      expect(host_config).not_to have_key("Resources")
+      expect(probe_calls[:create_deadline]).to eq(described_class::PROBE_DEADLINE_SECONDS)
     end
 
     it "removes the disposable container even when the probe exec fails" do
