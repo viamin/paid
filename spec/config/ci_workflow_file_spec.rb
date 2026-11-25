@@ -344,6 +344,20 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
   end
 
+  # @spec TOOLCHAIN-PIN-028
+  it "keeps PostgreSQL client fallback retries within a shard setup budget" do
+    %w[test-shards shard-recovery].each do |job_name|
+      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install PostgreSQL client" }
+      run = install_step.fetch("run")
+
+      expect(run).to include("curl -fsSL --connect-timeout 10 --max-time 20")
+      expect(run).to include("sudo timeout 90s apt-get")
+      expect(run).not_to include("curl -fsSL --retry")
+      expect(run).not_to include("timeout 5m apt-get")
+    end
+  end
+
   # @spec TEST-SUITE-003
   it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
     workflow.fetch("jobs").except("test").each_value do |job|
