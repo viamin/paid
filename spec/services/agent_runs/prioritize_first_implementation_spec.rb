@@ -41,6 +41,31 @@ RSpec.describe AgentRuns::PrioritizeFirstImplementation do # @spec QUEUE-TIER-01
     expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
   end
 
+  [
+    { started_at: 1.minute.ago },
+    { container_id: "retained-container" },
+    { runner_handle: { "identifier" => "retained-runner" } },
+    { worktree_path: "/private/retained-worktree" },
+    { service_container_ids: [ "retained-service" ] }
+  ].each do |ownership|
+    it "refuses priority with retained #{ownership.keys.first}" do # @spec QUEUE-TIER-010
+      agent_run.update!(ownership)
+
+      expect(described_class.call(agent_run:, actor:)).to be(false)
+      expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
+      expect(agent_run.operator_first_implementation_priority_requested_at).to be_nil
+      expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
+    end
+  end
+
+  it "refuses priority for a run with an active worktree association" do # @spec QUEUE-TIER-010
+    create(:worktree, :active, project:, agent_run:)
+
+    expect(described_class.call(agent_run:, actor:)).to be(false)
+    expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
+    expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
+  end
+
   it "rejects cross-tenant actors and invalidated, delayed, retry, and exhausted sources" do
     expect { described_class.call(agent_run:, actor: create(:user)) }.to raise_error(Pundit::NotAuthorizedError)
 

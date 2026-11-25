@@ -129,6 +129,10 @@
   creating, claiming, cancelling, restarting, or renewing execution authority;
   source invalidation, delay/backoff, retry lineage, continuation/PR origin,
   exhaustion, or any ordinary dequeue guard SHALL refuse or block it.
+  A queued status alone SHALL not establish an unclaimed attempt: a persisted
+  workflow, start timestamp, container, runner handle, service container, worktree
+  path, or associated worktree SHALL refuse the request without a priority
+  timestamp or actor audit event.
   *Code:* `AgentRuns::PrioritizeFirstImplementation`,
   `Tools::PrioritizeFirstImplementation`, `AgentRun#queue_priority_tier`.
   *Test:* `spec/services/agent_runs/prioritize_first_implementation_spec.rb`,

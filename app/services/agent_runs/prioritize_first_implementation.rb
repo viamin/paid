@@ -48,11 +48,18 @@ module AgentRuns
     end
 
     def unclaimed_automatic_first_attempt?
-      agent_run.status == "queued" && agent_run.temporal_workflow_id.blank? &&
+      agent_run.status == "queued" && unclaimed_execution? &&
         agent_run.auto_pick? && agent_run.trigger_type == "automatic" &&
         agent_run.goal == "create_pr" && agent_run.execution_origin == "paid_native" &&
         agent_run.issue_id.present? && agent_run.source_pull_request_number.blank? &&
         agent_run.continuation_request_id.blank?
+    end
+
+    def unclaimed_execution?
+      agent_run.temporal_workflow_id.blank? && agent_run.started_at.blank? &&
+        agent_run.container_id.blank? && agent_run.runner_handle.blank? &&
+        agent_run.worktree_path.blank? && agent_run.service_container_ids.blank? &&
+        agent_run.worktree.nil?
     end
 
     def source_still_eligible?
