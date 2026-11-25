@@ -44,6 +44,8 @@ module SdkBuildEnvironments
 
     def call
       static_facts.merge(container_facts)
+    rescue Docker::Error::DockerError => e
+      metadata_error_facts(e)
     end
 
     private
@@ -65,6 +67,20 @@ module SdkBuildEnvironments
 
     def repo_digest(image_info)
       Array(image_info["RepoDigests"]).first.to_s.split("@", 2).last.presence
+    end
+
+    # Image and engine inspection are external Docker operations too. Preserve
+    # the receipt contract when either is unavailable so the rake boundary can
+    # report an actionable unverifiable verdict instead of leaking an exception.
+    def metadata_error_facts(error)
+      {
+        backend_identifier: backend.identifier,
+        engine_architecture: nil,
+        image: { reference: image, id: nil, digest: nil, platform: nil },
+        process_architecture: nil,
+        toolchains: [],
+        probe_error: "#{error.class}: #{error.message}"
+      }
     end
 
     def container_facts
