@@ -16,8 +16,10 @@ module SdkBuildEnvironments
     CONTAINER_NANO_CPUS = 2_000_000_000
     CONTAINER_PID_LIMIT = 256
     OUTPUT_LIMIT_BYTES = 100 * 1024
+    CLEANUP_DEADLINE_SECONDS = 30
 
     class IncompatibleEnvironmentError < StandardError; end
+    class DeadlineExceeded < StandardError; end
 
     class << self
       def call(backend:, image: Pins.default_image_reference, probe: MetadataProbe)
@@ -37,6 +39,7 @@ module SdkBuildEnvironments
       preflight = Preflight.call(facts: @probe.call(backend: @backend, image: @image))
       raise IncompatibleEnvironmentError, preflight.fetch(:remediation_hint) unless preflight[:verdict] == :compatible
 
+      ensure_build_deadline!
       build_image
       run_offline_check(preflight)
     ensure
@@ -52,7 +55,9 @@ module SdkBuildEnvironments
 
     def run_offline_check(preflight)
       @container = @backend.create_container(container_config, deadline: remaining_deadline)
+      ensure_build_deadline!
       @backend.start_container(@container, deadline: remaining_deadline)
+      ensure_build_deadline!
       stdout, stderr, status = @backend.exec_in_container(@container, check_command,
         deadline: remaining_deadline, user: "root", wait: remaining_deadline)
       {
@@ -122,8 +127,19 @@ module SdkBuildEnvironments
       }
     end
 
+    def ensure_build_deadline!
+      raise DeadlineExceeded, "pinned Rust SDK Core build deadline exceeded" unless remaining_time.positive?
+    end
+
     def remaining_deadline
-      [ (@deadline_at - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil, 1 ].max
+      remaining = remaining_time
+      raise DeadlineExceeded, "pinned Rust SDK Core build deadline exceeded" unless remaining.positive?
+
+      remaining.ceil
+    end
+
+    def remaining_time
+      @deadline_at - Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def bounded_output(value)
@@ -149,14 +165,14 @@ module SdkBuildEnvironments
     def remove_container
       return unless @container
 
-      @backend.delete_container(@container, deadline: remaining_deadline, force: true)
+      @backend.delete_container(@container, deadline: CLEANUP_DEADLINE_SECONDS, force: true)
       @container = nil
     end
 
     def remove_image
       return unless @built_image
 
-      @backend.delete_image(@image_tag, deadline: remaining_deadline, force: true)
+      @backend.delete_image(@image_tag, deadline: CLEANUP_DEADLINE_SECONDS, force: true)
       @built_image = false
     end
   end

@@ -102,7 +102,8 @@ Two non-obvious facts the pins preserve:
 
 ## Preflight before provisioning
 
-Before any build container is provisioned, the capability captures a
+Before any build container is provisioned, the capability pulls the selected
+digest-pinned image on the selected backend, then captures a
 sanitized receipt (`SdkBuildEnvironments::Preflight`): backend/engine
 identity and architecture, the selected image's id, digest, and platform,
 the actual process architecture observed in the image, resolved
@@ -159,10 +160,12 @@ then starts a separate capability-dropped, network-disabled container for
 `cargo check --locked --offline --package temporalio-sdk-core`. It returns
 the command, bounded output, exit status, preflight, and cleanup receipt,
 and removes both the container and temporary image in `ensure`. A single
-monotonic deadline covers image build, check, and cleanup transport calls;
-the image build receives the same memory, CPU, and process envelope as the
-check and uses force-removal so an interrupted build cannot leave its job tag
-behind.
+monotonic deadline covers image build and every check phase; no new build or
+check operation starts after it expires. Cleanup follows a separate explicit,
+bounded best-effort transport policy so owned resources are still removed when
+the build deadline is exhausted. The image build receives the same memory, CPU,
+and process envelope as the check and uses force-removal so an interrupted build
+cannot leave its job tag behind.
 The Dockerfile installs the exact recorded libclang package versions, verifies
 the pinned `libclang.so.1` digest, initializes the Ruby SDK's actual
 `temporalio/ext/sdk-core` gitlink, and runs Cargo from `/sdk/temporalio`, whose

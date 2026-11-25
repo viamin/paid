@@ -14,7 +14,7 @@ module SdkBuildEnvironments
   # that isolation are rejected before any container starts. Receipts are
   # metadata-only; no credential material is read or returned.
   class MetadataProbe
-    # @spec RUST-SDK-BUILD-010
+    # @spec RUST-SDK-BUILD-008 RUST-SDK-BUILD-010
     DEFAULT_COMMANDS = %w[cargo rustc rustup].freeze
     REQUIRED_EXECUTION_COMMANDS = %w[cargo rustc].freeze
     COMMAND_FORMAT = /\A[a-z_][a-z0-9_-]*\z/.freeze
@@ -43,12 +43,17 @@ module SdkBuildEnvironments
     end
 
     def call
+      provision_image
       static_facts.merge(container_facts)
     rescue Docker::Error::DockerError => e
       metadata_error_facts(e)
     end
 
     private
+
+    def provision_image
+      backend.pull_image(fromImage: image)
+    end
 
     def static_facts
       info = backend.system_info

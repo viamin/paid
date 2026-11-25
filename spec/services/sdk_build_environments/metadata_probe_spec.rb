@@ -43,9 +43,11 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
   def backend_with(exec_stdout:, exec_failure: nil)
     backend = instance_double(Containers::Backends::LocalDocker, identifier: "local")
     image = instance_double(Docker::Image)
+    probe_calls[:image] = image
     allow(backend).to receive_messages(
       system_info: { "Architecture" => "aarch64" },
-      supports_network_disabled_containers?: true
+      supports_network_disabled_containers?: true,
+      pull_image: nil
     )
     allow(backend).to receive(:get_image).with("rust:1.95.0-bookworm").and_return(image)
     allow(image).to receive(:info).and_return({
@@ -73,6 +75,21 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
   end
 
   describe ".call" do
+    # @spec RUST-SDK-BUILD-008
+    it "pulls the selected digest-pinned image before inspecting it" do
+      backend = backend_with(exec_stdout: successful_probe_output)
+      pulled = false
+
+      expect(backend).to receive(:pull_image).with(fromImage: "rust:1.95.0-bookworm").ordered { pulled = true }
+      expect(backend).to receive(:get_image).with("rust:1.95.0-bookworm").ordered do
+        raise Docker::Error::NotFoundError, "image not cached" unless pulled
+
+        probe_calls[:image]
+      end
+
+      described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
+    end
+
     # @spec RUST-SDK-BUILD-010
     it "collects engine, image, process, toolchain, and execution facts" do
       backend = backend_with(exec_stdout: successful_probe_output)

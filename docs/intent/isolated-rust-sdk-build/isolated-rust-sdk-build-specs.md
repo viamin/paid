@@ -67,9 +67,13 @@
   architecture, image identity (reference, digest, platform), process
   architecture, and each resolved toolchain path with its ELF
   architecture, interpreter, and execution status — and SHALL contain no credential
-  material.
-  *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
-  *Code:* `SdkBuildEnvironments::Preflight`.
+  material. Before inspecting or probing the selected digest-pinned image, the
+  system SHALL pull it on the selected backend so a fresh backend receives the
+  same identity verification as a warm backend.
+  *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`,
+  `spec/services/sdk_build_environments/metadata_probe_spec.rb`.
+  *Code:* `SdkBuildEnvironments::Preflight`,
+  `SdkBuildEnvironments::MetadataProbe`.
 
 - [x] **RUST-SDK-BUILD-009** — When the engine architecture, image
   architecture, and observed process architecture disagree, or the image
@@ -122,12 +126,14 @@
   pinned Rust SDK Core baseline for its acting run, the system SHALL resolve
   that run's selected Paid backend, require a compatible preflight, build only
   the immutable SDK/Core source recipe within one finite build deadline and
-  resource envelope, verify each pinned libclang package and library digest,
+  resource envelope, refuse to begin each build or check phase after that
+  deadline is exhausted, verify each pinned libclang package and library digest,
   run `cargo check --locked --offline --package temporalio-sdk-core` in the
   checked-out `temporalio` workspace in a separate network-disabled,
   capability-dropped bounded container, return its command, bounded output,
   exit status, preflight, and cleanup receipt, and remove its temporary
-  container and image after both successful and interrupted build phases
+  container and image after both successful and interrupted build phases using
+  an explicit bounded best-effort cleanup policy
   without exposing Docker or host access to the agent.
   *Tests:* `spec/services/sdk_build_environments/pinned_core_build_spec.rb`,
   `spec/mcp/tools/build_pinned_rust_sdk_core_spec.rb`.

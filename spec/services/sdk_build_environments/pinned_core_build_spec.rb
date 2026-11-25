@@ -63,6 +63,50 @@ RSpec.describe SdkBuildEnvironments::PinnedCoreBuild do
     )
   end
 
+  # @spec RUST-SDK-BUILD-013
+  it "refuses to start the build when preflight exhausts the build deadline" do
+    stub_successful_build
+
+    expire_after(0)
+
+    expect { described_class.call(backend:, probe:) }.to raise_error(described_class::DeadlineExceeded)
+    expect(backend).not_to have_received(:build_image)
+    expect(backend).not_to have_received(:create_container)
+  end
+
+  # @spec RUST-SDK-BUILD-013
+  it "refuses to create a check container when the image build exhausts the deadline" do
+    stub_successful_build
+
+    expire_after(2)
+
+    expect { described_class.call(backend:, probe:) }.to raise_error(described_class::DeadlineExceeded)
+    expect(backend).not_to have_received(:create_container)
+    expect(backend).to have_received(:delete_image).with(a_string_starting_with("paid-sdk-core-build-"), deadline: 30, force: true)
+  end
+
+  # @spec RUST-SDK-BUILD-013
+  it "refuses to start a check container when container creation exhausts the deadline" do
+    stub_successful_build
+
+    expire_after(3)
+
+    expect { described_class.call(backend:, probe:) }.to raise_error(described_class::DeadlineExceeded)
+    expect(backend).not_to have_received(:start_container)
+    expect(backend).to have_received(:delete_container).with(container, deadline: 30, force: true)
+  end
+
+  # @spec RUST-SDK-BUILD-013
+  it "refuses to execute a check when container start exhausts the deadline" do
+    stub_successful_build
+
+    expire_after(4)
+
+    expect { described_class.call(backend:, probe:) }.to raise_error(described_class::DeadlineExceeded)
+    expect(backend).not_to have_received(:exec_in_container)
+    expect(backend).to have_received(:delete_container).with(container, deadline: 30, force: true)
+  end
+
   def stub_successful_build
     allow(backend).to receive_messages(
       build_image: nil,
@@ -125,5 +169,10 @@ RSpec.describe SdkBuildEnvironments::PinnedCoreBuild do
       executable_command = command.map { |argument| argument.gsub("/sdk", File.join(directory, "sdk")) }
       expect(system({ "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "EXPECTED_WORKSPACE" => workspace }, *executable_command)).to be(true)
     end
+  end
+
+  def expire_after(phase_checks)
+    allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC)
+      .and_return(*([ 0 ] + Array.new(phase_checks, 1) + [ described_class::BUILD_DEADLINE_SECONDS + 1 ]))
   end
 end
