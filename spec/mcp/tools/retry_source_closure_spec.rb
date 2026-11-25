@@ -19,11 +19,16 @@ RSpec.describe Tools::RetrySourceClosure do
     expect(klass.input_schema[:required]).to include("confirmed")
   end
 
-  it "queues only post-processing for the same run" do
+  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-064
+  it "queues only post-processing for the same run and audits the accepted request" do
     expect { tool.call(agent_run_id: run.id, confirmed: true) }
       .to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_id: user.id)
     expect(run.reload.status).to eq("waiting_recovery")
     expect(project.agent_runs.count).to eq(1)
+    event = AccountActivityEvent.last
+    expect(event).to have_attributes(action: "agent_run.source_closure_recovery_requested", account:, actor: user, subject: run)
+    expect(event.metadata).to include("request_boundary" => "mcp", "request_phase" => "requested",
+      "result_commit_sha" => "a" * 40)
   end
 
   it "rejects a request without confirmation" do
@@ -54,11 +59,24 @@ RSpec.describe Tools::RetrySourceClosure do
     job = instance_double(SourceClosureRecoveryJob, successfully_enqueued?: false)
     allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_id: user.id).and_return(job)
     expect { tool.call(agent_run_id: run.id, confirmed: true) }.to raise_error(ArgumentError, /could not be queued/)
+    expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
   end
 
   it "reports an aborted enqueue" do
     allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_id: user.id).and_return(false)
     expect { tool.call(agent_run_id: run.id, confirmed: true) }.to raise_error(ArgumentError, /could not be queued/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-064
+  it "reports an accepted but unaudited request without retrying the job" do
+    allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+    result = nil
+    expect { result = tool.call(agent_run_id: run.id, confirmed: true) }
+      .to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_id: user.id).once
+
+    expect(result).to include(queued: true, audit_persisted: false)
+    expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
   end
 
   it "exposes bounded recovery diagnostics without arbitrary reconciliation data" do

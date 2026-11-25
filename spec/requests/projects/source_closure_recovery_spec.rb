@@ -7,8 +7,8 @@ RSpec.describe "Source-closure recovery" do
   let(:project) { create(:project, account: user.account, created_by: user) }
   let(:run) { create(:agent_run, project:, status: "waiting_recovery") }
 
-  # @spec PARTIAL-CLOSEOUT-045
-  it "loads the run and queues recovery for an authorized operator" do
+  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-064
+  it "loads the run, queues recovery, and records the accepted request for an authorized operator" do
     sign_in user
 
     expect {
@@ -17,6 +17,11 @@ RSpec.describe "Source-closure recovery" do
 
     expect(response).to redirect_to(project_agent_run_path(project, run))
     expect(flash[:notice]).to include("without rerunning coding")
+    event = AccountActivityEvent.last
+    expect(event).to have_attributes(action: "agent_run.source_closure_recovery_requested", account: user.account,
+      actor: user, subject: run)
+    expect(event.metadata).to include("request_boundary" => "ui", "request_phase" => "requested",
+      "result_commit_sha" => run.result_commit_sha)
   end
 
   # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
@@ -29,6 +34,21 @@ RSpec.describe "Source-closure recovery" do
     expect(response).to redirect_to(project_agent_run_path(project, run))
     expect(flash[:alert]).to include("could not be queued")
     expect(run.reload.status).to eq("waiting_recovery")
+    expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-064
+  it "reports a queued but unaudited request without a duplicate enqueue" do
+    sign_in user
+    allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
+
+    expect {
+      post retry_source_closure_project_agent_run_path(project, run)
+    }.to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_id: user.id).once
+
+    expect(response).to redirect_to(project_agent_run_path(project, run))
+    expect(flash[:alert]).to include("queued, but its audit record could not be saved", "Do not retry")
+    expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
   end
 
   # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
