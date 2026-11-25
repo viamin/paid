@@ -192,6 +192,50 @@ allow(GithubClient).to receive(:new).and_return(github_client)
         allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "Gemfile" ])
       end
 
+      it "persists a typed unavailable stop when PR metadata stalls" do # @spec AUTO-MERGE-011
+        agent_run.update!(external_metadata: agent_run.external_metadata.merge("history_marker" => "preserved"))
+        allow(activity).to receive(:remaining_activity_seconds).and_return(31.0)
+        allow(Timeout).to receive(:timeout).and_call_original
+        allow(Timeout).to receive(:timeout)
+          .with(16.0, described_class::PullRequestMetadataDeadlineExceeded)
+          .and_raise(described_class::PullRequestMetadataDeadlineExceeded)
+        expect(github_client).not_to receive(:pull_request)
+        expect(github_client).not_to receive(:compare_summary)
+        expect(AgentHarness.conductor).not_to receive(:execute_direct)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(an_object_having_attributes(type: "ConflictRepairScopeRejected", non_retryable: true))
+
+        assessment = agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")
+        expect(assessment).to include(
+          "status" => "unavailable",
+          "base_sha" => "pre-run-sha",
+          "integration_base_sha" => nil,
+          "head_sha" => agent_run.result_commit_sha
+        )
+        expect(agent_run.external_metadata["history_marker"]).to eq("preserved")
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "records the finite metadata budget and skipped publication" do # @spec AUTO-MERGE-011
+        allow(activity).to receive(:remaining_activity_seconds).and_return(31.0)
+        allow(Timeout).to receive(:timeout).and_call_original
+        allow(Timeout).to receive(:timeout)
+          .with(16.0, described_class::PullRequestMetadataDeadlineExceeded)
+          .and_raise(described_class::PullRequestMetadataDeadlineExceeded)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(an_object_having_attributes(type: "ConflictRepairScopeRejected"))
+
+        phase = agent_run.agent_run_phases.find_by(phase_key: "complete_existing_pr_run")
+        expect(phase.metadata).to include(
+          "pr_metadata_budget_seconds" => 16.0,
+          "pr_metadata_elapsed_ms" => kind_of(Numeric),
+          "scope_assessment_status" => "unavailable",
+          "rejection_publication_skipped" => true
+        )
+      end
+
       it "bounds the assessment request by the deadline remaining after the publication reserve" do
         allow(activity).to receive(:remaining_activity_seconds).and_return(20.0)
         allow(Llm::Request).to receive(:call).and_return(approved_request_response)
@@ -258,7 +302,7 @@ allow(GithubClient).to receive(:new).and_return(github_client)
         expect(assessment).to include(
           "status" => "unavailable",
           "head_sha" => agent_run.result_commit_sha,
-          "integration_base_sha" => pr_data.base.sha
+          "integration_base_sha" => nil
         )
       end
 
@@ -315,6 +359,10 @@ allow(GithubClient).to receive(:new).and_return(github_client)
         expect(github_client).not_to have_received(:add_comment)
         expect(Timeout).to have_received(:timeout)
           .with(1.0, described_class::RejectionPublicationDeadlineExceeded)
+
+        phase = agent_run.agent_run_phases.find_by(phase_key: "complete_existing_pr_run")
+        expect(phase.metadata["rejection_publication_skipped"]).to be(true)
+        expect(phase.metadata["publication_elapsed_ms"]).to be_a(Numeric)
       end
 
       it "skips rejection publication when no publication budget remains" do
