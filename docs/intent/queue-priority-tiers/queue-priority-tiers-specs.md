@@ -119,3 +119,28 @@
   `AgentRun#queue_priority_tier`, `ProcessRunQueueJob#schedulable_queue_scope`.
   *Test:* `spec/models/agent_run_spec.rb`,
   `spec/jobs/process_run_queue_job_spec.rb`.
+
+- [x] **QUEUE-TIER-010** — When an authorized operator explicitly confirms
+  priority for one existing, unclaimed queued automatic paid-native `create_pr`
+  first implementation, Paid SHALL lock and recheck the same run, its account,
+  project, trusted eligible source, automatic origin, and zero predecessor
+  implementation history before recording one durable request and actor audit
+  event. The request SHALL reuse the operator-coding queue tier without
+  creating, claiming, cancelling, restarting, or renewing execution authority;
+  source invalidation, delay/backoff, retry lineage, continuation/PR origin,
+  exhaustion, or any ordinary dequeue guard SHALL refuse or block it.
+  A queued status alone SHALL not establish an unclaimed attempt: a persisted
+  workflow, start timestamp, container, runner handle, service container, worktree
+  path, or associated worktree SHALL refuse the request without a priority
+  timestamp or actor audit event.
+  The run detail page SHALL show the confirmation-gated request only to an
+  operator with project run permission for an eligible run; submitting it SHALL
+  still apply the service's locked authorization and eligibility checks.
+  *Code:* `AgentRuns::PrioritizeFirstImplementation`,
+  `Tools::PrioritizeFirstImplementation`, `AgentRun#queue_priority_tier`,
+  `Projects::AgentRunsController`, `app/views/projects/agent_runs/show.html.erb`.
+  *Test:* `spec/services/agent_runs/prioritize_first_implementation_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`,
+  `spec/mcp/tools/prioritize_first_implementation_spec.rb`,
+  `spec/models/agent_run_spec.rb`,
+  `spec/system/first_implementation_priority_spec.rb`.

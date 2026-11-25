@@ -25,6 +25,7 @@ RSpec.describe Tools::Registry do
       update_technical_merge_blocker
       request_issue_continuation
       prioritize_coding_retry
+      prioritize_first_implementation
       request_acceptance_audit
       request_layered_verification_audit
       reassess_conflict_repair_scope
