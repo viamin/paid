@@ -71,21 +71,26 @@
 ## Conversation feedback consumption
 
 - [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
-  terminates `no_output` with the `no_changes` reason and a focus whose PR
-  prompt actually includes the conversation section (the `conversation`
-  focus, plus the unscoped `general` and `label_action` focuses that include
-  every applicable section), the PR scanner SHALL treat that run's
-  `completed_at` as the conversation-comment cutoff for the same project and
-  PR, consuming older trusted conversation comments exactly as a `completed`
-  run's timestamp does. Comments newer than that cutoff SHALL remain
-  actionable; no-change runs with any other focus, failed or unfinished
-  runs, and runs from other PRs or other projects SHALL NOT consume
-  comments; and review-thread, changes-requested, review-bot, CI, policy,
-  and budget gating SHALL keep deriving their cutoffs from `completed` runs
-  only.
+  completes or terminates `no_output` with the `no_changes` reason, the PR
+  scanner SHALL use a cutoff immediately before the start second of the newest
+  successful prompt preparation across
+  eligible terminal runs as the conversation-comment cutoff, so comments
+  arriving after preparation remain actionable even when they precede run
+  completion. Only legacy runs without any recorded prompt preparation may
+  use a cutoff immediately before their completion second; same-second provider timestamps
+  SHALL remain actionable when ordering is ambiguous. Failed or post-completion preparation SHALL NOT
+  acknowledge feedback. Eligibility requires a focus that includes the conversation section (the
+  `conversation` focus, plus the unscoped `general` and `label_action`
+  focuses that include every applicable section). A completed or no-change
+  run with any other focus, failed or unfinished runs, and runs from other PRs
+  or other projects SHALL NOT consume comments. Comments newer than an
+  applicable cutoff SHALL remain actionable; review-thread,
+  changes-requested, review-bot, CI, policy, and budget gating SHALL keep
+  deriving their cutoffs from completed runs only.
   *Code:* `ScanPaidPrsActivity#check_conversation_comments`,
   `ScanPaidPrsActivity#conversation_feedback_cutoff`,
-  `ScanPaidPrsActivity#conversation_scope_no_change_run`,
+  `ScanPaidPrsActivity#conversation_scope_runs`,
+  `ScanPaidPrsActivity#conversation_context_cutoff_sql`,
   `ScanPaidPrsActivity::CONVERSATION_SCOPE_FOCUSES`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_conversation_feedback_spec.rb`.
 
@@ -130,14 +135,72 @@
   system SHALL add `paid-code-reviewer[bot]` to that project's trusted GitHub
   username allowlist; when that enabled reviewer leaves unresolved PR review
   threads, the PR follow-up prompt SHALL include those review comments and
-  SHALL return their thread IDs so the successful create-pr follow-up can
-  resolve them after pushing changes. The PR review-thread path SHALL also
+  SHALL return their thread IDs for the current follow-up's evidence. The PR review-thread path SHALL also
   accept GitHub's bare `paid-code-reviewer` app-author form only for configured
   review-thread feedback, without adding that bare login to the global comment
   allowlist.
   *Code:* `Project#ensure_paid_reviewer_bot_allowlisted`,
   `Prompts::BuildForPr#trusted_review_threads`,
   `Prompts::BuildForPr#unresolved_review_thread_ids`,
-  `AgentExecutionWorkflow#resolve_followup_review_threads_after_push`.
+  `AgentExecutionWorkflow`.
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
+
+- [x] **FOCUSED-RUN-013** — When the latest review from an allowlisted human
+  or configured review bot is a nonblank `COMMENTED` standalone review body
+  submitted after the completed-run cutoff, the PR scanner SHALL emit the
+  existing `review_feedback` follow-up route even with no unresolved inline
+  threads. A configured Paid Agent review whose body records its machine-readable
+  clean verdict or configured review-bot summary matching the shared
+  clean-review classifier SHALL NOT route a follow-up despite its nonblank
+  `COMMENTED` state. An excluded author, an empty state, a superseded finding, or a review
+  at or before that cutoff SHALL NOT route a follow-up. A configured bot's
+  `COMMENTED` review with associated inline comments SHALL retain the existing
+  thread lifecycle rather than emit standalone feedback. Unavailable inline
+  comment state SHALL remain an incomplete review gate; only a known absence
+  of associated comments SHALL admit that bot body as standalone. Existing review, merge,
+  retry, and allowance decisions remain unchanged.
+  *Code:* `ScanPaidPrsActivity#standalone_review_feedback_from_reviews`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **FOCUSED-RUN-011** — When an existing pull-request follow-up pushes a
+  changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
+  captured review thread merely because the run completed, pushed, or reports
+  that the feedback was already addressed. A thread remains actionable until a
+  current-head, explicitly authorized, exact-thread-version-bound assessment supplies explicit
+  supported rationale from evidence that includes the thread's original
+  finding. Complete thread evidence SHALL be fetched within finite page,
+  request, and evidence-size budgets, rejecting missing, repeated, or cyclic
+  pagination cursors. Failed, unavailable, incomplete, malformed, stale,
+  concurrently changed, over-budget, or no-op assessment cannot resolve it.
+  Immutable comparison file lists SHALL be complete within their configured
+  limit; a local cutoff or an unprovable upstream file-list limit SHALL refuse
+  assessment. Required per-file path, status, blob identity, change counts and
+  rename provenance SHALL be structurally valid before model authorization;
+  status SHALL be a declared GitHub diff-entry status. Binary metadata does
+  not require a textual patch. The bounded model evidence SHALL retain every
+  compared file, sharing its patch budget through explicit excerpts. If all
+  file metadata and bounded per-file evidence cannot fit, assessment SHALL
+  remain unavailable before a model request. A thread omitted from the
+  bounded prompt SHALL NOT be authorized.
+  This does not prohibit a supported no-code disposition such as invalid,
+  outdated, or already-fixed feedback.
+  *Code:* `AgentExecutionWorkflow#execute`,
+  `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`,
+  `GithubClient#detailed_compare_files`.
+  *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/services/github_client_spec.rb`,
+  `spec/temporal/activities/assess_followup_review_threads_activity_spec.rb`,
+  `spec/temporal/activities/resolve_review_threads_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+
+- [x] **FOCUSED-RUN-012** — When the latest review from a body-only-capable
+  reviewer has inline comments but no unresolved review threads, Paid SHALL NOT
+  admit another coding follow-up for those resolved comments, even when the
+  review post-dates the last completed run. Paid SHALL keep a
+  genuine top-level-only finding actionable, fail closed when review-comment
+  data is unavailable, and SHALL NOT infer resolution from a changed related or
+  unrelated file.
+  *Code:* `ScanPaidPrsActivity#check_review_bot_status`,
+  `Automation::Signals::PullRequestCollector#review_inline_comment_state`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

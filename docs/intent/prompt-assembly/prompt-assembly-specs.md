@@ -133,10 +133,38 @@
   system SHALL treat bot-authored unresolved review threads as actionable
   follow-up context rather than blocking prompt preparation solely because the
   bot comments are excluded from prompt instructions. Prompt preparation SHALL
-  raise `ReviewFeedbackContextBlocked` only when at least one unresolved
-  human-authored review thread exists and none of its comments are
-  prompt-eligible.
+  raise `ReviewFeedbackContextBlocked` when standalone review retrieval is
+  unavailable or incomplete, or when at least one unresolved human-authored
+  review thread exists and neither its comments nor a current trusted
+  standalone review body are prompt-eligible. A successful empty review fetch
+  SHALL remain distinct from unavailable context in both builder paths.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
+
+- [x] **PROMPT-ASSEMBLY-026** — When a current PR has a nonblank standalone
+  `COMMENTED` or `CHANGES_REQUESTED` review body from an allowlisted human or
+  configured review bot, `Prompts::BuildForPr` SHALL include that body in the
+  general and `review_feedback` code-review context even when no inline thread
+  exists or the finding concerns an unchanged file. It SHALL bound the body by
+  the prompt-comment limit and render review ID, author, submitted time, and
+  reviewed commit provenance. Reviews from excluded authors SHALL never enter
+  the prompt; only their body-free exclusion provenance may be recorded. A
+  configured Paid Agent review that records its machine-readable clean verdict
+  or configured review-bot summary matching the shared clean-review classifier
+  SHALL not enter repair context despite its nonblank `COMMENTED` body. The
+  latest review state from an eligible author SHALL supersede that author's
+  earlier body, and standalone review bodies SHALL not produce resolvable
+  inline-thread IDs or authority. Review collection SHALL remain complete
+  within its finite page and rate budgets; a remaining next page at either budget SHALL
+  report unavailable context rather than expose an old prefix as the latest
+  review state. A configured bot's `COMMENTED` body with associated inline
+  comments SHALL not be rendered as standalone context; its trusted inline
+  threads retain their existing lifecycle. Unavailable associated-comment
+  state SHALL block focused review-feedback preparation in both builders,
+  rather than being treated as a successful empty comment inventory.
+  *Code:* `GithubClient#pull_request_reviews`, `Prompts::BuildForPr`.
+  *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/services/github_client_spec.rb`,
+  `spec/temporal/activities/prepare_pr_prompt_activity_spec.rb`.
 
 - [x] **PROMPT-ASSEMBLY-019** — When `AgentRun#effective_prompt` resolves a
   non-empty `custom_prompt` (whether supplied manually, materialized from a

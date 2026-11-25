@@ -81,6 +81,45 @@ be proven trusted is `:excluded`, never `:trusted`.
 A comment is prompt-eligible when its author is an allowlisted human (and it is
 not a Paid status comment) or it is a Paid-authored marker comment.
 
+## Standalone PR Review Findings
+
+GitHub can reject an inline comment for a finding on an unchanged line. A
+reviewer can still record that finding in the body of a submitted PR review,
+so PR follow-up assembly treats eligible standalone review bodies as code
+review context alongside unresolved inline threads. The same review-author
+predicate used for threads admits only allowlisted humans and configured review
+bots. Bodies from every other author are excluded with provenance only. An
+excluded inline thread does not block a repair prompt when a trusted standalone
+body supplies the actionable review context.
+
+The builder retains the latest submitted review for each eligible author. Only
+nonblank `COMMENTED` and `CHANGES_REQUESTED` bodies from that effective review
+are actionable; an `APPROVED`, `DISMISSED`, or later clean review supersedes an
+older body. A Paid Agent review that records its machine-readable clean verdict
+or a configured review-bot summary matching the shared clean-review classifier
+is likewise excluded from repair context rather than treated as actionable due
+to its nonblank `COMMENTED` body. The rendered context identifies the review
+ID, author, submission time, and reviewed commit so the evidence remains bound
+to GitHub provenance. Review bodies are bounded by the existing prompt-comment
+limits. They are context only: unlike inline threads, they carry no resolvable
+thread ID and do not authorize resolution or alter review, merge, retry, or
+allowance policy.
+
+A configured bot's `COMMENTED` body associated with inline review comments is
+not standalone context; the existing trusted thread path supplies its
+actionable findings. Unavailable inline-comment state cannot establish a
+standalone body and blocks focused review-feedback preparation in either
+builder. Comment-state evidence is fetched once per builder, with only typed,
+body-free failure diagnostics. Human review bodies retain their existing rules.
+
+The chronological review listing must be complete within the finite page and
+rate budgets. A remaining next page when either budget stops collection makes
+the read unavailable rather than
+presenting its old prefix as the latest author state. Both prompt builders
+block focused review-feedback preparation when the standalone fetch is
+unavailable, even without inline threads. The builder caches that unavailable
+state for the preparation attempt; a successful empty result remains distinct.
+
 ## Quarantine
 
 Repository-derived code/docs and knowledge-base content are `:quarantined`.

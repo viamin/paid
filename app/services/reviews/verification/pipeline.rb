@@ -27,7 +27,7 @@ module Reviews
       HeadMovedError = Class.new(Error)
 
       MAX_ATTEMPTS = 2
-      CLEAN_MARKER = "<!-- paid-review-clean -->"
+      CLEAN_MARKER = Github::ReviewMarker::CLEAN_REVIEW_MARKER
 
       # @param agent_run [AgentRun]
       # @param github_client [GithubClient]

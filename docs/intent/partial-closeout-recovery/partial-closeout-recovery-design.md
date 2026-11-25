@@ -52,6 +52,26 @@ evidence but cannot manufacture a human authorization or independent judgment.
 
 ### Evidence: `Issues::CloseoutEvidence`
 
+### Shared delivery evidence
+
+An authorized operator may record one durable shared-delivery association for
+an open source acceptance target when another issue's merged pull request
+delivered its implementation. A closed or pull-request source target is refused
+at the service boundary before any association is persisted. The association is
+tenant- and project-scoped and pins the
+synced pull request's canonical URL and immutable merge revision. It preserves
+the pull request's existing parent and originating run. `CloseoutEvidence`
+admits it only while the association is unrevoked and the exact pull request is
+still merged at that revision; a wrong repository, changed revision, reopened
+or revoked pull request fails closed. This evidence prevents replacement coding
+and permits the existing bounded report-only acceptance audit, but does not
+assert criterion satisfaction or authorize GitHub closure.
+
+The SQL admission policy binds both referenced issue rows to the association's
+project, even when another project belongs to the same tenant. Model freshness
+and evidence consumption independently reject legacy project mismatches;
+model validation alone is not the persisted evidence boundary.
+
 One value object computes the *closeout evidence* for an issue and a stable
 *outcome-generation digest*:
 

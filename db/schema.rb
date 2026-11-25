@@ -4554,6 +4554,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "shared_delivery_evidence_associations", comment: "Operator-authorized, revision-bound use of a merged PR as delivery evidence for another issue.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "authorized_by_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.bigint "pull_request_id", null: false
+    t.string "pull_request_url", null: false
+    t.string "revision", limit: 40, null: false
+    t.datetime "revoked_at"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_shared_delivery_evidence_associations_on_account_id"
+    t.index ["authorized_by_id"], name: "idx_on_authorized_by_id_2cad3b4892"
+    t.index ["issue_id"], name: "index_shared_delivery_evidence_active_per_issue", unique: true, where: "(revoked_at IS NULL)"
+    t.index ["issue_id"], name: "index_shared_delivery_evidence_associations_on_issue_id"
+    t.index ["project_id"], name: "index_shared_delivery_evidence_associations_on_project_id"
+    t.index ["pull_request_id"], name: "index_shared_delivery_evidence_associations_on_pull_request_id"
+  end
+
   create_table "staged_closeout_enrollments", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -5760,6 +5779,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   add_foreign_key "scaling_observations", "projects", on_delete: :cascade
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "service_containers", "accounts"
+  add_foreign_key "shared_delivery_evidence_associations", "accounts"
+  add_foreign_key "shared_delivery_evidence_associations", "issues"
+  add_foreign_key "shared_delivery_evidence_associations", "issues", column: "pull_request_id"
+  add_foreign_key "shared_delivery_evidence_associations", "projects"
+  add_foreign_key "shared_delivery_evidence_associations", "users", column: "authorized_by_id"
   add_foreign_key "staged_closeout_enrollments", "accounts"
   add_foreign_key "staged_closeout_enrollments", "projects"
   add_foreign_key "staged_closeout_enrollments", "users", column: "reviewed_by_id"
@@ -8057,6 +8081,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   execute <<~SQL
     ALTER TABLE "public"."service_containers" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."service_containers" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."shared_delivery_evidence_associations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."shared_delivery_evidence_associations" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -10550,6 +10579,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
       WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."shared_delivery_evidence_associations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (issues
+     JOIN projects ON ((projects.id = issues.project_id)))
+  WHERE ((issues.id = shared_delivery_evidence_associations.issue_id) AND (issues.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM (issues pull_requests
+     JOIN projects ON ((projects.id = pull_requests.project_id)))
+  WHERE ((pull_requests.id = shared_delivery_evidence_associations.pull_request_id) AND (pull_requests.project_id = shared_delivery_evidence_associations.project_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = shared_delivery_evidence_associations.authorized_by_id) AND (users.account_id = paid_current_account_id())))))));
   SQL
 
   execute <<~SQL
