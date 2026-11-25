@@ -80,6 +80,36 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
   end
 
   describe "conversation feedback consumption after no-change follow-ups" do
+    it "retains comments arriving after prompt preparation but before no-change completion" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "does not acknowledge comments through a failed prompt preparation" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 25.minutes.ago, finished_at: 24.minutes.ago, status: "failed")
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "does not acknowledge comments through a preparation recorded after completion" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 15.minutes.ago, finished_at: 10.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "uses the newest prepared context when completion order is reversed" do
+      later_completion = create_no_change_run!(completed_at: 10.minutes.ago)
+      record_prompt_preparation(later_completion, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)
+      earlier_completion = create_no_change_run!(completed_at: 20.minutes.ago)
+      record_prompt_preparation(earlier_completion, started_at: 25.minutes.ago, finished_at: 24.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).not_to include("conversation_comments")
+    end
+
     it "keeps comments actionable after a completed review-feedback run excluded them" do
       expect_conversation_feedback_after_completed_focus("review_feedback")
     end
@@ -242,6 +272,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
     result = activity.execute(project_id: project.id)
 
     expect(trigger_types(result)).to include("conversation_comments")
+  end
+
+  def record_prompt_preparation(run, started_at:, finished_at:, status: "completed")
+    AgentRunPhase.record!(agent_run: run, phase_key: "prepare_pr_prompt", phase_group: "prompt",
+      started_at: started_at, finished_at: finished_at, status: status)
   end
 
   describe "draft-phase conversation feedback consumption" do
