@@ -87,6 +87,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
     end
 
+    it "keeps same-second provider timestamps actionable when prompt ordering is ambiguous" do
+      run = create_no_change_run!
+      prepared_at = 25.minutes.ago.change(usec: 500_000)
+      comment.created_at = prepared_at.change(usec: 0)
+      record_prompt_preparation(run, started_at: prepared_at, finished_at: 24.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
     it "does not acknowledge comments through a failed prompt preparation" do
       run = create_no_change_run!
       record_prompt_preparation(run, started_at: 25.minutes.ago, finished_at: 24.minutes.ago, status: "failed")

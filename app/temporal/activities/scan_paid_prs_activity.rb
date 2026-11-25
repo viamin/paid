@@ -3314,12 +3314,13 @@ module Activities
           WHERE prompt_phase.agent_run_id = agent_runs.id
             AND prompt_phase.phase_key = 'prepare_pr_prompt'
         ) THEN (
-          SELECT MAX(prompt_phase.started_at) FROM agent_run_phases AS prompt_phase
+          SELECT DATE_TRUNC('second', MAX(prompt_phase.started_at)) - INTERVAL '1 microsecond'
+          FROM agent_run_phases AS prompt_phase
           WHERE prompt_phase.agent_run_id = agent_runs.id
             AND prompt_phase.phase_key = 'prepare_pr_prompt'
             AND prompt_phase.status = 'completed'
             AND prompt_phase.finished_at <= agent_runs.completed_at
-        ) ELSE agent_runs.completed_at END
+        ) ELSE DATE_TRUNC('second', agent_runs.completed_at) - INTERVAL '1 microsecond' END
       SQL
     end
 
