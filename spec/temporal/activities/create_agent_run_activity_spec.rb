@@ -445,6 +445,24 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     # @spec TEMPORAL-ORCHESTRATION-019
+    it "rejects a terminal update after strategy selection before admitting execution" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      allow(activity).to receive(:record_queued_resume_stage).and_wrap_original do |original, agent_run, attempt, stage, outcome, **arguments|
+        original.call(agent_run, attempt, stage, outcome, **arguments)
+        agent_run.update!(status: "failed", error_message: "newer terminal failure") if stage == "strategy_selection" && outcome == "completed"
+      end
+
+      expect {
+        activity.execute(agent_run_id: queued_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("QueuedRunResumeSuperseded")
+        expect(error.non_retryable).to be(true)
+      }
+
+      expect(queued_run.reload).to have_attributes(status: "failed", error_message: "newer terminal failure")
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
     it "records cancellation without terminalizing the queued run" do
       queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
       allow(activity).to receive(:validate_and_sync_resumed_runner!).and_raise(
