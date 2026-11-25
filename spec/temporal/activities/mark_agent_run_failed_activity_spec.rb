@@ -37,6 +37,48 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    # @spec ISSUE-ENHANCEMENT-021
+    it "parks a transient automatic enhancement failure with durable technical provenance" do
+      issue = create(:issue, :in_progress, project: project, github_updated_at: Time.current.change(usec: 0))
+      agent_run = create(:agent_run, :running, :automatic, :enhance_issue_goal, project: project, issue: issue)
+
+      allow(IssueEnhancements::StopForManualReview).to receive(:call)
+      allow(RecoverTechnicalEnhancementStopJob).to receive(:set).and_return(double(perform_later: true))
+
+      activity.execute(agent_run_id: agent_run.id, error: AgentRun::ACTIVITY_TIMEOUT_MESSAGE)
+
+      expect(agent_run.reload.external_metadata.dig("technical_stop_recovery", "classification")).to eq("transport")
+      expect(IssueEnhancements::StopForManualReview).to have_received(:call).with(
+        project: project, issue: issue,
+        reason: "Paid could not complete the enhancement run because its provider connection was interrupted."
+      )
+    end
+
+    # @spec ISSUE-ENHANCEMENT-021
+    it "preserves a consumed technical recovery claim when failure delivery is replayed" do
+      issue = create(:issue, :in_progress, project:, paid_state: "manual_review",
+        manual_review_reason: "Paid could not validate the enhancement agent's structured output.")
+      original = create(:agent_run, :failed, :automatic, :enhance_issue_goal, project:, issue:,
+        error_message: "EnhanceIssue agent produced unparseable structured output: unexpected token")
+      claimed_at = 1.minute.ago.iso8601
+      original.update!(external_metadata: {
+        "technical_stop_recovery" => {
+          "classification" => "parser", "issue_revision" => issue.github_updated_at&.iso8601,
+          "attempt" => 0, "root_run_id" => original.id, "recovery_claimed_at" => claimed_at
+        }
+      })
+      create(:agent_run, :failed, :automatic, :enhance_issue_goal, project:, issue:,
+        error_message: "EnhanceIssue agent produced unparseable structured output: unexpected token")
+      allow(RecoverTechnicalEnhancementStopJob).to receive(:set).and_return(double(perform_later: true))
+
+      activity.execute(agent_run_id: original.id, error: original.error_message)
+
+      expect(original.reload.external_metadata.dig("technical_stop_recovery", "recovery_claimed_at")).to eq(claimed_at)
+      expect(IssueEnhancements::TechnicalStopRecovery.call(agent_run: original))
+        .to have_attributes(outcome: :skipped, reason: :not_eligible)
+      expect(AgentRun.where(project:, issue:, goal: "enhance_issue").count).to eq(2)
+    end
+
     # @spec ISSUE-ANALYSIS-010
     it "records an issue-level analyze_issue backoff for automatic provider exhaustion failures" do
       issue = create(:issue, :in_progress, project: project)
@@ -579,6 +621,20 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
             activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
           }.to have_enqueued_job(RetryFailedManualRunJob).with(agent_run.id, 1)
         end
+      end
+    end
+
+    # @spec MANUAL-RUN-RETRY-010 AGENT-RETRY-019 EAGER-QUEUE-019
+    context "with a failed manual issue implementation" do
+      it "schedules bounded recovery independently of disabled auto-pick" do
+        project.update!(auto_pick_enabled: false, retry_failed_manual_runs: true)
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          goal: "create_pr", trigger_type: "manual", auto_pick: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Runner unavailable")
+        }.to have_enqueued_job(RetryFailedManualIssueCreatePrJob).with(agent_run.id, 1)
       end
     end
 

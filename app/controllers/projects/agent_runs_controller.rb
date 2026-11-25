@@ -409,6 +409,7 @@ module Projects
            LayeredVerification::Audits::Request::EmptyScopeError,
            LayeredVerification::Audits::Request::InvalidBudgetError,
            LayeredVerification::Audits::Request::InvalidTargetRevisionError,
+           LayeredVerification::Audits::Request::DuplicateAuditError,
            ActiveRecord::RecordInvalid,
            ArgumentError => error
       redirect_to project_path(@project), alert: error.message
@@ -820,8 +821,7 @@ module Projects
       end
 
       if @agent_run.layered_verification_goal?
-        redirect_to project_agent_run_path(@project, @agent_run),
-          alert: "Layered-verification runs must be started again from their dedicated entry point."
+        resume_layered_verification_run
         return
       end
 
@@ -906,6 +906,36 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run), alert: alert
     rescue InvalidDockerHostSelectionError => e
       redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
+    end
+
+    # The dedicated retry/resume entry point for layered-verification runs: an
+    # interrupted run is re-admitted through the freshness, authorization, and
+    # budget checks before a successor dispatches; a completed run is rejected
+    # because a fresh audit request is the entry point for new work.
+    # @spec LAYERED-VERIFY-020
+    def resume_layered_verification_run
+      new_run = LayeredVerification::Audits::Resume.call(agent_run: @agent_run, user: current_user)
+      impact = new_run.external_metadata.dig("layered_verification", "impact")
+
+      @agent_run.retry!(
+        decision_point: "layered_verification_resume",
+        signals: { goal: @agent_run.goal, reusable_check_results: impact.fetch("reused_check_result_ids").size,
+                   invalidated_check_results: impact.fetch("invalidated_check_result_ids").size },
+        result: { new_agent_run_id: new_run.id }
+      )
+      audit_event("agent_run.retried",
+        metadata: { agent_run_id: @agent_run.id, new_agent_run_id: new_run.id, project_name: @project.name })
+
+      redirect_to project_agent_run_path(@project, new_run),
+        notice: "Agent run queued as a resume of run ##{@agent_run.id}."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError,
+           LayeredVerification::AuditAccess::UnauthorizedError,
+           LayeredVerification::Audits::Request::DuplicateAuditError,
+           LayeredVerification::Audits::Request::InvalidBudgetError,
+           ActiveRecord::RecordInvalid,
+           ArgumentError,
+           KeyError => error
+      redirect_to project_agent_run_path(@project, @agent_run), alert: error.message
     end
 
     # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013

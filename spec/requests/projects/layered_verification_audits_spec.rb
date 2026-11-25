@@ -93,6 +93,19 @@ RSpec.describe "Layered verification audits" do
     expect(github_client).to have_received(:commit).with(project.full_name, "a" * 40)
   end
 
+  # @spec LAYERED-VERIFY-027
+  it "reports a duplicate confirmed audit request as an admission error" do
+    create(:agent_run, issue: nil, project:, goal: "layered_verification_audit", status: "queued",
+      base_commit_sha: "a" * 40,
+      external_metadata: { "layered_verification" => { "obligation_ids" => [ obligation.id ] } })
+
+    post request_layered_verification_audit_project_agent_runs_path(project),
+      params: request_parameters.merge(confirmed: true)
+
+    expect(response).to redirect_to(project_path(project))
+    expect(flash[:alert]).to eq("an audit for this scope and revision is already active")
+  end
+
   # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-010 LAYERED-VERIFY-015 LAYERED-VERIFY-024
   it "carries clean and contradictory scoped results through completion into report and Inbox" do
     clean, conflict, claim = seeded_obligations

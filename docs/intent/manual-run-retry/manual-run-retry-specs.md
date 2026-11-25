@@ -129,3 +129,26 @@
   *Test:* `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
   `spec/jobs/stale_run_detector_job_spec.rb`,
   `spec/jobs/retry_timed_out_issue_goal_job_spec.rb`.
+
+- [x] **MANUAL-RUN-RETRY-010** — When a manually authorized source-issue
+  `create_pr` fails with no observable work while Auto-Pick is disabled, the
+  system SHALL create at most one queued manual successor through the shared
+  locked retry mechanism, retaining source, actor, runner, and bounded lineage
+  without enabling unrelated discovery. It SHALL recheck source eligibility,
+  trust, dependencies, active ownership, policy, opt-out, and pauses. Partial
+  work, changed source, active issue ownership (including a rate-limited sibling
+  with any goal that can resume in place), duplicate delivery, or execution
+  budget exhaustion SHALL refuse blind replacement. The final eligibility
+  recheck and successor insertion SHALL hold the issue admission lock shared
+  with normal queue, Auto-Pick, controller and MCP creation; a refused recheck
+  SHALL leave the failed lineage unconsumed. A different-goal owner SHALL NOT
+  retire the failed implementation as retried. Classifications alone SHALL
+  not be reported as execution.
+  *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
+  `RetryFailedManualIssueCreatePrJob`, `Activities::QueueAgentRunActivity`,
+  `Issues::EnqueueEligible`, `Tools::TriggerAgentRun`.
+  *Test:* `spec/services/agent_runs/manual_issue_create_pr_retry_policy_spec.rb`,
+  `spec/jobs/retry_failed_manual_issue_create_pr_job_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/services/issues/enqueue_eligible_spec.rb`,
+  `spec/mcp/tools/trigger_agent_run_spec.rb`.

@@ -3,11 +3,12 @@ parent: PAID
 prefix: MANUAL-RUN-RETRY
 ---
 
-# Low-Level Design: Manual Run Retry (Issue-less)
+# Low-Level Design: Manual Run Retry
 
 > Companion to the high-level design (`docs/high-level-design.md`). This
 > segment covers automatic retry of failed manual agent runs that carry no
-> `issue_id` and no `source_pull_request_number` (#4222). The sibling
+> `issue_id` and no `source_pull_request_number`, plus bounded recovery of a
+> manually authorized issue `create_pr` run (#4222, #5332). The sibling
 > `eager-queue-seeding` segment (EAGER-QUEUE-007) covers the equivalent
 > backoff re-enqueue for issue-attached runs; this segment exists because
 > every mechanism there is issue-driven and does nothing for an issue-less
@@ -179,3 +180,29 @@ project settings form and detail view with no additional view code.
   that has partial work and is never auto-retried, stays `failed` and
   invisible outside the agent runs page — see #4212/#4221 for that
   separate, deliberately out-of-scope discussion.
+
+## Manual issue implementation recovery
+
+A manual source-issue `create_pr` has explicit operator authority independent
+of Auto-Pick discovery. `ManualIssueCreatePrRetryPolicy` uses the shared locked
+claim without calling `Issues::EnqueueEligible`, preserving the source issue,
+initiating actor, runner, and manual retry lineage without setting `auto_pick`
+or fabricating a new manual trigger. Claim-time eligibility rechecks the source
+issue, trust, dependencies, active owners, model/phase/privacy policy, retry
+opt-out, and project or issue pause.
+Active ownership covers every goal for the issue. A rate-limited sibling retains
+its slot while waiting to resume, even when its goal differs from `create_pr`.
+The successor claim rechecks eligibility under the existing issue row admission
+lock. Normal queue, Auto-Pick and manual MCP creation share that lock with the
+controller, so a different goal cannot slip between the final ownership check
+and retry insertion. A refused recheck leaves the failed lineage unconsumed.
+A parked owner with another goal also leaves the failed implementation
+actionable; only an existing implementation owner can coalesce that lineage.
+
+Only a no-work, non-exhausted failure may consume the remaining finite manual
+allowance. Pushed/unpublished work, a PR, or main-agent output is a hard blind-
+replacement refusal and reuses artifact/continuation recovery when available.
+Guardrail, time, token, and cost exhaustion never reset a budget, deadline, or
+counter; when no allowance remains, a new operator decision is required.
+Failure classification remains a pending recommendation: only scheduling and a
+locked claim record execution, completion, or refusal in `OrchestrationDecision`.

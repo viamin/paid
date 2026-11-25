@@ -52,6 +52,15 @@ RSpec.describe Capacity::RunAdmission do
     )
   end
 
+  def low_backing_storage_snapshot
+    docker_snapshot.merge(
+      backing_storage_available: true,
+      backing_storage_scope: "configured_docker_backing_store_probe",
+      backing_storage_available_bytes: 5.gigabytes,
+      backing_storage_observed_at: Time.current
+    )
+  end
+
   def requested_resource_metadata(cpu_quota:, memory_bytes:, disk_bytes:)
     {
       "requested_resources" => {
@@ -110,6 +119,88 @@ RSpec.describe Capacity::RunAdmission do
   end
 
   describe ".call" do
+    # @spec CONTAINER-RUNTIME-055
+    it "defers a low-request run when fresh backing-store headroom reaches the reserve" do
+      result = described_class.call(
+        user: user,
+        project: project,
+        mode: UserSetting::RUN_CONCURRENCY_MODE_MANUAL,
+        docker_snapshot: low_backing_storage_snapshot,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result).to include(
+        allowed: false,
+        reason: "backing_storage_reserve_exhausted",
+        backing_storage_scope: "configured_docker_backing_store_probe",
+        backing_storage_available_bytes: 5.gigabytes,
+        backing_storage_operator_action: "Reclaim or expand the measured Docker backing store; do not delete volumes or database data automatically."
+      )
+      expect(result[:rate_limited_until]).to be_within(1.second).of(1.minute.from_now)
+    end
+
+    # @spec CONTAINER-RUNTIME-055
+    it "does not deny healthy recovery or unavailable backing-store evidence" do
+      healthy = docker_snapshot.merge(
+        backing_storage_available: true,
+        backing_storage_available_bytes: 6.gigabytes,
+        backing_storage_observed_at: Time.current
+      )
+      unavailable = docker_snapshot.merge(
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_unsupported"
+      )
+
+      expect(described_class.call(user: user, project: project, docker_snapshot: healthy, selected_host: "local", selected_host_limit: 8)[:allowed]).to be(true)
+      expect(described_class.call(user: user, project: project, docker_snapshot: unavailable, selected_host: "local", selected_host_limit: 8)[:allowed]).to be(true)
+    end
+
+    # @spec CONTAINER-RUNTIME-055
+    it "keeps a direct backing-store probe timeout unavailable" do
+      backend = instance_double(
+        Containers::Backends::LocalDocker,
+        all_host_identifiers: [ "local" ],
+        remote?: false
+      )
+      allow(backend).to receive(:backing_storage_observation).and_raise(Timeout::Error)
+      allow(Containers).to receive(:backend_for).with("local").and_return(backend)
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        mode: UserSetting::RUN_CONCURRENCY_MODE_MANUAL,
+        selected_host: "local",
+        selected_host_limit: 8
+      )
+
+      expect(result).to include(
+        allowed: true,
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_unavailable"
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-055
+    [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
+      it "keeps #{available_bytes.inspect} injected backing-store evidence unavailable" do
+        malformed = docker_snapshot.merge(
+          backing_storage_available: true,
+          backing_storage_scope: "configured_docker_backing_store_probe",
+          backing_storage_available_bytes: available_bytes,
+          backing_storage_observed_at: Time.current
+        )
+
+        result = described_class.call(user: user, project: project, docker_snapshot: malformed, selected_host: "local", selected_host_limit: 8)
+
+        expect(result).to include(
+          allowed: true,
+          backing_storage_available: false,
+          backing_storage_reason: "backing_storage_measurement_invalid"
+        )
+      end
+    end
+
     it "counts active runs against the selected host limit only" do
       create(:agent_run, :running, project: project, container_host: "local")
       3.times { create(:agent_run, :running, project: project, container_host: "elguapo") }

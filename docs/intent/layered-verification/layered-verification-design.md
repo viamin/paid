@@ -580,8 +580,8 @@ an automatic full audit of every project obligation (RDR-076 §2: "Do not add
 full layered audits to every PR"). Duplicate-work admission follows RDR-076
 §2's "overlapping requests must not launch duplicate work for the same audit
 scope/revision": an audit request — PR-triggered or manual — whose resolved
-obligation scope and pinned revision match an already-active audit is not
-admitted, regardless of trigger source (`LAYERED-VERIFY-027`). A PR-triggered
+obligation scope intersects an already-active audit at the same pinned revision
+is not admitted, regardless of trigger source (`LAYERED-VERIFY-027`). A PR-triggered
 audit whose obligation scope cannot be resolved from the changed files
 surfaces an actionable request — correct the project's trigger configuration
 or request a bounded manual audit — rather than silently broadening to a

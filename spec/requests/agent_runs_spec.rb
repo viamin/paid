@@ -2455,20 +2455,83 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(inbox_path)
       end
 
-      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
-      it "does not use the generic manual retry path for layered-verification runs" do
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-020
+      it "resumes an interrupted layered-verification run through revalidation instead of a blind retry" do
+        obligation = create(:layered_verification_obligation, project: project)
+        obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payments.md", persisted: true)
+        metadata = { "layered_verification" => {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "sha-1", "budget" => { "max_minutes" => 5 },
+          "dependencies" => { "environment" => "isolated_execution_environment" },
+          "plan" => { obligation.id.to_s => { "selected_checks" => %w[formal_verification] } }
+        } }
+        now = Time.current
+        audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
+          base_commit_sha: "sha-1", external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.to change(AgentRun, :count).by(1)
+
+        successor = AgentRun.last.tap { expect(audit.reload.status).to eq("retried") }
+        expect(successor).to have_attributes(goal: "layered_verification_audit", status: "queued", base_commit_sha: "sha-1")
+        expect(successor.external_metadata.dig("layered_verification", "resumption", "resumed_from_run_id")).to eq(audit.id)
+        expect(successor.external_metadata.dig("layered_verification", "impact")).to include("reused_check_result_ids")
+        expect(response).to redirect_to(project_agent_run_path(project, successor))
+      end
+
+      # @spec LAYERED-VERIFY-020
+      it "rejects resuming a completed layered-verification run, which must start from the dedicated entry point" do
+        audit = create(:agent_run, project: project, goal: "layered_verification_audit", status: "completed",
+          external_metadata: { "layered_verification" => { "obligation_ids" => [], "target_revision" => "sha-1",
+            "budget" => { "max_minutes" => 5 } } })
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("only interrupted layered-verification runs can resume")
+      end
+
+      # @spec LAYERED-VERIFY-020
+      it "rejects resuming a layered-verification run whose budget is exhausted" do
+        obligation = create(:layered_verification_obligation, project: project)
+        obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payments.md", persisted: true)
+        metadata = { "layered_verification" => {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "sha-1",
+          "budget" => { "max_minutes" => 2 }, "dependencies" => {}
+        } }
+        now = Time.current
+        audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
+          external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("no budget remains for resumption")
+      end
+
+      # @spec LAYERED-VERIFY-012
+      it "rejects resuming layered-verification runs while the add-on is disabled" do
         audit = create(:agent_run, :failed, project: project, goal: "layered_verification_audit")
-        repair = create(:agent_run, :failed, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
 
-        [ audit, repair ].each do |run|
-          expect {
-            post retry_project_agent_run_path(project, run)
-          }.not_to change(AgentRun, :count)
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
 
-          expect(response).to redirect_to(project_agent_run_path(project, run))
-          follow_redirect!
-          expect(response.body).to include("Layered-verification runs must be started again")
-        end
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("layered verification is not enabled")
       end
 
       # @spec PARTIAL-CLOSEOUT-032
