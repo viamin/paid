@@ -2451,9 +2451,9 @@ module Activities
 
       terminal_fragment = stdout_buffer.dup
       classification = AgentHarness::Providers::Codex.classify_output_chunk(
-        "\n",
+        "#{terminal_fragment}\n",
         stream: :stdout,
-        stdout_buffer: stdout_buffer
+        stdout_buffer: +""
       )
       return sanitized_codex_diagnostic(terminal_fragment) if auth_classification?(classification)
 

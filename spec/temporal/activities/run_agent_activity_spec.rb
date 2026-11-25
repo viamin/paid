@@ -4102,6 +4102,25 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.reload).not_to be_auth_expired
       end
 
+      it "retains a final provider diagnostic without a trailing newline" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: codex_provider_auth_error, stderr: "", exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        expect(attempt.fetch("diagnostics")).to include(
+          "classification_provenance" => include(
+            "origin" => "stdout",
+            "category" => "auth_expired",
+            "terminal_diagnostic" => include("authentication_error")
+          )
+        )
+      end
+
       it "classifies a real provider error after malformed and MCP stdout data" do # @spec RUNNER-FALLBACK-015
         stdout = [
           "{malformed JSONL",
