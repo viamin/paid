@@ -350,9 +350,14 @@ jobs:
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
+        # @spec TEST-SUITE-024
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Bound a stalled GitHub release-asset transfer well below the
+          # outer retry attempt so a later retry can use a fresh connection.
+          export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
+          export AST_GREP_DOWNLOAD_MAX_TIME=60
           retry_with_backoff() {
             local timeout_limit="$1"
             local warning_message="$2"
@@ -739,9 +744,14 @@ jobs:
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
+        # @spec TEST-SUITE-024
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Keep dropped-shard recovery on the same bounded release download
+          # contract as the matrix shards.
+          export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
+          export AST_GREP_DOWNLOAD_MAX_TIME=60
           retry_with_backoff() {
             local timeout_limit="$1"
             local warning_message="$2"
