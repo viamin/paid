@@ -4337,6 +4337,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
     t.index ["runner_key", "auth_source", "container_host", "attempted_at"], name: "idx_runner_auth_attempts_provider_source_host_attempted"
   end
 
+  create_table "runner_auth_materializations", comment: "Trusted per-container provenance for managed rotating runner credential materialization.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.string "auth_source", limit: 32, null: false
+    t.string "container_id", limit: 128, null: false
+    t.datetime "created_at", null: false
+    t.datetime "credential_updated_at"
+    t.datetime "materialized_at", null: false
+    t.bigint "project_id", null: false
+    t.bigint "runner_credential_id"
+    t.string "runner_key", limit: 64, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_runner_auth_materializations_on_account_id"
+    t.index ["agent_run_id", "runner_key", "container_id"], name: "idx_runner_auth_materializations_run_runner_container", unique: true
+    t.index ["agent_run_id"], name: "index_runner_auth_materializations_on_agent_run_id"
+    t.index ["project_id"], name: "index_runner_auth_materializations_on_project_id"
+    t.index ["runner_credential_id"], name: "index_runner_auth_materializations_on_runner_credential_id"
+  end
+
   create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account that owns this credential"
     t.string "auth_kind", default: "oauth_token", null: false, comment: "Authentication mechanism (oauth_token, api_key, signing_token)"
@@ -5722,6 +5741,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   add_foreign_key "runner_auth_attempts", "agent_runs", on_delete: :nullify
   add_foreign_key "runner_auth_attempts", "projects", on_delete: :cascade
   add_foreign_key "runner_auth_attempts", "runner_credentials", on_delete: :nullify
+  add_foreign_key "runner_auth_materializations", "accounts"
+  add_foreign_key "runner_auth_materializations", "agent_runs", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "runner_credentials", on_delete: :nullify
   add_foreign_key "runner_credentials", "accounts"
   add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
@@ -7989,6 +8012,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
   execute <<~SQL
     ALTER TABLE "public"."runner_auth_attempts" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."runner_auth_attempts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."runner_auth_materializations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."runner_auth_materializations" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -10422,6 +10450,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_24_224902) do
       WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
   WHERE ((projects.id = runner_auth_attempts.project_id) AND (projects.account_id = paid_current_account_id()))))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."runner_auth_materializations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))));
   SQL
 
   execute <<~SQL

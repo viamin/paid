@@ -225,3 +225,11 @@
   `spec/services/apple_verification_attempts/rerun_concurrency_spec.rb`.
   *Code:* `RetryableAttempts::RetryAttempt`,
   `AppleVerificationAttempts::RetryPolicy`.
+
+- [x] **AGENT-RETRY-019** — A manual source-issue `create_pr` failure MAY
+  consume only remaining manual lineage allowance through a locked shared claim
+  when no observable work or execution-budget exhaustion exists. It preserves
+  manual authority without Auto-Pick discovery and records recommendation,
+  claim, completion, and refusal as distinct audit states.
+  *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
+  `RetryFailedManualIssueCreatePrJob`.

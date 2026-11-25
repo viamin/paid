@@ -28,7 +28,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     create(:project, account: account, created_by: create(:user, account: account))
   end
   let(:agent_run) { create(:agent_run, project: project) }
-  let(:container) { instance_double(Docker::Container) }
+  let(:container) { instance_double(Docker::Container, id: "codex-provenance-container") }
 
   let(:valid_codex_auth) { file_fixture("codex_auth_valid.json").read }
 
@@ -44,9 +44,10 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     )
   end
 
-  def build_service(backend: local_backend, credential: nil)
+  def build_service(backend: local_backend, credential: nil, container: self.container)
     svc = described_class.new(agent_run: agent_run, project: project, backend: backend)
     allow(svc).to receive_messages(
+      container: container,
       codex_local_config_path: nil,
       codex_subscription_auth_host_mount_path: nil,
       codex_subscription_auth_mount: nil,
@@ -54,6 +55,20 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     )
     allow(svc).to receive(:codex_managed_runner_credential).and_return(credential) if credential
     svc
+  end
+
+  def authorize_harvest(credential, container_id: container.id)
+    RunnerAuthMaterialization.create!(
+      account: account,
+      project: project,
+      agent_run: agent_run,
+      runner_credential: credential,
+      runner_key: "codex",
+      auth_source: "managed",
+      container_id: container_id,
+      credential_updated_at: credential.updated_at,
+      materialized_at: Time.current
+    )
   end
 
   describe "managed materialization without a host bind mount (AC1)" do
@@ -78,17 +93,40 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
       svc.send(:seed_codex_credentials!)
 
-      expect(written.keys).to include("/home/agent/.codex/auth.json")
-      materialized = JSON.parse(written.fetch("/home/agent/.codex/auth.json"))
-      expect(materialized["tokens"]["refresh_token"]).to eq("v1.managed-codex-refresh-token")
+      expect(JSON.parse(written.fetch("/home/agent/.codex/auth.json")).dig("tokens", "refresh_token"))
+        .to eq("v1.managed-codex-refresh-token")
 
       attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "materialization").last
-      expect(attempt).not_to be_nil
-      expect(attempt.auth_source).to eq("managed")
-      expect(attempt.materialization_mode).to eq("native_file")
-      expect(attempt.runner_credential).to eq(credential)
-      expect(attempt.result).to eq("materialized")
+      expect(attempt).to have_attributes(
+        auth_source: "managed", materialization_mode: "native_file",
+        runner_credential: credential, result: "materialized"
+      )
       expect(attempt.metadata).not_to include("managed-codex-refresh-token")
+      expect(RunnerAuthMaterialization.last).to have_attributes(
+        runner_credential: credential, runner_key: "codex", auth_source: "managed",
+        container_id: container.id, credential_updated_at: credential.updated_at
+      )
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "binds provenance to the generation that supplied the written bytes" do
+      credential = create_codex_credential(token: valid_codex_auth)
+      materialized_generation = credential.updated_at
+      replacement = JSON.parse(valid_codex_auth)
+      replacement["tokens"]["refresh_token"] = "v1.concurrent-refresh-token"
+      svc = build_service(credential: credential)
+
+      allow(svc).to receive(:write_container_file) do
+        credential.update!(token: JSON.generate(replacement))
+      end
+      allow(svc).to receive(:refresh_codex_managed_credential!).and_return(nil)
+      allow(svc).to receive(:seed_codex_managed_config!)
+      allow(svc).to receive(:seed_codex_notify_hook!)
+
+      svc.send(:seed_codex_credentials!)
+
+      expect(RunnerAuthMaterialization.last.credential_updated_at).to eq(materialized_generation)
+      expect(RunnerAuthMaterialization.last.credential_updated_at).not_to eq(credential.reload.updated_at)
     end
 
     it "marks the credential last_used_at when materialized" do
@@ -132,6 +170,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "updates the canonical RunnerCredential with rotated state" do
       svc = build_service(credential: credential)
+      authorize_harvest(credential)
       encoded = Base64.strict_encode64(rotated_codex_auth)
       allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
 
@@ -151,6 +190,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "records a skipped harvest when no rotated credential is returned" do
       svc = build_service(credential: credential)
+      authorize_harvest(credential)
       allow(local_backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
 
       result = svc.send(:harvest_codex_managed_credential!)
@@ -163,6 +203,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "records a harvest failure when the container exec fails" do
       svc = build_service(credential: credential)
+      authorize_harvest(credential)
       allow(local_backend).to receive(:exec_in_container).and_return([ [], [ "boom" ], 1 ])
 
       result = svc.send(:harvest_codex_managed_credential!)
@@ -176,6 +217,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     it "does not corrupt the credential when the rotated payload is malformed" do
       original_token = credential.token
       svc = build_service(credential: credential)
+      authorize_harvest(credential)
       encoded = Base64.strict_encode64('{"tokens":{}}')
       allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
 
@@ -190,6 +232,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     it "records a harvest failure when the rotated payload has no access token" do
       original_token = credential.token
       svc = build_service(credential: credential)
+      authorize_harvest(credential)
       refresh_only = JSON.parse(valid_codex_auth)
       refresh_only["tokens"].delete("access_token")
       encoded = Base64.strict_encode64(JSON.generate(refresh_only))
@@ -203,6 +246,161 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
       attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last
       expect(attempt.result).to eq("harvest_failed")
       expect(attempt.failure_reason).to eq("rotated_credential_missing_access_token")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "refuses a harvest with no materialization provenance" do
+      svc = build_service(credential: credential)
+
+      expect(local_backend).not_to receive(:exec_in_container)
+      result = svc.send(:harvest_codex_managed_credential!)
+
+      expect(result.performed?).to be(false)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last).to have_attributes(
+        auth_source: "none", result: "skipped", failure_reason: "materialization_unconfirmed"
+      )
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "executes unknown container auth without a current-selection lease or writeback" do
+      svc = build_service(credential: credential)
+      allow(svc).to receive(:with_codex_managed_auth_lock)
+      allow(svc).to receive(:with_codex_host_auth_lock)
+      allow(svc).to receive(:sync_codex_auth_file_to_source!)
+      allow(local_backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+      allow(container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+      svc.execute([ "codex", "exec", "prompt" ])
+
+      expect(svc).not_to have_received(:with_codex_managed_auth_lock)
+      expect(svc).not_to have_received(:with_codex_host_auth_lock)
+      expect(svc).not_to have_received(:sync_codex_auth_file_to_source!)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "lease")).to be_empty
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "writes an old container harvest only to its materialized credential after selection changes" do
+      authorize_harvest(credential)
+      newer = create_codex_credential(token: valid_codex_auth)
+      svc = build_service(credential: newer)
+      encoded = Base64.strict_encode64(rotated_codex_auth)
+      allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
+
+      svc.send(:harvest_codex_managed_credential!)
+
+      expect(JSON.parse(credential.reload.token).dig("tokens", "refresh_token")).to eq("v1.rotated-refresh-token")
+      expect(newer.reload.token).to eq(valid_codex_auth)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.runner_credential).to eq(credential)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "executes under the materialized credential lease after selection changes" do
+      authorize_harvest(credential)
+      newer = create_codex_credential(token: valid_codex_auth)
+      svc = build_service(credential: newer)
+      allow(svc).to receive(:subscription_auth_lock_timeout).and_return(5)
+      allow(container).to receive(:exec) do |_command, **_options, &stream|
+        stream&.call(:stdout, "done\n")
+        [ [ "done\n" ], [], 0 ]
+      end
+      allow(container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      encoded = Base64.strict_encode64(rotated_codex_auth)
+      allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
+
+      svc.execute([ "codex", "exec", "prompt" ])
+
+      lease = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "lease").last
+      expect(lease).to have_attributes(auth_source: "managed", runner_credential: credential)
+      expect(JSON.parse(credential.reload.token).dig("tokens", "refresh_token")).to eq("v1.rotated-refresh-token")
+      expect(newer.reload.token).to eq(valid_codex_auth)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "does not switch a managed container to host writeback after revocation" do
+      authorize_harvest(credential)
+      credential.revoke!
+      svc = build_service
+      allow(svc).to receive(:subscription_auth_lock_timeout).and_return(5)
+      allow(svc).to receive(:sync_codex_auth_file_to_source!)
+      allow(container).to receive_messages(
+        exec: [ [], [], 0 ],
+        info: { "State" => { "Running" => true, "ExitCode" => 0 } }
+      )
+      allow(local_backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+      svc.execute([ "codex", "exec", "prompt" ])
+
+      expect(svc).not_to have_received(:sync_codex_auth_file_to_source!)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "lease").last)
+        .to have_attributes(auth_source: "managed", runner_credential: credential)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason)
+        .to eq("materialization_stale")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "refuses a host-forwarded materialization" do
+      RunnerAuthMaterialization.create!(
+        account: account, project: project, agent_run: agent_run,
+        runner_key: "codex", auth_source: "host_forwarded", container_id: container.id,
+        materialized_at: Time.current
+      )
+      svc = build_service(credential: credential)
+
+      expect(local_backend).not_to receive(:exec_in_container)
+      svc.send(:harvest_codex_managed_credential!)
+
+      attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last
+      expect(attempt).to have_attributes(auth_source: "host_forwarded", result: "skipped", failure_reason: "materialization_not_managed")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "uses persisted provenance after worker reconstruction" do
+      authorize_harvest(credential)
+      reconstructed = build_service(credential: create_codex_credential(token: valid_codex_auth))
+      encoded = Base64.strict_encode64(rotated_codex_auth)
+      allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
+
+      reconstructed.send(:harvest_codex_managed_credential!)
+
+      expect(JSON.parse(credential.reload.token).dig("tokens", "refresh_token")).to eq("v1.rotated-refresh-token")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "refuses a replacement container without its own provenance" do
+      authorize_harvest(credential)
+      replacement = instance_double(Docker::Container, id: "replacement-container")
+      svc = build_service(credential: credential, container: replacement)
+
+      expect(local_backend).not_to receive(:exec_in_container)
+      svc.send(:harvest_codex_managed_credential!)
+
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason).to eq("materialization_unconfirmed")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "skips repeated harvest after the first write changes the generation" do
+      authorize_harvest(credential)
+      encoded = Base64.strict_encode64(rotated_codex_auth)
+      allow(local_backend).to receive(:exec_in_container).once.and_return([ [ encoded ], [], 0 ])
+      svc = build_service(credential: credential)
+
+      svc.send(:harvest_codex_managed_credential!)
+      repeated = svc.send(:harvest_codex_managed_credential!)
+
+      expect(repeated.performed?).to be(false)
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason).to eq("materialization_stale")
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    it "refuses a revoked or changed managed generation" do
+      authorize_harvest(credential)
+      credential.revoke!
+      svc = build_service(credential: credential)
+
+      expect(local_backend).not_to receive(:exec_in_container)
+      svc.send(:harvest_codex_managed_credential!)
+
+      expect(RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last.failure_reason).to eq("materialization_stale")
     end
   end
 

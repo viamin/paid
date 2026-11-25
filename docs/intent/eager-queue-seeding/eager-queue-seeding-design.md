@@ -137,9 +137,9 @@ run-30353 → run-30371 bypass), duplicating observable main-agent work.
 `Issue#auto_pick_create_pr_admission_hold` closes that route: when the
 issue has a still-current failed `create_pr` producer, manual or automatic,
 that produced implementation work (`AgentRun#implementation_work_produced?`
-— a pushed revision, a PR or issue side effect, or observable main-agent
-execution), or an automatic producer is awaiting owned in-place rate-limit
-recovery (`#recoverable_rate_limited?`),
+— a published or retained unpublished revision, a PR or issue side effect, or
+observable main-agent execution), or an automatic producer is awaiting owned
+in-place rate-limit recovery (`#recoverable_rate_limited?`),
 `Issues::EnqueueEligible` refuses to seed a fresh `create_pr` run and logs
 `enqueue_eligible.implementation_work_held`. The hold is bounded by the same
 authorized operator reset window as the failure streak: a failure created

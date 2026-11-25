@@ -14,7 +14,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
   let(:account) { create(:account) }
   let(:owner) { create(:user, account: account) }
   let(:project) { create(:project, account: account, created_by: owner) }
-  let(:container) { instance_double(Docker::Container) }
+  let(:container) { instance_double(Docker::Container, id: "runner-login-flow-container") }
   let(:rotated_canonical_auth) do
     payload = JSON.parse(file_fixture("codex_auth_valid.json").read)
     payload["tokens"]["access_token"] = "opencode-rotated-access-token"
@@ -42,8 +42,22 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   def build_service(agent_run:)
     described_class.new(agent_run: agent_run, project: project, backend: local_backend).tap do |svc|
-      allow(svc).to receive(:log_system)
+      allow(svc).to receive_messages(container: container, log_system: nil)
     end
+  end
+
+  def record_managed_materialization(agent_run:, credential:)
+    RunnerAuthMaterialization.create!(
+      account: account,
+      project: project,
+      agent_run: agent_run,
+      runner_credential: credential,
+      runner_key: credential.runner_key,
+      auth_source: "managed",
+      container_id: container.id,
+      credential_updated_at: credential.updated_at,
+      materialized_at: Time.current
+    )
   end
 
   def create_managed_oauth_credential(runner_key:, fixture_name:, **attrs)
@@ -292,6 +306,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     runner = create(:runner, user: owner, runner_key: "opencode", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
     credential = create_managed_oauth_credential(runner_key: "opencode", fixture_name: "codex_auth_valid.json")
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
     encoded = Base64.strict_encode64(rotated_auth)
 
@@ -312,6 +327,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   it "serializes opencode runs sharing the same managed credential and harvests under the lock" do
     agent_run, credential = build_opencode_subscription_run
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
 
     allow(svc).to receive_messages(
@@ -335,6 +351,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   it "serializes wrapped opencode shell commands under the same managed credential lock" do
     agent_run, credential = build_opencode_subscription_run
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
 
     allow(svc).to receive_messages(
@@ -437,6 +454,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
     runner = create(:runner, user: owner, runner_key: "omp", auth_type: "subscription")
     agent_run = create(:agent_run, project: project, runner: runner)
     credential = create_managed_oauth_credential(runner_key: "omp", fixture_name: "claude_credentials_valid.json")
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
 
     allow(svc).to receive(:container).and_return(container)
@@ -463,6 +481,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   it "serializes omp runs sharing the same managed credential and harvests under the lock" do
     agent_run, credential = build_omp_subscription_run
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
 
     allow(svc).to receive_messages(
@@ -486,6 +505,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
 
   it "serializes wrapped omp shell commands under the same managed credential lock" do
     agent_run, credential = build_omp_subscription_run
+    record_managed_materialization(agent_run: agent_run, credential: credential)
     svc = build_service(agent_run: agent_run)
 
     allow(svc).to receive_messages(

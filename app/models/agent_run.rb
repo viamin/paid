@@ -2220,11 +2220,12 @@ class AgentRun < ApplicationRecord
 
   # @spec AGENT-RETRY-017 EAGER-QUEUE-018
   # The failed-attempt side-effect guard shared by the auto-pick create_pr
-  # retry policy and ordinary issue admission: a run that pushed a revision,
-  # opened a PR or issue, or executed observable main-agent work has already
-  # spent implementation effort that a blind replacement would duplicate.
+  # retry policy and ordinary issue admission: a run that retained or pushed
+  # a revision, opened a PR or issue, or executed observable main-agent work
+  # has already spent implementation effort that a blind replacement would
+  # duplicate.
   def implementation_work_produced?
-    result_commit_sha.present? || !no_observable_work?
+    unpublished_result_commit_sha.present? || result_commit_sha.present? || !no_observable_work?
   end
 
   # A reconciliation that failed after recording gaps preserves the partial

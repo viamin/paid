@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "open3"
+require "shellwords"
 require "timeout"
 
 RSpec.describe Containers::Provision do
@@ -85,6 +86,10 @@ RSpec.describe Containers::Provision do
       if environment["PAID_PREPARATION_ROLLBACK"] == "1" && rollback_status
         [ "", "injected rollback failure", rollback_status ]
       else
+        if environment["PATH"]
+          command = command.dup
+          command[-1] = "export PATH=#{Shellwords.escape(environment.fetch('PATH'))}; #{command.last}"
+        end
         stdout, stderr, status = Open3.capture3(environment, *command)
         [ stdout, stderr, status.exitstatus ]
       end
@@ -130,7 +135,8 @@ RSpec.describe Containers::Provision do
         exec #{real_command.strip} "$@"
       SH
       File.chmod(0o755, shim)
-      yield({ "PATH" => "#{shim_dir}:#{ENV.fetch('PATH')}" })
+      shim_path = "#{shim_dir}:#{ENV.fetch('PATH')}"
+      yield({ "PATH" => shim_path })
     end
   end
 
@@ -3908,6 +3914,7 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     context "when codex subscription auth host mount is active" do
       let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
 
@@ -3920,6 +3927,15 @@ RSpec.describe Containers::Provision do
         service.remove_instance_variable(:@codex_subscription_auth_mount) if service.instance_variable_defined?(:@codex_subscription_auth_mount)
         service.remove_instance_variable(:@codex_config_host_path) if service.instance_variable_defined?(:@codex_config_host_path)
         service.remove_instance_variable(:@current_container_mounts) if service.instance_variable_defined?(:@current_container_mounts)
+        RunnerAuthMaterialization.create!(
+          account: project.account,
+          project: project,
+          agent_run: agent_run,
+          runner_key: "codex",
+          auth_source: "host_forwarded",
+          container_id: mock_container.id,
+          materialized_at: Time.current
+        )
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "output\n") if block
           [ [ "output\n" ], [], 0 ]
@@ -5312,6 +5328,14 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#start_watchdog" do
+    def with_running_watchdog
+      watchdog = service.send(:start_watchdog, watchdog_ctx)
+      yield
+    ensure
+      watchdog_state[:exec_completed] = true
+      service.send(:stop_watchdog, watchdog) if watchdog
+    end
+
     let(:watchdog_mutex) { Mutex.new }
     let(:watchdog_state) { { exec_completed: false, timeout_reason: nil } }
     let(:watchdog_ctx) do
@@ -5338,18 +5362,16 @@ RSpec.describe Containers::Provision do
     it "logs unexpected poll errors and keeps running" do
       allow(service).to receive(:log_system)
       heartbeat_checks = 0
+      resumed_polling = Queue.new
       allow(service).to receive(:heartbeat_age_seconds).with("/tmp/heartbeat") do
         heartbeat_checks += 1
         raise Errno::ELOOP, "/tmp/heartbeat" if heartbeat_checks == 1
 
+        resumed_polling << true
         nil
       end
 
-      watchdog = service.send(:start_watchdog, watchdog_ctx)
-
-      sleep 0.12
-      watchdog_state[:exec_completed] = true
-      service.send(:stop_watchdog, watchdog)
+      with_running_watchdog { expect(resumed_polling.pop(timeout: 2)).to be(true) }
 
       expect(service).to have_received(:log_system).with(
         "container.watchdog.poll_failed",
