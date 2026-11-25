@@ -68,7 +68,8 @@
   "input_preparation": {
     "file": "prepare-inputs.sh",
     "sha256": "17729b7c6c284193d27aad6cc1669113d758baa61bdeef2b3616cacf6421e58e",
-    "status": "Assembly instructions for the same verified public Git/archive/protoc/Rust identities; no SDK code executed by preparation, not a second full network download acceptance run."
+    "status": "Exact distributed preparation script executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T11:41:23Z. No compiler or server executed by preparation; baseline phase results are separate.",
+    "verified_at": "2026-11-25T11:41:23Z"
   },
   "same_image_additional_tools": {
     "unzip": true,

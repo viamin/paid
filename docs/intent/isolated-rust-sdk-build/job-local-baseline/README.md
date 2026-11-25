@@ -40,9 +40,13 @@ components and protoc 34, fetches the exact SDK/Core commits, verifies the
 Ruby-to-Core gitlink, exports their source archives and verifies Cargo.lock.
 Its public URLs, SHA-256 values and source identities are in `manifest.json`;
 it has no dependency on the operator's private input tar or `/tmp` files.
-The preparation script has been syntax checked; the complete network assembly
-script has not been separately executed end to end. The recorded baseline
-used the same verified public inputs already assembled by the operator.
+The exact public-input assembly script completed end to end in the measured
+agent image as UID 1001 on 2026-11-25, verifying all Rust/protoc hashes,
+SDK/Core revisions, the gitlink and Cargo.lock. It exited 0 within its
+300-second envelope with no OOM; both actual private containers and the
+owned volume were absent at 11:41:23 UTC. This preparation run executed
+no Rust compiler, SDK test or server; the three baseline phases below
+were verified separately.
 
 Set `RECIPE_DIR` to this recipe's directory in the checked-out Paid artifact.
 Run preparation with the existing job's ordinary public-download access:
