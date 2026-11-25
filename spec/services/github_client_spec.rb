@@ -1743,18 +1743,34 @@ RSpec.describe GithubClient do
                         {
                           id: "thread_1",
                           isResolved: false,
-                          comments: {
+                          firstComment: {
                             nodes: [
-                              { body: "Fix this", path: "app/model.rb", line: 10, author: { login: "reviewer" } }
+                              { id: "comment_1", body: "Fix this", path: "app/model.rb", line: 10,
+                                author: { login: "reviewer" } }
+                            ]
+                          },
+                          recentComments: {
+                            totalCount: 1,
+                            nodes: [
+                              { id: "comment_1", body: "Fix this", path: "app/model.rb", line: 10,
+                                author: { login: "reviewer" } }
                             ]
                           }
                         },
                         {
                           id: "thread_2",
                           isResolved: true,
-                          comments: {
+                          firstComment: {
                             nodes: [
-                              { body: "Done", path: "app/view.rb", line: 5, author: { login: "author" } }
+                              { id: "comment_2", body: "Done", path: "app/view.rb", line: 5,
+                                author: { login: "author" } }
+                            ]
+                          },
+                          recentComments: {
+                            totalCount: 1,
+                            nodes: [
+                              { id: "comment_2", body: "Done", path: "app/view.rb", line: 5,
+                                author: { login: "author" } }
                             ]
                           }
                         }
@@ -1774,12 +1790,164 @@ RSpec.describe GithubClient do
         expect(result.size).to eq(2)
         expect(result.first[:id]).to eq("thread_1")
         expect(result.first[:is_resolved]).to be false
+        expect(result.first).to include(comment_count: 1, original_comment_id: "comment_1")
+        expect(result.first[:comments].first[:id]).to eq("comment_1")
         expect(result.first[:comments].first[:body]).to eq("Fix this")
         expect(result.first[:comments].first[:path]).to eq("app/model.rb")
         expect(result.first[:comments].first[:line]).to eq(10)
         expect(result.first[:comments].first[:author]).to eq("reviewer")
 
         expect(result.last[:is_resolved]).to be true
+      end
+    end
+
+    # @spec FOCUSED-RUN-011
+    context "when a thread has more comments than the recent-comment window" do
+      it "paginates the complete thread instead of treating it as incomplete" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_review_thread_comment_page(api_base)
+
+        comments = client.review_threads(repo, 42).first[:comments]
+
+        expect(comments.size).to eq(52)
+        expect(comments.first[:id]).to eq("original")
+        expect(comments.last[:id]).to eq("reply_51")
+      end
+
+      it "fails closed when GitHub omits the original finding" do
+        stub_long_thread_response(api_base, first_comments: [])
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /omitted its original comment/)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed when comment pagination repeats a cursor" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        pagination = stub_repeated_review_thread_cursor(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /repeated cursor/)
+        expect(pagination).to have_been_requested.twice
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed when complete thread evidence exceeds the finite comment budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_oversized_review_thread_page(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /evidence budget/)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed without issuing a request beyond the page budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        pagination = stub_review_thread_pages_to_limit(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /page budget/)
+        expect(pagination).to have_been_requested.times(GithubClient::REVIEW_THREAD_MAX_PAGES)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "fails closed when serialized thread evidence exceeds the byte budget" do
+        stub_long_thread_response(api_base, first_comments: [ { id: "original", body: "Original finding" } ])
+        stub_oversized_review_thread_body(api_base)
+
+        expect { client.review_threads(repo, 42) }
+          .to raise_error(GithubClient::IncompleteTreeError, /evidence budget/)
+      end
+
+      def stub_long_thread_response(api_base, first_comments:)
+        stub_request(:post, "#{api_base}/graphql").to_return(
+          status: 200,
+          body: { data: { repository: { pullRequest: { reviewThreads: { nodes: [
+            {
+              id: "thread_1", isResolved: false, firstComment: { nodes: first_comments },
+              recentComments: { totalCount: 52, nodes: [ { id: "reply_2", body: "Latest reply" } ] }
+            }
+          ] } } } } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+      end
+
+      def stub_review_thread_comment_page(api_base)
+        comments = [ { id: "original", body: "Original finding" } ] +
+          Array.new(51) { |index| { id: "reply_#{index + 1}", body: "More context" } }
+
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: comments,
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      def stub_repeated_review_thread_cursor(api_base)
+        page = lambda do |cursor|
+          {
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "comment_#{cursor}", body: "Context" } ],
+              pageInfo: { hasNextPage: true, endCursor: "same-cursor" }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        end
+
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(page.call("first"), page.call("second"))
+      end
+
+      def stub_oversized_review_thread_page(api_base)
+        comments = Array.new(GithubClient::REVIEW_THREAD_MAX_COMMENTS + 1) do |index|
+          { id: "comment_#{index}", body: "Context" }
+        end
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: comments,
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      def stub_review_thread_pages_to_limit(api_base)
+        pages = Array.new(GithubClient::REVIEW_THREAD_MAX_PAGES) do |index|
+          {
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "comment_#{index}", body: "Context" } ],
+              pageInfo: { hasNextPage: true, endCursor: "cursor_#{index}" }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          }
+        end
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(*pages)
+      end
+
+      def stub_oversized_review_thread_body(api_base)
+        stub_request(:post, "#{api_base}/graphql")
+          .with { |request| request.body.include?("PullRequestReviewThread") }
+          .to_return(
+            status: 200,
+            body: { data: { node: { comments: {
+              nodes: [ { id: "original", body: "x" * (GithubClient::REVIEW_THREAD_MAX_BYTES + 1) } ],
+              pageInfo: { hasNextPage: false, endCursor: nil }
+            } } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
       end
     end
 
@@ -1804,6 +1972,24 @@ RSpec.describe GithubClient do
           expect(error.message).to include("Resource not accessible by integration for this repository")
         }
       end
+    end
+  end
+
+  describe "#pull_request_ref_oids" do
+    let(:repo) { "owner/repo" }
+
+    it "reads current base and head refs over uncached GraphQL" do
+      request = stub_request(:post, "#{api_base}/graphql")
+        .to_return(
+          status: 200,
+          body: {
+            data: { repository: { pullRequest: { baseRefOid: "base-sha", headRefOid: "head-sha" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect(client.pull_request_ref_oids(repo, 42)).to eq(base: "base-sha", head: "head-sha")
+      expect(request).to have_been_requested.once
     end
   end
 
@@ -2008,6 +2194,132 @@ RSpec.describe GithubClient do
           previous_filename: "app/models/legacy_provider.rb"
         }
       ])
+    end
+  end
+
+  describe "#detailed_compare_files" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            files: [
+              { filename: "app/models/provider.rb", sha: "b" * 40, status: "modified",
+                additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+
+    {
+      filename: { filename: nil }, status: { status: nil }, blob: { sha: nil },
+      counts: { additions: "3" }, rename: { status: "renamed", previous_filename: nil }
+    }.each do |field, invalid|
+      it "refuses malformed comparison file metadata for #{field}" do
+        metadata = { filename: "app/models/provider.rb", status: "modified", sha: "b" * 40,
+          additions: 3, deletions: 1, changes: 4, patch: "+fixed" }.merge(invalid)
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456") }
+          .to raise_error(GithubClient::IncompleteComparisonError)
+      end
+    end
+
+    it "refuses malformed comparison file metadata for a non-object entry" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ nil ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect { client.detailed_compare_files(repo, "base123", "head456") }
+        .to raise_error(GithubClient::IncompleteComparisonError)
+    end
+
+    [ [ 101, 100 ], [ 300, 500 ] ].each do |file_count, limit|
+      it "refuses incomplete comparison evidence at #{file_count} files with limit #{limit}" do
+        files = file_count.times.map { |index| { filename: "file_#{index}.rb", status: "modified", patch: "+fixed" } }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: }.to_json, headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456", max_files: limit) }
+          .to raise_error(GithubClient::Error)
+      end
+    end
+
+
+    it "returns detailed file metadata bound to the immutable commit range" do
+      expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([
+        { filename: "app/models/provider.rb", previous_filename: "", sha: "b" * 40, status: "modified",
+          additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+      ])
+    end
+
+    it "preserves blob identity and rename provenance for the immutable commit range" do
+      metadata = { filename: "app/models/provider.rb", previous_filename: "app/models/old_provider.rb",
+        sha: "b" * 40, status: "renamed", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([ metadata ])
+    end
+
+    it "accepts complete binary-file metadata without a textual patch" do
+      metadata = { filename: "image.png", sha: "b" * 40, status: "modified",
+        additions: 0, deletions: 0, changes: 0 }
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect(client.detailed_compare_files(repo, "base123", "head456"))
+        .to eq([ metadata.merge(previous_filename: "", patch: "") ])
+    end
+
+    %w[added removed modified renamed copied changed unchanged].each do |status|
+      it "accepts declared comparison file status #{status}" do
+        metadata = { filename: "file.rb", sha: "b" * 40, status:,
+          additions: 1, deletions: 0, changes: 1, previous_filename: "original.rb", patch: "+fixed" }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect(client.detailed_compare_files(repo, "base123", "head456").sole[:status]).to eq(status)
+      end
+    end
+
+    [ "unknown", "MODIFIED", " modified" ].each do |status|
+      it "refuses undeclared comparison file status #{status.inspect}" do
+        metadata = { filename: "file.rb", sha: "b" * 40, status:,
+          additions: 1, deletions: 0, changes: 1, patch: "+fixed" }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456") }
+          .to raise_error(GithubClient::IncompleteComparisonError)
+      end
+    end
+
+    it "refuses to return a partial comparison at max_files" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            files: [
+              { filename: "a.rb", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "+a" },
+              { filename: "b.rb", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "+b" }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      expect { client.detailed_compare_files(repo, "base123", "head456", max_files: 1) }
+        .to raise_error(GithubClient::IncompleteComparisonError)
     end
   end
 
