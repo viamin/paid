@@ -4051,6 +4051,55 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "retains the classified provider diagnostic before a trailing MCP result" do # @spec RUNNER-FALLBACK-015
+        stdout = [ codex_provider_auth_error, codex_mcp_tool_output(content: "private-trailing-tool-data") ].join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout:, stderr: "", exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        diagnostic = attempt.fetch("diagnostics").fetch("classification_provenance").fetch("terminal_diagnostic")
+        expect(diagnostic).to include("authentication_error")
+        expect(diagnostic).not_to include("private-trailing-tool-data")
+      end
+
+      it "retains the classified stderr diagnostic through unrelated startup and terminal noise" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", exit_code: 1,
+          stderr: ("private-startup-noise\n" * 100) + codex_auth_expired_output[:stderr] + "private-terminal-noise\n"
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        provenance = attempt.fetch("diagnostics").fetch("classification_provenance")
+        expect(provenance).to include("origin" => "stderr", "category" => "auth_expired")
+        expect(provenance.fetch("terminal_diagnostic")).to include("refresh_token_reused")
+        expect(provenance.fetch("terminal_diagnostic")).not_to include("private-startup-noise", "private-terminal-noise")
+        expect(provenance.fetch("terminal_diagnostic").length).to be <= 500
+      end
+
+      it "retains the classified multiline stderr authentication failure" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.failure(
+          error: "exit 1", stdout: "", exit_code: 1,
+          stderr: ("private-startup-noise\n" * 100) + "Failed to refresh token\ninvalid_client\nprivate-terminal-noise\n"
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        expect(agent_run.reload).to be_auth_expired
+        attempt = agent_run.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        diagnostic = attempt.fetch("diagnostics").fetch("classification_provenance").fetch("terminal_diagnostic")
+        expect(diagnostic).to include("Failed to refresh token", "invalid_client")
+        expect(diagnostic).not_to include("private-startup-noise", "private-terminal-noise")
+      end
+
       it "marks the run as auth_expired when preflight exits 0 with auth error output" do
         auth_expired_exit0 = Containers::Provision::Result.success(
           stdout: "",

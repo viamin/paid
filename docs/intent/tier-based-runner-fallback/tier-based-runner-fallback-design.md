@@ -174,6 +174,11 @@ Only a harness-classified explicit provider error envelope or stderr diagnostic
 may change provider state. The attempt records bounded provenance — stream,
 category, classification event path, and a redacted terminal diagnostic — so
 operators can distinguish the real cause from a truncated startup transcript.
+Paid frames terminal stdout into complete lines for the public harness
+classifier and retains the line that produced the classification. Stderr
+diagnostics retain harness-classified lines rather than unrelated startup or
+terminal noise. Paid does not parse the provider envelopes or duplicate their
+error patterns; the harness continues to own whether a fragment is an error.
 This does not renew credentials, alter budgets or grants, replay work, or
 change retry and cleanup policy.
 

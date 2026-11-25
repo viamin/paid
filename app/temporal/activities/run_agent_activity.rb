@@ -2387,22 +2387,21 @@ module Activities
 
     def codex_provider_auth_classification(stdout:, stderr:)
       stdout_buffer = +""
-      stdout_chunk = stdout.to_s
       # Execution results are terminal snapshots rather than live chunks. Give
       # the harness a newline-delimited final fragment so its public JSONL
       # classifier can inspect a last error envelope without scanning tool data.
-      stdout_chunk += "\n" unless stdout_chunk.end_with?("\n")
-      stdout_result = AgentHarness::Providers::Codex.classify_output_chunk(
-        stdout_chunk,
-        stream: :stdout,
-        stdout_buffer: stdout_buffer
-      )
-      if auth_classification?(stdout_result)
+      stdout.to_s.each_line do |line|
+        chunk = line.end_with?("\n") ? line : "#{line}\n"
+        classification = AgentHarness::Providers::Codex.classify_output_chunk(
+          chunk, stream: :stdout, stdout_buffer: stdout_buffer
+        )
+        next unless auth_classification?(classification)
+
         return codex_auth_provenance(
-          stdout_result,
+          classification,
           origin: "stdout",
           event_path: "error.message",
-          terminal_diagnostic: codex_terminal_diagnostic(stdout)
+          terminal_diagnostic: codex_terminal_diagnostic(line)
         )
       end
 
@@ -2413,8 +2412,37 @@ module Activities
         stderr_result,
         origin: "stderr",
         event_path: "stderr",
-        terminal_diagnostic: codex_terminal_diagnostic(stderr)
+        terminal_diagnostic: codex_stderr_terminal_diagnostic(stderr)
       )
+    end
+
+    def codex_stderr_terminal_diagnostic(stderr)
+      matching_lines = stderr.to_s.each_line.select do |line|
+        auth_classification?(AgentHarness::Providers::Codex.classify_output_chunk(line, stream: :stderr))
+      end
+      # The full-stream classification above remains authoritative for errors
+      # whose harness patterns span lines; framing must not suppress them.
+      fragment = matching_lines.empty? ? codex_multiline_auth_fragment(stderr) : matching_lines.join
+      codex_terminal_diagnostic(fragment)
+    end
+
+    def codex_multiline_auth_fragment(stderr)
+      lines = stderr.to_s.lines
+      # Locate the classified span through the public classifier, rather than
+      # copying its patterns or retaining a startup prefix before truncation.
+      length = (1..lines.length).bsearch do |count|
+        codex_stderr_auth_fragment?(lines.first(count).join)
+      end || lines.length
+      prefix = lines.first(length)
+      boundary = (0..prefix.length).bsearch do |offset|
+        !codex_stderr_auth_fragment?(prefix.drop(offset).join)
+      end
+      fragment = prefix.drop([ boundary.to_i - 1, 0 ].max).join
+      codex_stderr_auth_fragment?(fragment) ? fragment : stderr
+    end
+
+    def codex_stderr_auth_fragment?(fragment)
+      auth_classification?(AgentHarness::Providers::Codex.classify_output_chunk(fragment, stream: :stderr))
     end
 
     def auth_classification?(classification)
@@ -2422,7 +2450,7 @@ module Activities
     end
 
     def codex_terminal_diagnostic(output)
-      AgentRun::ErrorMessageSanitizer.call(text: output.to_s.lines.last.to_s).truncate(500)
+      AgentRun::ErrorMessageSanitizer.call(text: output.to_s).truncate(500)
     end
 
     def codex_auth_provenance(classification, origin:, event_path:, terminal_diagnostic: nil)

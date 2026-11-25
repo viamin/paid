@@ -174,6 +174,8 @@
   failures even when tool data is mixed into the transcript. A classified
   authentication failure SHALL retain bounded, secret-free provenance naming
   the stream, category, event path, and terminal diagnostic instead of a
-  startup transcript prefix.
+  startup transcript prefix. The diagnostic SHALL retain the transport
+  fragments classified by the harness, including provider error codes;
+  subsequent tool results and unrelated stderr noise SHALL NOT replace them.
   *Code:* `Activities::RunAgentActivity`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
