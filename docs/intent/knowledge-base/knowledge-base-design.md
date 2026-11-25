@@ -141,6 +141,21 @@ budget: long enough for a large repository or a transiently slow GitHub transfer
 without consuming the full collection ceiling, while still failing as a
 `CloneError` and removing its temporary checkout when the budget is exceeded.
 
+The streamed workspace is sealed inside the collector container by fixed,
+trusted setup commands: force root ownership so the agent user cannot restore
+write access, pre-create the Rails writable directories, overwrite
+`config/database.yml` with a minimal stub, and strip write permission from the
+tree. Those commands run as privileged execs because Docker applies the
+container's `CapDrop: ALL` policy to exec processes as well — an unprivileged
+exec'd root holds no capabilities and the sealing fails with `EPERM` whenever
+the streamed tar preserves a non-root uid (the tar streams the worker
+process's ownership, and the daemon applies it on extraction). The privilege is
+scoped to those constant commands only; every collector analysis command still
+executes unprivileged as the non-root agent user, so the isolation posture for
+repo-derived code is unchanged. A failed setup command reports its exit status
+and a bounded stderr excerpt so sealing failures are diagnosable from the
+exception report rather than a bare exit code.
+
 ### Derived vector indexing
 
 Embeddings are generated for active chunks that still need vectors, then synced

@@ -180,17 +180,22 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(mock_container).to have_received(:archive_in_stream).with("/workspace")
     end
 
+    # @spec KNOWLEDGE-017
+    # Regression (#5261): CapDrop: ALL strips capabilities from docker exec
+    # processes too, so unprivileged sealing commands exit 1 (EPERM) whenever
+    # the streamed tar preserves a non-root uid. The fixed setup commands run
+    # as privileged execs to hold the capabilities the sealing needs.
     it "enforces root ownership and read-only permissions after seeding" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       # chown to root so the agent user cannot restore write permissions
       expect(mock_container).to have_received(:exec).with(
         [ "chown", "-R", "root:root", "/workspace" ],
-        user: "root"
+        user: "root", Privileged: true
       )
       expect(mock_container).to have_received(:exec).with(
         [ "chmod", "-R", "a=rX", "/workspace" ],
-        user: "root"
+        user: "root", Privileged: true
       )
     end
 
@@ -204,7 +209,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
       expect(mock_container).to have_received(:exec).with(
         [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ],
-        user: "root"
+        user: "root", Privileged: true
       )
     end
 
@@ -236,17 +241,17 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
       expect(mock_container).to have_received(:exec).with(
         [ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ],
-        user: "root"
+        user: "root", Privileged: true
       )
       expect(mock_container).to have_received(:exec).with(
         [ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ],
-        user: "root"
+        user: "root", Privileged: true
       )
     end
 
     it "raises ContainerError when mkdir of Rails writable dirs fails" do
       allow(mock_container).to receive(:exec)
-        .with([ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .with([ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root", Privileged: true)
         .and_return([ [ "" ], [ "Permission denied" ], 1 ])
 
       expect {
@@ -259,7 +264,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
     it "raises ContainerError when chown of Rails writable dirs fails" do
       allow(mock_container).to receive(:exec)
-        .with([ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .with([ "chown", "-R", "agent:agent", "/workspace/log", "/workspace/tmp" ], user: "root", Privileged: true)
         .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
 
       expect {
@@ -272,7 +277,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
     it "raises ContainerError when chmod of Rails writable dirs fails" do
       allow(mock_container).to receive(:exec)
-        .with([ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ], user: "root")
+        .with([ "chmod", "-R", "u+rwX", "/workspace/log", "/workspace/tmp" ], user: "root", Privileged: true)
         .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
 
       expect {
@@ -285,7 +290,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
     it "raises ContainerError when chown fails during seeding" do
       allow(mock_container).to receive(:exec)
-        .with([ "chown", "-R", "root:root", "/workspace" ], user: "root")
+        .with([ "chown", "-R", "root:root", "/workspace" ], user: "root", Privileged: true)
         .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
 
       expect {
@@ -298,7 +303,7 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
     it "raises ContainerError when chmod fails during seeding" do
       allow(mock_container).to receive(:exec)
-        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root")
+        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root", Privileged: true)
         .and_return([ [ "" ], [ "Operation not permitted" ], 1 ])
 
       expect {
@@ -309,12 +314,28 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    # @spec KNOWLEDGE-017
+    # A bare "(exit 1)" made #5261 undiagnosable: the error must carry the
+    # command's stderr so the underlying errno reaches the exception report.
+    it "includes the setup command's stderr in the ContainerError" do
+      allow(mock_container).to receive(:exec)
+        .with([ "chmod", "-R", "a=rX", "/workspace" ], user: "root", Privileged: true)
+        .and_return([ [ "" ], [ "chmod: changing permissions of '/workspace/app': Operation not permitted" ], 1 ])
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ContainerError,
+        %r{Failed to set workspace permissions \(exit 1\): chmod: changing permissions of '/workspace/app': Operation not permitted}
+      )
+    end
+
     it "writes database.yml stub before locking workspace permissions" do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:exec).with(
         [ "sh", "-c", a_string_including("config/database.yml") ],
-        user: "root"
+        user: "root", Privileged: true
       )
     end
 
@@ -323,13 +344,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
 
       expect(mock_container).to have_received(:exec).with(
         [ "sh", "-c", a_string_including("if [ -f '/workspace/config/database.yml' ] && [ ! -L '/workspace/config/database.yml' ]") ],
-        user: "root"
+        user: "root", Privileged: true
       )
     end
 
     it "raises ContainerError when database.yml stub write fails" do
       allow(mock_container).to receive(:exec)
-        .with([ "sh", "-c", a_string_including("database.yml") ], user: "root")
+        .with([ "sh", "-c", a_string_including("database.yml") ], user: "root", Privileged: true)
         .and_return([ [], [ "write error" ], 1 ])
 
       expect {
@@ -344,13 +365,13 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       described_class.new(project: project, commit_sha: commit_sha).run
 
       expect(mock_container).to have_received(:exec).with(
-        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root"
+        [ "mkdir", "-p", "/workspace/log", "/workspace/tmp" ], user: "root", Privileged: true
       ).ordered
       expect(mock_container).to have_received(:exec).with(
-        [ "sh", "-c", a_string_including("database.yml") ], user: "root"
+        [ "sh", "-c", a_string_including("database.yml") ], user: "root", Privileged: true
       ).ordered
       expect(mock_container).to have_received(:exec).with(
-        [ "chmod", "-R", "a=rX", "/workspace" ], user: "root"
+        [ "chmod", "-R", "a=rX", "/workspace" ], user: "root", Privileged: true
       ).ordered
     end
 
@@ -722,6 +743,25 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect { runner.execute("echo test") }.to raise_error(
         Knowledge::ContainerizedRunner::ContainerError, /not provisioned/
       )
+    end
+
+    # @spec KNOWLEDGE-017
+    # Collector commands run repo-derived tooling and must not inherit the
+    # privileged exec the fixed workspace setup commands use.
+    it "executes collector commands without privilege escalation" do
+      runner_result = { project_version: Object.new, results: [] }
+      runner = described_class.new(project: project, commit_sha: commit_sha)
+
+      allow(Knowledge::CollectorRunner).to receive(:call) do |args|
+        container_runner = args[:options][:container_runner]
+        allow(mock_container).to receive(:exec)
+          .with([ "echo", "hello" ], wait: 300)
+          .and_return([ [ "hello" ], [ "" ], 0 ])
+        expect(container_runner.execute([ "echo", "hello" ])).to eq("hello")
+        runner_result
+      end
+
+      runner.run
     end
   end
 end

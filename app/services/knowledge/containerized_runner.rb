@@ -327,11 +327,34 @@ module Knowledge
     # Runs a workspace setup command as root and raises ContainerError on
     # non-zero exit. Centralizes the exec+check pattern so the order and
     # error shape of seed_workspace! is easy to read at a glance.
+    #
+    # Setup commands are fixed, trusted constants (no repo-derived input), so
+    # they run as privileged execs. CapDrop: ALL applies to docker exec
+    # processes as well, leaving the exec'd root without CAP_CHOWN,
+    # CAP_FOWNER, and CAP_DAC_OVERRIDE — unprivileged, the sealing
+    # chown/chmod/mkdir steps exit 1 (EPERM) whenever the streamed tar
+    # preserves a non-root uid, because the daemon applies the tar's uid/gid
+    # on extraction (#5261). The Docker exec API grants a privileged exec the
+    # full capability set even under the container's CapDrop policy, and the
+    # privilege is scoped to exactly these constant commands: collector
+    # commands run through #execute and stay unprivileged as the agent user.
+    # @spec KNOWLEDGE-017
     def exec_setup!(command, failing_action)
-      _stdout, _stderr, status = Containers.backend.exec_in_container(@container, command, user: "root")
+      _stdout, stderr, status = Containers.backend.exec_in_container(
+        @container, command, user: "root", Privileged: true
+      )
       return if status.to_i.zero?
 
-      raise ContainerError, "Failed to #{failing_action} (exit #{status})"
+      raise ContainerError, "Failed to #{failing_action} (exit #{status})#{setup_stderr_detail(stderr)}"
+    end
+
+    # Bounded stderr excerpt so a failed setup command reports the underlying
+    # errno instead of a bare exit code.
+    def setup_stderr_detail(stderr)
+      detail = Array(stderr).join.to_s.strip
+      return "" if detail.empty?
+
+      ": #{detail.first(500)}"
     end
 
     def write_database_yml_stub!(workspace)

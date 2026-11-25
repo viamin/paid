@@ -34,6 +34,21 @@
   *Code:* `app/services/knowledge/containerized_runner.rb`.
   *Test:* `spec/services/knowledge/containerized_runner_spec.rb`.
 
+- [x] **KNOWLEDGE-017** — When the containerized knowledge collector seals the
+  streamed workspace inside the collector container, the fixed setup commands
+  (root ownership change, Rails writable directory creation, database.yml stub
+  write, and read-only permission lockdown) SHALL execute as privileged execs
+  because the container's `CapDrop: ALL` policy applies to docker exec
+  processes as well, and an unprivileged exec'd root lacks the capabilities
+  those commands need whenever the streamed tar preserves a non-root uid.
+  Collector analysis commands SHALL continue to execute unprivileged as the
+  non-root agent user. A failed setup command SHALL raise
+  `Knowledge::ContainerizedRunner::ContainerError` carrying the command's exit
+  status and a bounded excerpt of its stderr so a sealing failure is
+  diagnosable from the reported exception (#5261).
+  *Code:* `app/services/knowledge/containerized_runner.rb`.
+  *Test:* `spec/services/knowledge/containerized_runner_spec.rb`.
+
 - [x] **KNOWLEDGE-015** — When import-time knowledge collection or collector
   execution encounters a transient PostgreSQL connection failure, it SHALL
   retry through its bounded job retry policy, retain the project's
