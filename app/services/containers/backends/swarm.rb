@@ -103,6 +103,19 @@ module Containers
         false
       end
 
+      # @spec RUST-SDK-BUILD-012
+      # A Swarm service spec cannot express the Engine's "NetworkDisabled"
+      # flag: ContainerSpec has no such field, a service with no network
+      # attachments lands its task on the node's default bridge network,
+      # and the engine's predefined "none" network is not a
+      # swarm-attachable network (the swarm store only exposes "bridge"
+      # and "host"). Callers that require a network-disabled container
+      # must refuse to start one here rather than silently running on the
+      # default network.
+      def supports_network_disabled_containers?
+        false
+      end
+
       def owns_host?(host)
         cached_node_hostnames.include?(host.to_s)
       end
@@ -360,6 +373,7 @@ module Containers
       def service_spec(config)
         host_config = config.fetch("HostConfig", {})
         labels = config["Labels"] || {}
+        reject_untranslatable_isolation!(config)
 
         {
           "Name" => config["name"],
@@ -374,7 +388,7 @@ module Containers
               "User" => config["User"],
               "TTY" => config["Tty"],
               "OpenStdin" => config["OpenStdin"],
-              "ReadOnly" => config["ReadonlyRootfs"],
+              "ReadOnly" => readonly_rootfs(config, host_config),
               "Mounts" => build_mounts(host_config),
               "CapabilityAdd" => capability_setting(config, host_config, "CapAdd"),
               "CapabilityDrop" => capability_setting(config, host_config, "CapDrop"),
@@ -389,6 +403,30 @@ module Containers
         }
       end
 
+      # @spec RUST-SDK-BUILD-012
+      # A Docker Engine config can request a network-disabled container
+      # ("NetworkDisabled"), but the Swarm service spec has no equivalent
+      # field and a service with no network attachments lands its task on
+      # the node's default bridge network with outbound access. Silently
+      # dropping the flag would start an unisolated container, so refuse
+      # the translation; callers can probe
+      # #supports_network_disabled_containers? before reaching this point.
+      def reject_untranslatable_isolation!(config)
+        return unless config["NetworkDisabled"]
+
+        raise Docker::Error::DockerError,
+          "Swarm services cannot create a network-disabled container; " \
+          "use a backend whose supports_network_disabled_containers? is true"
+      end
+
+      # Engine callers place the read-only-rootfs flag either at the config
+      # top level (the style several provisioners use) or under
+      # "HostConfig" (the Engine API's canonical placement, which the
+      # daemon honors); read both, mirroring #capability_setting.
+      def readonly_rootfs(config, host_config)
+        config["ReadonlyRootfs"].presence || host_config["ReadonlyRootfs"]
+      end
+
       def placement_spec
         compact_hash(
           "Constraints" => @placement_constraints.presence,
@@ -399,11 +437,19 @@ module Containers
       def resource_limits(host_config)
         limits = compact_hash(
           "MemoryBytes" => host_config["Memory"],
-          "NanoCPUs" => nano_cpus(host_config["CpuQuota"], host_config["CpuPeriod"]),
+          "NanoCPUs" => cpu_limit(host_config),
           "Pids" => host_config["PidsLimit"]
         )
 
         compact_hash("Limits" => limits.presence)
+      end
+
+      # Engine HostConfig carries the CPU limit either as the direct
+      # "NanoCpus" field or as the CpuQuota/CpuPeriod pair; honor the
+      # direct field first and derive from the pair only when it is
+      # absent, so Engine-style configs keep their CPU bound.
+      def cpu_limit(host_config)
+        host_config["NanoCpus"] || nano_cpus(host_config["CpuQuota"], host_config["CpuPeriod"])
       end
 
       def capability_setting(config, host_config, key)
