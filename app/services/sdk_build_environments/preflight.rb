@@ -202,12 +202,11 @@ module SdkBuildEnvironments
     end
 
     def toolchains_for_checks
-      required = REQUIRED_TOOLCHAINS.map do |command|
+      REQUIRED_TOOLCHAINS.map do |command|
         toolchains.find { |toolchain| toolchain[:command] == command } || {
           command: command, path: nil, interpreter_path: nil, execution_status: nil
         }
       end
-      required + toolchains.reject { |toolchain| REQUIRED_TOOLCHAINS.include?(toolchain[:command]) }
     end
 
     def normalized_engine_architecture
