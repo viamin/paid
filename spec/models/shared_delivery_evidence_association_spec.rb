@@ -80,4 +80,22 @@ RSpec.describe SharedDeliveryEvidenceAssociation do # @spec PARTIAL-CLOSEOUT-063
 
     expect(association.reload).not_to be_current
   end
+
+  # @spec PARTIAL-CLOSEOUT-063 PARTIAL-CLOSEOUT-064
+  it "refuses new evidence without a same-account authorizer" do
+    pull_request = merged_pr(project)
+    attributes = {
+      account:, project:, issue: target, pull_request:,
+      pull_request_url: pull_request.github_html_url,
+      revision: pull_request.merged_commit_sha
+    }
+
+    missing_authorizer = described_class.new(**attributes, authorized_by: nil)
+    foreign_authorizer = described_class.new(**attributes, authorized_by: create(:user))
+
+    expect(missing_authorizer).to be_invalid
+    expect(foreign_authorizer).to be_invalid
+    expect(missing_authorizer.errors[:authorized_by]).to include("must belong to the account")
+    expect(foreign_authorizer.errors[:authorized_by]).to include("must belong to the account")
+  end
 end

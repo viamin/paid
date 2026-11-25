@@ -13,8 +13,10 @@ class NullifyHistoricalActorReferencesOnUserDeletion < ActiveRecord::Migration[8
   def down
     remove_foreign_key(:issue_continuation_requests, column: :requested_by_id)
     remove_foreign_key(:shared_delivery_evidence_associations, column: :authorized_by_id)
-    add_foreign_key :issue_continuation_requests, :users, column: :requested_by_id
-    add_foreign_key :shared_delivery_evidence_associations, :users, column: :authorized_by_id
+    add_foreign_key :issue_continuation_requests, :users, column: :requested_by_id, validate: false
+    add_foreign_key :shared_delivery_evidence_associations, :users, column: :authorized_by_id, validate: false
+    validate_foreign_key :issue_continuation_requests, :users, column: :requested_by_id
+    validate_foreign_key :shared_delivery_evidence_associations, :users, column: :authorized_by_id
     require_shared_delivery_authorizer
   end
 

@@ -421,7 +421,7 @@ class AgentRun < ApplicationRecord
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
   validate :work_item_belongs_to_project_account, if: -> { work_item.present? && project.present? }
-  validate :initiating_user_belongs_to_project_account, if: -> { initiating_user.present? && project.present? }
+  validate :initiating_user_belongs_to_project_account, if: :validate_initiating_user_account?
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
   validate :has_prompt_source, on: :create, unless: :external_execution?
   validate :draft_review_round_tracking_is_consistent
@@ -3895,6 +3895,15 @@ class AgentRun < ApplicationRecord
     return if initiating_user.account_id == project.account_id
 
     errors.add(:initiating_user, "must belong to the same account as the project")
+  end
+
+  def validate_initiating_user_account?
+    initiating_user.present? && project.present? && !terminalizing_historical_run?
+  end
+
+  def terminalizing_historical_run?
+    persisted? && !will_save_change_to_initiating_user_id? &&
+      will_save_change_to_status? && finished?
   end
 
   def sync_legacy_provider_bridge_columns

@@ -78,9 +78,16 @@ association keeps its account, project, issue, pull request, URL, revision, and
 revocation lineage; its actor reference becomes absent through the database
 foreign key. An absent authorizer is never current: closeout evidence and every
 subsequent audit admission fail closed while preserving the record for audit.
+An authorized current operator may still revoke that inactive historical row
+and record fresh evidence. Actor validation applies when an association is
+created or its authorizer is reassigned, rather than preventing lifecycle
+closure solely because membership revocation already invalidated the actor.
 The same distinction applies to continuation-request requester attribution:
 the request and run lineage remain inspectable, while current execution keeps
-using its existing evidence, pause, tenant, policy, and freshness rechecks.
+using its existing evidence, pause, tenant, policy, and freshness rechecks. A
+queued run whose historical initiator moved to another account may still enter
+a terminal state when those rechecks cancel it; the initiator cannot authorize
+new work in the original account.
 
 One value object computes the *closeout evidence* for an issue and a stable
 *outcome-generation digest*:

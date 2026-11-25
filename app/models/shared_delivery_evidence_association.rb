@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec PARTIAL-CLOSEOUT-063
+# @spec PARTIAL-CLOSEOUT-063 PARTIAL-CLOSEOUT-064
 class SharedDeliveryEvidenceAssociation < ApplicationRecord
   def self.canonical_url_for(pull_request)
     repository = if pull_request.source == Issue::UPSTREAM_PULL_REQUEST_SOURCE
@@ -20,6 +20,7 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   validates :pull_request_url, :revision, presence: true
   validates :revision, format: { with: /\A[0-9a-f]{40}\z/i }
   validate :same_tenant_and_project
+  validate :authorized_by_belongs_to_account, unless: :revoking_historical_association?
   validate :merged_pull_request
   validate :canonical_pull_request_identity
 
@@ -36,7 +37,15 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   def same_tenant_and_project
     errors.add(:project, "must own the source and pull request") unless [ issue, pull_request ].all? { |record| record&.project_id == project_id }
     errors.add(:account, "must own the project") unless project&.account_id == account_id
+  end
+
+  def authorized_by_belongs_to_account
     errors.add(:authorized_by, "must belong to the account") unless authorized_by&.account_id == account_id
+  end
+
+  def revoking_historical_association?
+    persisted? && !will_save_change_to_authorized_by_id? &&
+      will_save_change_to_revoked_at? && revoked_at.present?
   end
 
   def merged_pull_request

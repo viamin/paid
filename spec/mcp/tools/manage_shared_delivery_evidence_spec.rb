@@ -32,6 +32,29 @@ RSpec.describe Tools::ManageSharedDeliveryEvidence do
     expect(revoked).to include(active: false)
   end
 
+  # @spec PARTIAL-CLOSEOUT-063 PARTIAL-CLOSEOUT-064 TENANT-ACCESS-003
+  it "lets an authorized operator replace evidence whose historical authorizer was deleted" do
+    owner = create(:user, :owner, account:)
+    owner_session = create(:chat_session, account:, created_by: owner, project:)
+    association = Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request:, actor:)
+    Accounts::RemoveMembership.call(
+      account:, membership: actor.account_membership_for(account), actor: owner
+    )
+
+    expect(association.reload.authorized_by_id).to be_nil
+
+    revoked = described_class.new(user: owner, session: owner_session).call(
+      project_id: project.id, issue_id: issue.id, action: "revoke", confirmed: true
+    )
+    replacement = described_class.new(user: owner, session: owner_session).call(
+      project_id: project.id, issue_id: issue.id, pull_request_id: pull_request.id,
+      action: "associate", confirmed: true
+    )
+
+    expect(revoked).to include(active: false)
+    expect(replacement).to include(active: true)
+  end
+
   it "denies a same-account viewer without persisting authorization" do
     viewer = create(:user, :viewer, account:)
     viewer_session = create(:chat_session, account:, created_by: viewer, project:)

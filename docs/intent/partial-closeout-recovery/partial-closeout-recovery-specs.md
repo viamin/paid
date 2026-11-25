@@ -23,7 +23,13 @@
   evidence, Paid SHALL retain the association's account, project, source,
   producer, URL, revision, and revocation lineage while nullifying only the
   authorizer reference; that association SHALL no longer be current and SHALL
-  fail closed for closeout evidence and audit admission. The same removal with
+  fail closed for closeout evidence and audit admission. An authorized current
+  operator SHALL remain able to revoke that inactive association and record
+  fresh evidence, while new associations with an absent or cross-account
+  authorizer SHALL be refused. A queued run whose requester retains a
+  successor-account membership SHALL remain cancellable and its request SHALL
+  be superseded when the requester fails the original project's current
+  execution policy. The same removal with
   a successor membership or no historical artifacts SHALL retain its existing
   behavior. Historical attribution SHALL NOT grant queued work execution
   authority after revocation.

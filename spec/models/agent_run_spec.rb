@@ -136,6 +136,15 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
 
+    # @spec TENANT-ACCESS-003 PARTIAL-CLOSEOUT-064
+    it "refuses a new run initiated by a user from another account" do
+      project = create(:project)
+      agent_run = build(:agent_run, project:, initiating_user: create(:user))
+
+      expect(agent_run).to be_invalid
+      expect(agent_run.errors[:initiating_user]).to include("must belong to the same account as the project")
+    end
+
     # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
     it "rejects implementation runs for a held linked feature" do
       project = create(:project)

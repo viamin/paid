@@ -44,6 +44,20 @@ RSpec.describe Accounts::RemoveMembership do
     expect(request.reload.status).to eq("superseded")
   end
 
+  # @spec ACCOUNT-ADMIN-005 TENANT-ACCESS-003 PARTIAL-CLOSEOUT-064
+  it "cancels a queued audit after its requester moves to a successor account" do
+    audit = acceptance_audit
+    successor_account = create(:account)
+    member.add_role(:member, successor_account)
+
+    expect { remove_member }.not_to raise_error
+
+    expect(member.reload.account).to eq(successor_account)
+    expect(AgentRuns::RecheckIssueEligibility.call(audit.agent_run)).to be(true)
+    expect(audit.agent_run.reload.status).to eq("cancelled")
+    expect(audit.request.reload.status).to eq("superseded")
+  end
+
   # @spec ACCOUNT-ADMIN-005 PARTIAL-CLOSEOUT-064
   it "uses database nullifying foreign keys for preserved historical actors" do
     audit = acceptance_audit
