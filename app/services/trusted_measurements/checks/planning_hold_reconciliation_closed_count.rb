@@ -30,7 +30,7 @@ module TrustedMeasurements
 
       def self.version = VERSION
 
-      def self.call(project:)
+      def self.call(project:, deployment_revision: nil)
         base = Notification.active
           .where(account_id: project.account_id, source: NOTIFICATION_SOURCE, subject_type: "Issue")
 

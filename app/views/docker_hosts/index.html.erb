@@ -81,6 +81,9 @@
                         <div class="text-xs text-gray-500">
                           Snapshot: <%= capacity_snapshot.degraded? ? capacity_snapshot.degraded_reasons.to_sentence : "Healthy" %>
                         </div>
+                        <div class="text-xs text-gray-500">
+                          Backing store: <%= capacity_snapshot.backing_storage_available? ? number_to_human_size(capacity_snapshot.backing_storage_available_bytes) : capacity_snapshot.backing_storage_reason_for.humanize %>
+                        </div>
                       <% end %>
                     </td>
                     <td class="px-4 py-4 align-top text-gray-700">

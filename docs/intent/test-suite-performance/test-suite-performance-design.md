@@ -38,8 +38,30 @@ the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
 at most five times, bounding each attempt to twenty minutes with increasing
-delays. This absorbs transient registry and hosted-runner stalls without
-skipping setup or relaxing the shard's 360-minute job boundary.
+delays. Each attempt runs in an isolated process group so timeout termination
+also stops its package-manager descendants and reaps its owned session leader
+before the next retry. Its watchdog runs in a separate owned session containing
+both the timer and grace delay, acknowledges that session before cleanup can
+target its process group, and retains its exact child PID from fork through
+that acknowledgement so cancellation can terminate and reap startup ownership
+without waiting for an attempt timer. The setup leader is likewise supervised
+without a blocking wait that defers TERM or INT cleanup. The wrapper terminates
+and waits for owned watchdog state on every success, failure, timeout, and
+cancellation before returning. Retry
+backoff and termination-escalation timers are likewise owned children: cleanup
+terminates and reaps them before returning, including when the wrapper receives
+TERM or INT. The supervisor
+sends TERM to only that owned group, follows with KILL after a finite grace
+period for TERM-resistant descendants, and reports a timeout as a failed setup
+attempt. This absorbs transient registry
+and hosted-runner stalls without skipping setup or relaxing the shard's
+360-minute job boundary.
+
+The same shard paths install the pinned ast-grep binary before running specs.
+Each release-asset transfer has explicit connection and total-transfer bounds,
+then uses the existing finite retry policy. The downloaded archive remains
+checksum-verified before installation; exhausted retries fail the shard rather
+than skipping structural-search coverage.
 
 ## Platform-dropped shard recovery
 

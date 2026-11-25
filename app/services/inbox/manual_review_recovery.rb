@@ -10,7 +10,8 @@ module Inbox
       "Paid reached the configured enhancement-round limit.",
       "Paid reached the configured limit of enhancement re-evaluation rounds.",
       "Round limit reached.",
-      "Structured output failed validation."
+      "Structured output failed validation.",
+      "Paid could not complete the enhancement run because its provider connection was interrupted."
     ].freeze
     ENHANCEMENT_ROUND_LIMIT_REASON = /\APaid (?:has )?reached the configured limit of \d+ enhancement re-evaluation rounds for this issue\.\z/
 

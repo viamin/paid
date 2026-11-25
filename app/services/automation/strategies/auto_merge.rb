@@ -109,6 +109,9 @@ module Automation
       def analyze(signals, owner_reviewer_login:)
         blockers = skip_auto_merge_blockers(signals, owner_reviewer_login:)
         blockers.concat(hold_for_review_blockers(signals, owner_reviewer_login:))
+        unless signals.technical_merge_clear?
+          blockers << blocker_for(:technical_merge_clear, SIGNAL_STATUS_FAILED, "technical_merge_blocked", owner_reviewer_login:)
+        end
         signal_definitions = signals.bot_authored? ? BOT_SIGNAL_DEFINITIONS : HUMAN_SIGNAL_DEFINITIONS
         blockers.concat(signal_blockers(signals, signal_definitions, owner_reviewer_login:))
 
@@ -181,6 +184,8 @@ module Automation
         return "Dependency resolution was not evaluated because an earlier auto-merge gate already failed." if status == SIGNAL_STATUS_NOT_EVALUATED
 
         case signal_name
+        when :technical_merge_clear
+          "Paid has unresolved technical work before this pull request can merge."
         when :intent_conformance_ok
           "This pull request's conformance with the approved design has not been confirmed."
         when :owner_approved
@@ -211,6 +216,8 @@ module Automation
       end
 
       def next_action_for(signal_name, status, owner_reviewer_login:)
+        return "Complete the recorded technical work and verify its release condition; no human approval is requested." if signal_name == :technical_merge_clear
+
         return "Resolve the earlier auto-merge blockers first, then let Paid re-evaluate dependency resolution." if status == SIGNAL_STATUS_NOT_EVALUATED
 
         reviewer_handle = owner_reviewer_login.present? ? "@#{owner_reviewer_login}" : "the configured owner reviewer"
@@ -239,7 +246,7 @@ module Automation
         when :skip_auto_merge
           "Remove the paid-skip-auto-merge label or merge this pull request manually."
         when :hold_for_review
-          "Review the pull request, then remove the paid-hold-review label when it may be auto-merged."
+          "Resolve the recorded human-only decision, then remove the paid-hold-review label."
         else
           "Resolve the blocker, then let Paid evaluate this pull request again."
         end

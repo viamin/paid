@@ -318,6 +318,10 @@ module RunnerSupport
     ].freeze
   }.freeze
 
+  # GitHub review bots use this phrase in review bodies to report a successful
+  # review with no findings. Routing and prompt assembly share this classifier.
+  REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+
   # Proxy-specific header env vars that Paid sets but agent-harness does not
   # know about. These must be unset alongside the runner-native vars from
   # agent-harness when running in subscription-auth mode.

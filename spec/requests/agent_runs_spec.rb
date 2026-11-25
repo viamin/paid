@@ -2455,20 +2455,83 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(inbox_path)
       end
 
-      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
-      it "does not use the generic manual retry path for layered-verification runs" do
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-020
+      it "resumes an interrupted layered-verification run through revalidation instead of a blind retry" do
+        obligation = create(:layered_verification_obligation, project: project)
+        obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payments.md", persisted: true)
+        metadata = { "layered_verification" => {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "sha-1", "budget" => { "max_minutes" => 5 },
+          "dependencies" => { "environment" => "isolated_execution_environment" },
+          "plan" => { obligation.id.to_s => { "selected_checks" => %w[formal_verification] } }
+        } }
+        now = Time.current
+        audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
+          base_commit_sha: "sha-1", external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.to change(AgentRun, :count).by(1)
+
+        successor = AgentRun.last.tap { expect(audit.reload.status).to eq("retried") }
+        expect(successor).to have_attributes(goal: "layered_verification_audit", status: "queued", base_commit_sha: "sha-1")
+        expect(successor.external_metadata.dig("layered_verification", "resumption", "resumed_from_run_id")).to eq(audit.id)
+        expect(successor.external_metadata.dig("layered_verification", "impact")).to include("reused_check_result_ids")
+        expect(response).to redirect_to(project_agent_run_path(project, successor))
+      end
+
+      # @spec LAYERED-VERIFY-020
+      it "rejects resuming a completed layered-verification run, which must start from the dedicated entry point" do
+        audit = create(:agent_run, project: project, goal: "layered_verification_audit", status: "completed",
+          external_metadata: { "layered_verification" => { "obligation_ids" => [], "target_revision" => "sha-1",
+            "budget" => { "max_minutes" => 5 } } })
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("only interrupted layered-verification runs can resume")
+      end
+
+      # @spec LAYERED-VERIFY-020
+      it "rejects resuming a layered-verification run whose budget is exhausted" do
+        obligation = create(:layered_verification_obligation, project: project)
+        obligation.record_approval!(revision: "intent-v1", approval_reference: "docs/intent/payments.md", persisted: true)
+        metadata = { "layered_verification" => {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "sha-1",
+          "budget" => { "max_minutes" => 2 }, "dependencies" => {}
+        } }
+        now = Time.current
+        audit = create(:agent_run, :failed, issue: nil, project: project, goal: "layered_verification_audit",
+          external_metadata: metadata, started_at: now - 2.minutes, completed_at: now)
+        allow(FeatureFlags).to receive(:enabled?).and_call_original
+        allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: project).and_return(true)
+
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("no budget remains for resumption")
+      end
+
+      # @spec LAYERED-VERIFY-012
+      it "rejects resuming layered-verification runs while the add-on is disabled" do
         audit = create(:agent_run, :failed, project: project, goal: "layered_verification_audit")
-        repair = create(:agent_run, :failed, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
 
-        [ audit, repair ].each do |run|
-          expect {
-            post retry_project_agent_run_path(project, run)
-          }.not_to change(AgentRun, :count)
+        expect {
+          post retry_project_agent_run_path(project, audit)
+        }.not_to change(AgentRun, :count)
 
-          expect(response).to redirect_to(project_agent_run_path(project, run))
-          follow_redirect!
-          expect(response.body).to include("Layered-verification runs must be started again")
-        end
+        expect(response).to redirect_to(project_agent_run_path(project, audit))
+        follow_redirect!
+        expect(response.body).to include("layered verification is not enabled")
       end
 
       # @spec PARTIAL-CLOSEOUT-032
@@ -2514,39 +2577,19 @@ RSpec.describe "AgentRuns" do
 
       before { sign_in user }
 
-      it "bumps queued auto-continue runs to manual trigger_type and updates updated_at" do
+      it "prioritizes the selected queued retry without converting it to manual" do # @spec QUEUE-TIER-008
         run = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")
-        original_updated_at = run.updated_at
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
         run.reload
-        expect(run.trigger_type).to eq("manual")
-        expect(run.updated_at).to be > original_updated_at
+        expect(run.trigger_type).to eq("automatic")
+        expect(run.operator_coding_priority_requested_at).to be_present
+        expect(account.account_activity_events.where(action: "agent_run.coding_priority_requested", subject: run)).to exist
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
-        expect(response.body).to include("Priority bumped")
-      end
-
-      # @spec AGENT-RUNS-INDEX-002
-      it "invalidates cached account and project filter options after the bulk trigger transition" do
-        original_cache = Rails.cache
-        Rails.cache = ActiveSupport::Cache::MemoryStore.new
-        create(:agent_run, :queued, :automatic, project: project,
-          source_pull_request_number: 77, custom_prompt: "Fix PR")
-        account_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id)
-        project_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
-        scope = project.agent_runs
-        scope.distinct_filter_options(cache_key: account_key)
-        scope.distinct_filter_options(cache_key: project_key)
-
-        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
-
-        expect(scope.distinct_filter_options(cache_key: account_key)[:trigger_type]).to eq([ "manual" ])
-        expect(scope.distinct_filter_options(cache_key: project_key)[:trigger_type]).to eq([ "manual" ])
-      ensure
-        Rails.cache = original_cache
+        expect(response.body).to include("Priority requested")
       end
 
       it "enqueues ProcessRunQueueJob" do
@@ -2558,7 +2601,7 @@ RSpec.describe "AgentRuns" do
         }.to have_enqueued_job(ProcessRunQueueJob)
       end
 
-      it "bumps queued auto-continue runs only for the selected pull request" do
+      it "prioritizes only one existing retry for the selected pull request" do
         _pr2 = create(:issue, :pull_request, project: project, github_number: 78, title: "Other PR")
         run1 = create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR 1")
@@ -2567,8 +2610,22 @@ RSpec.describe "AgentRuns" do
 
         post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
 
-        expect(run1.reload.trigger_type).to eq("manual")
+        expect(run1.reload.operator_coding_priority_requested_at).to be_present
         expect(run2.reload.trigger_type).to eq("automatic")
+        expect(run2.operator_coding_priority_requested_at).to be_nil
+      end
+
+      it "prioritizes a coding retry when an older review run exists for the pull request" do # @spec QUEUE-TIER-008
+        review_run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
+          source_pull_request_number: 77, created_at: 2.minutes.ago)
+        coding_retry = create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          source_pull_request_number: 77, created_at: 1.minute.ago)
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(review_run.reload.operator_coding_priority_requested_at).to be_nil
+        expect(coding_retry.reload.operator_coding_priority_requested_at).to be_present
+        expect(response).to redirect_to(project_path(project))
       end
 
       it "redirects with error when no pull request selected" do

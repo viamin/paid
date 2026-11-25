@@ -365,12 +365,12 @@ module Containers
       fix_all_ownership!
       seed_opencode_database!
       seed_kilo_database!
-      seed_codex_credentials!
+      seed_codex_credentials! if agent_run
       seed_gemini_credentials!
       seed_copilot_credentials!
       seed_claude_credentials!
-      seed_omp_credentials!
-      seed_opencode_credentials!
+      seed_omp_credentials! if agent_run
+      seed_opencode_credentials! if agent_run
       seed_preview_tunnel_config!
       apply_network_restrictions!
 
@@ -1236,6 +1236,18 @@ module Containers
     end
     public :refresh_omp_managed_credential!, :harvest_omp_managed_credential!
 
+    # Warm pool containers have no run identity, so rotating credentials are
+    # deliberately materialized only after claim, when provenance can bind the
+    # actual container lifecycle to the claiming run.
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    def materialize_claimed_runner_credentials!
+      seed_codex_credentials!
+      seed_omp_credentials!
+      seed_opencode_credentials!
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, "Could not materialize claimed runner credentials: #{e.message}"
+    end
+
     private
 
     def apply_execution_preparation(preparation, env:)
@@ -1268,9 +1280,13 @@ module Containers
       cleanup_error = nil
 
       Array(cleanup_steps).reverse_each do |step_env|
-        # Intentionally keeps only the first error (cleanup_error ||= e) so the
-        # caller sees the root-cause failure rather than a cascading one.
-        cleanup_error ||= run_preparation_cleanup_step(step_env, env: env)
+        # Intentionally keeps only the first error (cleanup_error ||= step_error)
+        # so the caller sees the root-cause failure rather than a cascading one,
+        # while every remaining step still runs — one step's Git cleanup failing
+        # must not leave the other targets' originals replaced by preparation
+        # content.
+        step_error = run_preparation_cleanup_step(step_env, env: env)
+        cleanup_error ||= step_error
       end
 
       return unless cleanup_error
@@ -1333,22 +1349,56 @@ module Containers
 
     def materialize_preparation_file(write, env:)
       target_path = expand_preparation_path(write.path)
-      state_dir = "#{target_path}.paid-state-#{SecureRandom.hex(8)}"
-
-      run_preparation_script(
-        materialize_script(write.mode),
-        env: env,
-        script_env: {
-          "PAID_PREPARATION_TARGET" => target_path,
-          "PAID_PREPARATION_STATE_DIR" => state_dir,
-          "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
-        }
-      )
-
-      {
+      state_dir = "/tmp/paid-execution-preparation/#{SecureRandom.hex(8)}"
+      step_env = {
         "PAID_PREPARATION_TARGET" => target_path,
         "PAID_PREPARATION_STATE_DIR" => state_dir
       }
+
+      begin
+        run_preparation_script(
+          materialize_script(write.mode),
+          env: env,
+          script_env: step_env.merge("PAID_PREPARATION_B64" => Base64.strict_encode64(write.content))
+        )
+      rescue StandardError => e
+        rollback_partial_preparation(step_env, env: env, cause: e)
+        raise
+      end
+
+      step_env
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    # The materialize script can fail after it already replaced the original
+    # target and applied part of the run-local Git protection (exclude entry,
+    # assume-unchanged flag) — for example a read-only info/exclude failing
+    # the exclusion append after the snapshot removed the original. The failed
+    # step never reached the caller's accumulated cleanup steps, so restore it
+    # here before re-raising. An unknown snapshot state means the script
+    # failed before mutating the target, so the rollback treats it as nothing
+    # to restore. A rollback that still fails invalidates the container — its
+    # preparation state cannot be trusted for reuse — without replacing the
+    # original error. Connection-level exec failures (raw Excon errors) bypass
+    # the cleanup step's Docker-specific rescue, so they are captured here as
+    # rollback failures rather than propagating over the original error.
+    def rollback_partial_preparation(step_env, env:, cause:)
+      rollback_error = begin
+        run_preparation_cleanup_step(
+          step_env.merge("PAID_PREPARATION_ROLLBACK" => "1"),
+          env: env
+        )
+      rescue StandardError => e
+        e
+      end
+      return unless rollback_error
+
+      log_system(
+        "container.execute.preparation_rollback_failed",
+        error: rollback_error.message,
+        cause: cause.message
+      )
+      invalidate_container_after_preparation_cleanup_failure!
     end
 
     def run_preparation_script(script, env:, script_env:)
@@ -1371,9 +1421,17 @@ module Containers
       path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
     end
 
+    # @spec CONTAINER-RUNTIME-054
     # Matches agent-harness lstat-based snapshot semantics: stores the state type
     # (symlink, file, or missing), preserves symlink targets via readlink, backs
-    # up regular files with cp -p, and rejects directories.
+    # up regular files with cp -p, and rejects directories. Snapshot state stays
+    # outside the checkout while a local Git exclusion hides the temporary write.
+    # The target is resolved to an absolute physical path before the checkout
+    # comparison so relative and symlinked targets receive the same protection,
+    # the Git undo state is recorded before the exclusion entry is appended so a
+    # failed append stays restorable, and only a plain cached index entry is
+    # flagged — skip-worktree, already-flagged, or unmerged entries are recorded
+    # as unprotected and left untouched.
     def materialize_script(mode)
       chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
 
@@ -1381,6 +1439,7 @@ module Containers
         set -e &&
         mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
         mkdir -p "$PAID_PREPARATION_STATE_DIR" &&
+        chmod 700 "$PAID_PREPARATION_STATE_DIR" &&
         if [ -L "$PAID_PREPARATION_TARGET" ]; then
           readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target" &&
           printf symlink > "$PAID_PREPARATION_STATE_DIR/state" &&
@@ -1394,18 +1453,63 @@ module Containers
         else
           printf missing > "$PAID_PREPARATION_STATE_DIR/state";
         fi &&
+        if command -v git >/dev/null 2>&1; then
+          git_root=$(git -C "$(dirname "$PAID_PREPARATION_TARGET")" rev-parse --show-toplevel 2>/dev/null || true) &&
+          target_dir=$(cd "$(dirname "$PAID_PREPARATION_TARGET")" 2>/dev/null && pwd -P) &&
+          if [ -n "$git_root" ]; then
+            case "$target_dir/$(basename "$PAID_PREPARATION_TARGET")" in
+              "$git_root"/*)
+                git_relative="$target_dir/$(basename "$PAID_PREPARATION_TARGET")" &&
+                git_relative=${git_relative#${git_root}/} &&
+                git_exclude_path=$(git -C "$git_root" rev-parse --path-format=absolute --git-path info/exclude) &&
+                git_marker="# paid-execution-preparation-$PAID_PREPARATION_STATE_DIR" &&
+                printf '%s' "$git_root" > "$PAID_PREPARATION_STATE_DIR/git_root" &&
+                printf '%s' "$git_relative" > "$PAID_PREPARATION_STATE_DIR/git_relative" &&
+                printf '%s' "$git_exclude_path" > "$PAID_PREPARATION_STATE_DIR/git_exclude_path" &&
+                printf '%s' "$git_marker" > "$PAID_PREPARATION_STATE_DIR/git_marker" &&
+                mkdir -p "$(dirname "$git_exclude_path")" && touch "$git_exclude_path" &&
+                { [ -s "$git_exclude_path" ] && [ -n "$(tail -c1 "$git_exclude_path")" ] && printf '\\n' >> "$git_exclude_path" || true; } &&
+                printf '%s\\n/%s\\n' "$git_marker" "$git_relative" >> "$git_exclude_path" &&
+                if git -C "$git_root" ls-files --error-unmatch -- "$git_relative" >/dev/null 2>&1; then
+                  git_index_state=$(git -C "$git_root" ls-files -v -- "$git_relative" | cut -c1) &&
+                  printf '%s' "$git_index_state" > "$PAID_PREPARATION_STATE_DIR/git_index_state" &&
+                  case "$git_index_state" in
+                    H) git -C "$git_root" update-index --assume-unchanged -- "$git_relative";;
+                    *) printf unprotected > "$PAID_PREPARATION_STATE_DIR/git_index_state";;
+                  esac;
+                else
+                  printf untracked > "$PAID_PREPARATION_STATE_DIR/git_index_state";
+                fi;;
+            esac;
+          fi;
+        fi &&
         printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
         #{chmod_line}
       SH
     end
 
+    # @spec CONTAINER-RUNTIME-054
+    # Restores the snapshotted target and removes the run-local Git
+    # protection. With PAID_PREPARATION_ROLLBACK=1 (the apply-time rollback of
+    # a partially applied materialize), an unknown snapshot state short-circuits
+    # the restore entirely — including the directory guard — because the
+    # materialize script records the state file before its first destructive
+    # mutation, so unknown means nothing was changed. Exclusion removal and the
+    # index-flag restoration are independent steps: either failing records an
+    # explicit cleanup failure instead of short-circuiting the other, an entry
+    # whose marker is absent (the exclusion append never completed) needs no
+    # rewrite, and the assume-unchanged flag is undone only when the recorded
+    # state is a plain cached entry that still carries it — a target renamed or
+    # resolved during execution is left alone rather than failing the cleanup.
     def cleanup_script
       <<~SH.squish
         set -e && cleanup_status=0 &&
         state_value=$(cat "$PAID_PREPARATION_STATE_DIR/state" 2>/dev/null || echo unknown) &&
         dir=$(dirname "$PAID_PREPARATION_TARGET") &&
-        if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
-          printf 'preparation target changed into a directory during execution: %s\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
+        if [ "${PAID_PREPARATION_ROLLBACK:-0}" = "1" ] && [ "$state_value" = unknown ]; then
+          :;
+        elif [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
+          printf 'preparation target changed into a directory during execution: %s\\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
         elif [ "$state_value" = symlink ]; then
           mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
           ln -s -- "$(cat "$PAID_PREPARATION_STATE_DIR/symlink_target")" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
@@ -1414,13 +1518,36 @@ module Containers
             mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&
             cp -p "$PAID_PREPARATION_STATE_DIR/backup" "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
           else
-            printf 'missing runtime preparation backup\n' >&2 && cleanup_status=1;
+            printf 'missing runtime preparation backup\\n' >&2 && cleanup_status=1;
           fi;
         elif [ "$state_value" = missing ]; then
           rm -f "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
         else
           cleanup_status=1;
-        fi &&
+        fi;
+        if [ -f "$PAID_PREPARATION_STATE_DIR/git_root" ]; then
+          { git_root=$(cat "$PAID_PREPARATION_STATE_DIR/git_root") &&
+            git_relative=$(cat "$PAID_PREPARATION_STATE_DIR/git_relative") &&
+            git_exclude_path=$(cat "$PAID_PREPARATION_STATE_DIR/git_exclude_path") &&
+            git_marker=$(cat "$PAID_PREPARATION_STATE_DIR/git_marker") &&
+            git_exclude_cleaned="$PAID_PREPARATION_STATE_DIR/git-exclude-cleaned" &&
+            git_exclude_skip=0 &&
+            git_exclude_found=0 &&
+            while IFS= read -r git_exclude_line || [ -n "$git_exclude_line" ]; do
+              if [ "$git_exclude_line" = "$git_marker" ]; then git_exclude_skip=1; git_exclude_found=1; continue; fi;
+              if [ "$git_exclude_skip" -eq 1 ]; then git_exclude_skip=0; continue; fi;
+              printf '%s\\n' "$git_exclude_line";
+            done < "$git_exclude_path" > "$git_exclude_cleaned" &&
+            if [ "$git_exclude_found" -eq 1 ]; then cat "$git_exclude_cleaned" > "$git_exclude_path"; fi &&
+            rm -f "$git_exclude_cleaned"; } || cleanup_status=1;
+          case "$(cat "$PAID_PREPARATION_STATE_DIR/git_index_state")" in
+            H) case "$(git -C "$git_root" ls-files -v -- "$git_relative" 2>/dev/null | cut -c1 | head -n 1)" in
+                 h) git -C "$git_root" update-index --no-assume-unchanged -- "$git_relative" || cleanup_status=$?;;
+                 *) :;;
+               esac;;
+            *) :;;
+          esac;
+        fi;
         rm -rf "$PAID_PREPARATION_STATE_DIR" &&
         exit "$cleanup_status"
       SH
@@ -1727,6 +1854,7 @@ module Containers
         failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: "host_mount" }
       )
+      record_unmanaged_materialization!("codex", :host_forwarded) if seeded
     end
 
     def seed_opencode_credentials!
@@ -1882,17 +2010,23 @@ module Containers
     # credential id and the rotated auth.json is harvested back into the
     # canonical credential after the run. For a host-backed auth.json the lease
     # is keyed on the source path and the rotated file is synced back to disk.
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
     def with_codex_auth_lock(command)
-      return yield unless subscription_auth_lock_required?(command)
+      runner_key = subscription_exec_runner_key(command)
+      provenance = materialization_provenance_for(runner_key) if runner_key
+      return yield unless provenance
 
-      if omp_auth_lock_required?(command) && omp_managed_credential_active?
-        with_omp_managed_auth_lock { yield }
-      elsif opencode_auth_lock_required?(command) && opencode_managed_credential_active?
-        with_opencode_managed_auth_lock { yield }
-      elsif codex_managed_credential_active?
-        with_codex_managed_auth_lock { yield }
-      else
+      if provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_MANAGED && provenance.runner_credential
+        with_subscription_managed_auth_lock(
+          runner_key: runner_key,
+          runner_credential: provenance.runner_credential,
+          lockfile: managed_auth_lockfile_path(runner_key, provenance.runner_credential),
+          skipped_event: "container.#{runner_key}_managed_harvest_skipped_without_lock"
+        ) { yield }
+      elsif runner_key == "codex" && provenance.auth_source == RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         with_codex_host_auth_lock { yield }
+      else
+        yield
       end
     end
 
@@ -3652,8 +3786,10 @@ module Containers
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_codex_managed_caches
-      materialization = codex_managed_materialization
+      credential.reload
+      materialization = codex_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3670,7 +3806,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      true
+      !!record_managed_materialization!("codex", credential, credential_generation)
     end
 
     def materialize_managed_opencode_credentials!
@@ -3682,8 +3818,10 @@ module Containers
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_opencode_managed_caches
-      materialization = opencode_managed_materialization
+      credential.reload
+      materialization = opencode_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3700,7 +3838,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_json")
       )
-      true
+      !!record_managed_materialization!("opencode", credential, credential_generation)
     end
 
     def seed_omp_credentials!
@@ -3717,8 +3855,10 @@ module Containers
       return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "omp") == :fresh
 
       reset_omp_managed_caches
-      materialization = omp_managed_materialization
+      credential.reload
+      materialization = omp_subscription_auth_provider.materialize(secret: credential.token.to_s)
       return false unless materialization&.supported?
+      credential_generation = credential.updated_at
 
       materialization.files.each do |path, content|
         write_container_file(path, content)
@@ -3742,7 +3882,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_MATERIALIZED,
         metadata: materialization.redacted_metadata.merge("source" => "managed_import")
       )
-      true
+      !!record_managed_materialization!("omp", credential, credential_generation)
     rescue Docker::Error::DockerError => e
       log_system("container.omp_credentials_seed_failed", error: e.message)
       record_auth_attempt!(
@@ -4037,20 +4177,11 @@ module Containers
       (codex_config_candidate_paths + [ codex_local_config_path ]).compact.uniq
     end
 
-    def subscription_auth_lock_required?(command)
-      codex_auth_lock_required?(command) || opencode_auth_lock_required?(command) || omp_auth_lock_required?(command)
-    end
+    def subscription_exec_runner_key(command)
+      return "omp" if omp_exec_command?(command)
+      return "opencode" if opencode_exec_command?(command)
 
-    def codex_auth_lock_required?(command)
-      codex_subscription_auth? && codex_exec_command?(command)
-    end
-
-    def opencode_auth_lock_required?(command)
-      opencode_managed_credential_active? && opencode_exec_command?(command)
-    end
-
-    def omp_auth_lock_required?(command)
-      omp_managed_credential_active? && omp_exec_command?(command)
+      "codex" if codex_exec_command?(command)
     end
 
     def codex_exec_command?(command)
@@ -4217,18 +4348,20 @@ module Containers
     # Runners::ManagedCredentialLifecycle so standalone text execution and
     # agent-run provisions resolve the identical lockfile for one credential.
     def codex_managed_auth_lockfile_path
-      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "codex", credential: codex_managed_runner_credential)
+      managed_auth_lockfile_path("codex", codex_managed_runner_credential)
     end
 
     def opencode_managed_auth_lockfile_path
-      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "opencode", credential: opencode_managed_runner_credential)
+      managed_auth_lockfile_path("opencode", opencode_managed_runner_credential)
     end
 
     def omp_managed_auth_lockfile_path
+      managed_auth_lockfile_path("omp", omp_managed_runner_credential)
+    end
+
+    def managed_auth_lockfile_path(runner_key, credential)
       Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
-        runner_key: "omp", credential: omp_managed_runner_credential)
+        runner_key: runner_key, credential: credential)
     end
 
     # Public boundary for the Codex managed refresh (RDR-041 / #2962). Refreshes
@@ -4533,16 +4666,26 @@ module Containers
     # the canonical credential would go stale after the first successful run.
     # Returns the provider Result contract so the adapter can report harvest state.
     def harvest_codex_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "codex", credential: codex_managed_runner_credential,
-        unsupported_result: unsupported_codex_harvest_result)
+      harvest_managed_rotation(runner_key: "codex", unsupported_result: unsupported_codex_harvest_result)
     end
 
     # Shared managed-rotation harvest: reads the runner's native auth state from
     # the run container and persists any rotation through
     # Runners::ManagedCredentialLifecycle (the same primitive standalone text
     # execution uses), keeping provisioner telemetry and cache resets here.
-    def harvest_managed_rotation(runner_key:, credential:, unsupported_result:)
-      return unsupported_result unless credential
+    # @spec SUBSCRIPTION-RUNNER-AUTH-009
+    def harvest_managed_rotation(runner_key:, unsupported_result:)
+      provenance = materialization_provenance_for(runner_key)
+      unless provenance&.auth_source == RunnerAuthAttempt::AUTH_SOURCE_MANAGED
+        return record_unconfirmed_harvest!(runner_key, unsupported_result,
+          reason: provenance ? "materialization_not_managed" : "materialization_unconfirmed",
+          auth_source: provenance&.auth_source || :none)
+      end
+
+      credential = provenance.runner_credential
+      unless materialization_current?(provenance, credential)
+        return record_unconfirmed_harvest!(runner_key, unsupported_result, reason: "materialization_stale")
+      end
 
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       stdout, stderr, status = backend.exec_in_container(
@@ -4552,7 +4695,7 @@ module Containers
       )
       raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
 
-      result = Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+      result = persist_materialized_rotation!(provenance, credential,
         runner_key: runner_key, raw: Array(stdout).join)
       if result.performed?
         reset_managed_caches_for(runner_key)
@@ -4573,13 +4716,92 @@ module Containers
       telemetry_result, failure_reason = case result.reason
       when "harvested"
         [ RunnerAuthAttempt::RESULT_HARVESTED, nil ]
-      when "no_rotated_credential"
+      when "no_rotated_credential", "materialization_stale"
         [ RunnerAuthAttempt::RESULT_SKIPPED, result.reason ]
       else
         [ RunnerAuthAttempt::RESULT_HARVEST_FAILED, result.reason ]
       end
       harvest_recorder_for(runner_key).call(credential, started_at,
         result: telemetry_result, failure_reason: failure_reason)
+    end
+
+    def record_managed_materialization!(runner_key, credential, credential_generation)
+      record_materialization_provenance!(runner_key, auth_source: :managed, credential: credential,
+        credential_generation: credential_generation)
+    end
+
+    def record_unmanaged_materialization!(runner_key, auth_source)
+      record_materialization_provenance!(runner_key, auth_source: auth_source)
+    end
+
+    def record_materialization_provenance!(runner_key, auth_source:, credential: nil, credential_generation: nil)
+      return unless agent_run&.persisted? && container&.id.present?
+
+      attrs = {
+        account: project.account,
+        project: project,
+        agent_run: agent_run,
+        runner_credential: credential,
+        runner_key: runner_key,
+        auth_source: auth_source.to_s,
+        container_id: container.id,
+        credential_updated_at: credential_generation,
+        materialized_at: Time.current
+      }
+      RunnerAuthMaterialization.create!(attrs)
+    rescue ActiveRecord::RecordNotUnique
+      existing = materialization_provenance_for(runner_key)
+      expected = {
+        "auth_source" => auth_source.to_s,
+        "runner_credential_id" => credential&.id,
+        "credential_updated_at" => credential_generation
+      }
+      return true if existing&.attributes&.slice(*expected.keys) == expected
+
+      log_system("container.#{runner_key}_materialization_provenance_conflict",
+        container_id: container.id, credential_id: credential&.id)
+      false
+    end
+
+    def materialization_provenance_for(runner_key)
+      return unless agent_run&.persisted? && container&.id.present?
+
+      RunnerAuthMaterialization.find_by(
+        agent_run: agent_run,
+        runner_key: runner_key,
+        container_id: container.id
+      )
+    end
+
+    def materialization_current?(provenance, credential)
+      credential.present? && !credential.revoked? && credential.updated_at == provenance.credential_updated_at
+    end
+
+    def persist_materialized_rotation!(provenance, credential, runner_key:, raw:)
+      credential.with_lock do
+        return stale_materialization_result unless materialization_current?(provenance, credential)
+
+        Runners::ManagedCredentialLifecycle.persist_rotation!(credential, runner_key: runner_key, raw: raw)
+      end
+    end
+
+    def stale_materialization_result
+      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: false, reason: "materialization_stale")
+    end
+
+    def record_unconfirmed_harvest!(runner_key, unsupported_result, reason: "materialization_unconfirmed", auth_source: :none)
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      record_auth_attempt!(
+        runner_key: runner_key,
+        attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+        auth_source: auth_source,
+        materialization_mode: RunnerAuthAttempt::MATERIALIZE_UNSUPPORTED,
+        result: RunnerAuthAttempt::RESULT_SKIPPED,
+        failure_reason: reason,
+        duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round,
+        metadata: { source: "unconfirmed_materialization", provenance_source: auth_source.to_s }
+      )
+      unsupported_result
     end
 
     def harvest_recorder_for(runner_key)
@@ -4622,13 +4844,11 @@ module Containers
     end
 
     def harvest_opencode_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "opencode", credential: opencode_managed_runner_credential,
-        unsupported_result: unsupported_opencode_harvest_result)
+      harvest_managed_rotation(runner_key: "opencode", unsupported_result: unsupported_opencode_harvest_result)
     end
 
     def harvest_omp_managed_credential_impl!
-      harvest_managed_rotation(runner_key: "omp", credential: omp_managed_runner_credential,
-        unsupported_result: unsupported_omp_harvest_result)
+      harvest_managed_rotation(runner_key: "omp", unsupported_result: unsupported_omp_harvest_result)
     end
 
     def record_omp_harvest_attempt!(credential, started_at, result:, failure_reason: nil)

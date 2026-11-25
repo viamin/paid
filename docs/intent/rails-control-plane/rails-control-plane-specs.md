@@ -88,6 +88,27 @@
   *Code:* `.devcontainer/devcontainer.json`, `Procfile.dev`, `bin/dev-web`, `bin/jobs`,
   `config/puma.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-030** — When the dedicated GoodJob worker is
+  running, its readiness metadata SHALL distinguish boot readiness from a
+  fresh GoodJob process heartbeat, scheduler availability, and bounded queue
+  progress. An idle worker and a worker with only legitimately occupied
+  scheduler threads SHALL remain healthy. If the worker loses process-record
+  visibility, its heartbeat becomes stale, or runnable work waits beyond the
+  configured progress window while a thread in that work's eligible scheduler
+  pool is available, the worker
+  SHALL withdraw readiness and request the existing graceful GoodJob shutdown;
+  it SHALL preserve active job ownership and SHALL not log job payloads or
+  credentials.
+  Queue eligibility SHALL honor GoodJob queue expressions, pauses, scheduling,
+  and retained ownership. Progress in an unrelated pool SHALL not reset a
+  stalled pool's window, and idle or occupied intervals SHALL not consume the
+  next continuously waiting window.
+  *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
+  `spec/lib/paid/good_job_worker/health_snapshot_spec.rb`,
+  `spec/lib/paid/worker_readiness_spec.rb`.
+  *Code:* `lib/paid/good_job_worker.rb`, `lib/paid/worker_readiness.rb`,
+  `lib/paid/good_job_worker/health_snapshot.rb`, `bin/jobs`.
+
 - [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,
   its wrapper SHALL restart it with bounded backoff without stopping the
   Temporal workers. Other exit codes and repeated exit 137 SHALL surface as
@@ -231,6 +252,85 @@ failures when no tmux socket responds.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
   `spec/lib/setup_script_spec.rb`.
   *Design:* `rails-control-plane-design.md`, Development database investigation history.
+
+- [x] **RAILS-CONTROL-PLANE-025** — While Rails runs in development, the
+  overview scanner SHALL inventory every addressable finding category the
+  installed PgHero Overview renders — slow queries, suggested, duplicate,
+  invalid, and unused indexes, invalid constraints, long-running queries,
+  connection pressure, idle-in-transaction connections, cache hit rate,
+  sequence danger, unreadable sequences, transaction ID danger, inactive
+  replication slots, and query-stat availability — by calling PgHero's Ruby
+  methods with the Overview's thresholds, and SHALL apply the documented
+  policy that classifies each category as actionable, persistence-gated, or
+  an informational exclusion with a recorded reason. Non-development
+  environments SHALL NOT schedule or execute the scan or require the
+  development-only PgHero gem.
+  *Tests:* `spec/services/development/pg_hero_overview/collect_spec.rb`,
+  `spec/services/development/pg_hero_overview/policy_spec.rb`,
+  `spec/jobs/pg_hero_overview_scan_job_spec.rb`,
+  `spec/config/pg_hero_development_integration_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
+  finding issues.
+
+- [x] **RAILS-CONTROL-PLANE-026** — While Rails runs in development,
+  GoodJob SHALL schedule the PgHero overview scan hourly on the maintenance
+  queue with concurrency limited to one perform, and a manual rake
+  invocation SHALL run the same collector, policy, state, and issue-filing
+  path as the scheduled job. The shared scan path SHALL serialize each target
+  project's collection, GitHub lookup, and issue filing independently of
+  GoodJob so `perform_now` and scheduled executions cannot create duplicate
+  issues for a finding.
+  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
+  `spec/jobs/pg_hero_overview_scan_job_spec.rb`,
+  `spec/services/development/pg_hero_overview/scan_spec.rb`,
+  `spec/lib/tasks/development_pghero_rake_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
+  finding issues.
+
+- [x] **RAILS-CONTROL-PLANE-027** — When the development PgHero overview
+  scan files a finding, it SHALL key the finding by the target project's self
+  repository and a stable identity (database, finding type, and relation/index
+  identity or query hash) and
+  maintain at most one GitHub issue per identity in the tenant's self
+  repository: a new finding creates one issue whose body carries the finding
+  type, observed values against thresholds, observation time, database, a
+  PgHero dashboard link, and a concrete investigation prompt that treats
+  suggested indexes and slow queries as investigation leads rather than
+  schema-change instructions; a recurring finding updates the existing
+  issue; a finding that disappears closes its issue with when it was last
+  observed; a finding that recurs after closure reopens its issue. Query
+  text embedded in issues SHALL be filtered of literal values and SHALL NOT
+  include credentials.
+  *Tests:* `spec/services/development/pg_hero_overview/issue_filer_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
+  finding issues.
+
+- [x] **RAILS-CONTROL-PLANE-028** — When the development PgHero overview
+  scan observes a transient category — long-running queries (excluding
+  autovacuum workers), connection pressure, idle-in-transaction connections,
+  or a below-threshold cache hit rate — it SHALL file an issue only after
+  the finding persists across consecutive scans, using persisted observation
+  state that survives restarts; cumulative `pg_stat_statements` totals and
+  counter resets SHALL be judged through PgHero's windowed aggregation
+  rather than raw lifetime counters. The scan SHALL cap new issues per run
+  and defer excess findings — without dropping them — to the next scan.
+  *Tests:* `spec/services/development/pg_hero_overview/scan_spec.rb`,
+  `spec/services/development/pg_hero_overview/issue_filer_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
+  finding issues.
+
+- [x] **RAILS-CONTROL-PLANE-029** — When a development PgHero overview scan
+  cannot observe a category because query stats are unavailable or a
+  collection query times out, or when a collector database error, GitHub
+  lookup, or GitHub write fails, the scan SHALL surface a failed or
+  explicitly incomplete result rather than an apparent all-clear, SHALL NOT
+  close issues for categories it could not observe, and SHALL NOT create
+  duplicate issues when the GitHub lookup fails.
+  *Tests:* `spec/services/development/pg_hero_overview/collect_spec.rb`,
+  `spec/services/development/pg_hero_overview/scan_spec.rb`,
+  `spec/services/development/pg_hero_overview/issue_filer_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
+  finding issues.
 
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping

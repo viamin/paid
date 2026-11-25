@@ -76,7 +76,8 @@ module TrustedMeasurements
     def title
       return "Trusted measurement deployment revision is unknown" if missing_deployment_signal?
       return "Trusted measurement target revision is not deployed" if stale_deployment?
-      return "Trusted measurement source issue is unavailable" if attempt.unknown?
+      return "Trusted measurement source issue is unavailable" if source_issue_not_available?
+      return "Trusted measurement check outcome is unknown" if attempt.unknown?
       return "Trusted measurement is contradicting its own evidence" if contradictory?
 
       "Trusted measurement check keeps failing"
@@ -90,7 +91,9 @@ module TrustedMeasurements
         "measurement on issue ##{attempt.external_issue_number}. Deploy the target revision, update " \
         "#{DeploymentSignal::ENV_KEY}, then retry the measurement." if stale_deployment?
       return "Issue ##{attempt.external_issue_number} is not available in this project's synchronized issue set, so " \
-        "#{attempt.check_key} cannot be attached to its closeout evidence. Synchronize the issue, then retry." if attempt.unknown?
+        "#{attempt.check_key} cannot be attached to its closeout evidence. Synchronize the issue, then retry." if source_issue_not_available?
+      return "The #{attempt.check_key} measurement for issue ##{attempt.external_issue_number} reported an unknown " \
+        "outcome (#{attempt.failure_reason}). Restore the check's required live inputs, then retry." if attempt.unknown?
       return "The #{attempt.check_key} measurement for issue ##{attempt.external_issue_number} returned a closed-issue " \
         "count greater than its reported total, which cannot be true. Review the check definition before trusting " \
         "its evidence." if contradictory?
@@ -112,6 +115,10 @@ module TrustedMeasurements
 
     def stale_deployment?
       attempt.unknown? && attempt.failure_reason == "stale_deployment"
+    end
+
+    def source_issue_not_available?
+      attempt.unknown? && attempt.failure_reason == "source_issue_not_available"
     end
 
     def notification_source

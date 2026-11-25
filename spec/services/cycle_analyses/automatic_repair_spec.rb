@@ -5,15 +5,16 @@ require "rails_helper"
 RSpec.describe CycleAnalyses::AutomaticRepair do
   # @spec AUTO-PICK-QUEUE-019
   it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
+    _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
+    edge = edge_targeting(cycle, 999)
     source = Issue.find(edge.from_id)
     target = Issue.find(edge.to_id)
+    expect([ source.github_number, target.github_number ]).to eq([ 1000, 999 ])
     client = instance_double(GithubClient)
     live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
     allow(client).to receive_messages(issue: live, issue_comments: [])
     allow(client).to receive(:update_issue)
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+    result = described_class.call(agent_run: run, recommendation: recommendation(run, edge_id: edge.id), client_resolver: ->(_) { client })
 
     expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
     expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
@@ -223,13 +224,16 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
-  it "reports a missing live declaration distinctly from an ambiguous one" do
-    _user, _cycle, run = cycle_run
-    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #999" })
+  it "reports a nonmatching live declaration as missing when the target is #999" do
+    _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
+    edge = edge_targeting(cycle, 999)
+    target = Issue.find(edge.to_id)
+    expect(target.github_number).to eq(999)
+    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #998" })
     allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+    result = described_class.call(agent_run: run, recommendation: recommendation(run, edge_id: edge.id), client_resolver: ->(_) { client })
 
     expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
     expect(client).not_to have_received(:update_issue)
@@ -335,11 +339,11 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     expect(client).not_to have_received(:update_issue)
   end
 
-  def cycle_run
+  def cycle_run(first_github_number: nil, second_github_number: nil)
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)
-    first = create(:issue, project:, github_state: "open")
-    second = create(:issue, project:, github_state: "open")
+    first = create(:issue, project:, github_state: "open", **{ github_number: first_github_number }.compact)
+    second = create(:issue, project:, github_state: "open", **{ github_number: second_github_number }.compact)
     create_legacy_issue_dependency(issue: first, depends_on_issue: second)
     create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     cycle = Issues::DependencyCycles.call(account: user.account).sole
@@ -348,9 +352,15 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     [ user, cycle, run ]
   end
 
-  def recommendation(run)
+  def edge_targeting(cycle, github_number)
+    target = cycle.issues.find { |issue| issue.github_number == github_number }
+    cycle.effective_edges.find { |edge| edge.to_id == target.id }
+  end
+
+  def recommendation(run, edge_id: nil)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
-    removed = snapshot.fetch("effective_edges").first
+    edges = snapshot.fetch("effective_edges")
+    removed = edge_id ? edges.find { |edge| edge.fetch("id") == edge_id } : edges.first
     {
       "summary" => "The first declaration is obsolete.",
       "candidates" => [ {
@@ -359,7 +369,8 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
         "tradeoffs" => [ "The source issue may proceed." ],
         "missing_or_conflicting_intent" => [],
         "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"),
-          "edges" => snapshot.fetch("effective_edges").drop(1).map { |edge| edge.slice("from_issue_id", "to_issue_id") } },
+          "edges" => edges.reject { |edge| edge.fetch("id") == removed.fetch("id") }
+            .map { |edge| edge.slice("from_issue_id", "to_issue_id") } },
         "acyclic" => true
       } ]
     }

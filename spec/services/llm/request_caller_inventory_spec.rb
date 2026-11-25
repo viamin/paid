@@ -10,6 +10,7 @@ RSpec.describe Llm::Request do
     %w[
     app/services/agent_run_patterns/diagnose.rb
     app/services/agent_runs/diagnose_error.rb
+    app/services/automation/assess_bounded_scope.rb
     app/services/conflict_repairs/assess_scope.rb
     app/services/cycle_analyses/analyze.rb
     app/services/design_amendments/impact_review.rb
@@ -21,7 +22,9 @@ RSpec.describe Llm::Request do
     app/services/issues/partial_completion_assessment.rb
     app/services/knowledge/context_intake/generate_questions.rb
     app/services/knowledge/decisions/draft.rb
+    app/services/layered_verification/unmapped_material.rb
     app/services/models/meta_agent_selector.rb
+    app/services/operational_supervisor/analyze.rb
     app/services/partial_closeouts/assess_evidence.rb
     app/services/partial_closeouts/validate_submitted_evidence.rb
     app/services/prompt_evolution/mutate.rb
@@ -33,6 +36,7 @@ RSpec.describe Llm::Request do
     app/services/style_guides/extract.rb
     app/temporal/activities/analyze_issue_activity.rb
     app/temporal/activities/analyze_knowledge_gaps_activity.rb
+    app/temporal/activities/assess_followup_review_threads_activity.rb
     app/temporal/activities/decompose_feature_activity.rb
     ].freeze
   end

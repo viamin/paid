@@ -92,6 +92,39 @@ Host-forwarded rotation remains intentionally separate: it is not imported
 into a managed record unless an existing authorized identity/writeback boundary
 already establishes equivalence.
 
+Each rotating managed materialization persists non-secret, trusted provenance
+for the specific agent run and container lifecycle: runner key, source,
+canonical credential identity, and its generation timestamp. Harvest resolves
+that provenance first rather than re-selecting the account's current credential.
+Execution resolves its lease and writeback source from the same provenance, so
+a later account selection cannot move an older container onto another managed
+credential's lease or the host-forwarded synchronization path.
+It writes only when the recorded managed credential remains unrevoked and at
+the same generation. Missing provenance, host-forwarded provenance, a
+replacement container, and changed generation are explicit skipped harvests;
+they never turn host health or credential freshness into managed readiness.
+
+Test Runner reports the path it actually exercised. A host health check does
+not establish which authentication source the harness used, so it reports that
+source as unconfirmed. A container smoke test reads only its in-run,
+secret-free materialization telemetry before the ephemeral run is deleted and
+reports the recorded managed, host-forwarded, or proxy source when available.
+Separately, the Test Runner queries the shared managed-credential lifecycle
+without attempting refresh, so its response makes clear whether a canonical
+managed credential is fresh, refreshable, or requires reconnection for an
+isolated acceptance audit. This status never imports host credentials or turns
+a successful host smoke test into standalone-audit authorization.
+
+## Affected Credential Remediation
+
+An owner reviews affected records using typed materialization and harvest
+history, identifies any harvest with missing or host-forwarded provenance, and
+confirms the intended account and subscription identity through a new managed
+login before authorizing any credential action. The review records its evidence
+and decision in the incident/work item. This workflow does not automatically
+restore, revoke, delete, or import credentials, alter provider billing, or
+change rollout/native allowances.
+
 Codex recovery adapts the published harness's explicit native-store contract.
 While holding the canonical row lease, Paid writes only the selected managed
 record into a private temporary `auth.json` with mode `0600`. The public harness

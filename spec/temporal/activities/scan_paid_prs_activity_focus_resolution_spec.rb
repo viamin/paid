@@ -21,6 +21,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-002
       stub_const("AgentRunDouble", Class.new)
       stub_const("PrDataDouble", Class.new)
       allow(activity).to receive(:fetch_pr_data).with(client, project, issue).and_return(pr_data)
+      allow(focused_run).to receive(:completed_at).and_return(1.hour.ago)
+      allow(project).to receive(:trusted_github_user?).with("paid-code-reviewer[bot]").and_return(false)
       allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return(checks)
       allow(activity).to receive(:fetch_reviews).with(client, project, issue).and_return(reviews)
       allow(activity).to receive(:fetch_unresolved_threads).with(client, project, issue).and_return(unresolved_threads)

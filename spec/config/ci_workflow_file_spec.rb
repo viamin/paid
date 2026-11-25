@@ -46,12 +46,12 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-020
-  it "allows dependency installation twenty minutes per attempt in shard jobs" do
+  it "bounds dependency installation to the external process-group supervisor in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
 
-      expect(install_step.fetch("run")).to include("  20m \\")
+      expect(install_step.fetch("run")).to include("bin/retry-with-process-group")
     end
   end
 
@@ -290,27 +290,47 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(run).to include(%q{noble_client="$(client_pattern 24\\\\.04)"})
   end
 
-  it "installs ast-grep into a user-writable directory during the test job" do
-    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
-      .find { |step| step["name"] == "Install ast-grep" }
+  # @spec TEST-SUITE-024
+  it "bounds checksum-verified ast-grep installation in every shard path" do
+    %w[test-shards shard-recovery].each do |job_name|
+      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install ast-grep" }
+      run = install_step.fetch("run")
 
-    expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
-    expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
-    expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
-    expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
+      expect(run).to include('mkdir -p "$HOME/.local/bin"')
+      expect(run).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
+      expect(run).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
+      expect(run).to include("for attempt in 1 2 3 4 5")
+      expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
+      expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
+    end
+
+    installer = Rails.root.join("bin/install-ast-grep").read
+    expect(installer).to include('--connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}"')
+    expect(installer).to include('--max-time "${AST_GREP_DOWNLOAD_MAX_TIME:-300}"')
+    expect(installer).to include('sha256sum -c -')
   end
 
   # @spec TEST-SUITE-023
-  it "retries transient JavaScript setup failures across shard execution paths" do
+  it "uses the process-group supervisor to retry dependency installation in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
       run = install_step.fetch("run")
 
-      expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("20m")
-      expect(run).to include('bash -lc \'yarn install --frozen-lockfile && bin/yarn-postinstall\'')
+      expect(run).to include(
+        "bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 " \
+        "--network-timeout 300000 && bin/yarn-postinstall'"
+      )
     end
+  end
+
+  # @spec TEST-SUITE-023
+  it "staggers the test-shards dependency install by shard index before supervision starts" do
+    install_step = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
+      .find { |step| step["name"] == "Install JavaScript dependencies" }
+
+    expect(install_step.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
   end
 
   # @spec TEST-SUITE-003

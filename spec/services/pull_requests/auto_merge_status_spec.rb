@@ -18,6 +18,19 @@ RSpec.describe PullRequests::AutoMergeStatus do
   let(:issue) { create(:issue, :pull_request, project: project) }
   let(:live_pull_request) { nil }
 
+  # @spec AUTO-MERGE-012
+  it "shows internal technical work even before a scan snapshot exists" do
+    issue.update!(technical_merge_blockers: [ { "key" => "sdk", "reason" => "SDK failure" } ])
+    expect(status).to include(auto_merge_status: "blocked", reason_code: "technical_merge_blocked")
+    expect(status.fetch(:blockers).sole).to include("responsibility" => "agent")
+  end
+
+  # @spec AUTO-MERGE-012
+  it "distinguishes a simultaneous human decision from technical work" do
+    issue.update!(labels: [ "paid-hold-review" ], technical_merge_blockers: [ { "key" => "sdk" } ])
+    expect(status.fetch(:blockers).map { |blocker| blocker.fetch("responsibility") }).to eq(%w[agent human])
+  end
+
   it "reports a stale approval blocker from the persisted snapshot" do
     persist_auto_merge_snapshot!(
       failed: [ stale_approval_blocker ],

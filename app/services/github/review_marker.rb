@@ -13,6 +13,7 @@ module Github
   # drift apart. If the marker text changes, all sides update in lockstep.
   module ReviewMarker
     PAID_REVIEW_MARKER = "<!-- paid:code-review -->"
+    CLEAN_REVIEW_MARKER = "<!-- paid-review-clean -->"
     REVIEW_HEADER = "## Code Review"
 
     # Prefix every Paid-authored review body carries: the machine marker first,

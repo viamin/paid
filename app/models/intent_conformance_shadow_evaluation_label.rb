@@ -18,7 +18,7 @@ class IntentConformanceShadowEvaluationLabel < ApplicationRecord
   validates :state, inclusion: { in: STATES }
   validates :outcome, inclusion: { in: OUTCOMES }, allow_nil: true
   validates :revised_outcome, inclusion: { in: OUTCOMES }, allow_nil: true
-  validates :cited_design_claim, :reason, presence: true, if: -> { state == "labeled" }
+  validates :cited_design_claim, presence: true, if: -> { state == "labeled" && outcome != "uncertain" }
   validates :outcome, presence: true, if: -> { state == "labeled" }
   validates :revised_reason, presence: true, if: -> { revised_outcome.present? }
 

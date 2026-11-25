@@ -50,6 +50,48 @@ An explicit `worktree_path` is still accepted as a legacy compatibility input
 for bind-mount and maintenance flows, but host-created worktrees are no longer
 the default execution workspace for normal agent runs.
 
+Execution preparation may temporarily replace provider settings in an agent
+checkout. Its snapshots live in a private container-temporary directory rather
+than beside the target, and the runtime adds a run-local Git exclusion for the
+temporary target. If the target was tracked, the runtime also marks that index
+entry assume-unchanged for the preparation lifetime. This prevents ordinary
+agent `git add`/commit/push operations from publishing Paid's generated
+settings or their backups while retaining the original file bytes, mode, and
+symlink target for restoration. Cleanup restores the original target first,
+then removes the run-local Git protection; restoration failures remain explicit
+execution-preparation cleanup failures.
+
+The protection applies to any target that physically resolves inside the
+checkout, including relative paths and paths through symlinked directories,
+which are resolved to an absolute physical path before the checkout comparison.
+Only a plain cached index entry may be flagged; skip-worktree, already-flagged,
+or unmerged entries are recorded as unprotected and left untouched, so an
+unmerged or otherwise non-plain entry never fails preparation. The Git undo
+state is recorded before the exclusion entry is appended, and the append keeps
+the marker on its own line regardless of the exclude file's trailing byte, so
+a partially applied exclusion always stays restorable and never corrupts the
+user's last rule. Cleanup undoes the flag only for a recorded cached entry that
+still carries it — a target renamed during execution is left alone rather than
+failing the restore — and exclusion removal and flag restoration are
+independent steps: either failing records an explicit cleanup failure instead
+of short-circuiting the other, and an exclusion append that never completed
+needs no rewrite. A multi-step preparation runs every step's restore even when
+an earlier step's cleanup failed; only the first error is surfaced.
+
+Applying a preparation write is transactional. The materialize script can fail
+after it already replaced the target or applied part of the Git protection
+(for example, a read-only `info/exclude` failing the exclusion append after the
+snapshot removed the original). Because the failed write never reaches the
+caller's accumulated cleanup steps, the runtime rolls the partial write back
+itself before re-raising: the original target is restored from the snapshot,
+partially applied exclusion entries and index flags are removed, and the
+snapshot state directory is deleted. An unknown snapshot state means the script
+failed before mutating anything, so the rollback treats it as a no-op rather
+than a restore failure. A rollback that cannot restore invalidates the
+container — its preparation state cannot be trusted for reuse — without
+replacing the original preparation failure, including when the rollback exec
+itself fails at the connection level.
+
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices
@@ -192,6 +234,52 @@ host/user/project/create-PR ceilings. Auto mode may admit against Docker memory
 budget when confidence is good, but degraded or missing snapshot paths fall
 back conservatively, and sampling-budget exhaustion fails closed for that
 admission pass.
+
+### Backing-storage pressure
+
+Docker-requested disk ceilings do not account for the daemon's image, build,
+volume, WAL, or unrelated-workload consumption. Each execution backend may
+therefore expose a bounded `backing_storage_observation` capability. A known
+observation contains only its scope, available bytes, and observation time.
+It never exposes daemon paths, mounts, credentials, or workload names.
+
+The local Docker backend supports the capability only when an operator has
+created an empty `.paid-capacity-probe` directory inside the selected daemon's
+`DockerRootDir`, mounted only that directory read-only, and configured
+`PAID_DOCKER_BACKING_STORE_PROBE_PATH` plus
+`PAID_DOCKER_BACKING_STORE_DAEMON_ROOT`. Before measuring, the backend compares
+the configured root with `Docker.info["DockerRootDir"]` from its selected Unix
+socket daemon and verifies the probe mount metadata identifies that root's
+`.paid-capacity-probe` child as the source for the configured probe path. The
+backend decodes kernel mountinfo octal path escapes before comparing either
+source or target, so daemon roots and probe paths containing spaces remain
+verifiable. The supported devcontainer uses that verified root to mount only
+`.paid-capacity-probe` at `/mnt/paid-docker-backing-store`; it never mounts the
+daemon data-root tree. Missing daemon root evidence, a root mismatch, a remote
+endpoint, an invalid source, or unverifiable mount provenance is an explicit
+unavailable observation. It MUST
+NOT treat the control-plane container's root filesystem as the Docker daemon's
+backing store or guess a Docker root. Remote and unsupported backends report an
+explicit unavailable/unsupported reason rather than inspecting local disk.
+Kernel mount roots can name a different namespace path from `DockerRootDir`.
+When those paths differ, bounded inspection through the selected daemon must
+bind the current container's ID and hostname to the exact read-only bind
+source and destination. A read-only kernel mount at that destination is still
+required. An arbitrary matching basename, another container's inspection or
+a writable mount cannot establish provenance.
+The probe executes in a bounded process group that is terminated and reaped at
+its deadline. Only a nonnegative integer byte count is known headroom;
+missing, malformed, negative, or stale observations remain distinguishable
+from known headroom and do not claim capacity.
+
+Normal run admission applies a 5 GiB backing-storage reserve to every mode,
+including provisioning and build consumers. A fresh known observation at or
+below the reserve denies new execution with a one-minute bounded recheck and
+an operator action to reclaim or expand the measured backing store. This does
+not alter requested-resource ceilings, increase concurrency, or grant cleanup
+authority. Existing runs, cancellation, and cleanup stay runnable. Operators
+can inspect the safe scope, available bytes, timestamp, reason, and action in
+the Docker-host capacity diagnostics.
 
 ## Accepted Divergence
 

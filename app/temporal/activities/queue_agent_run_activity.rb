@@ -20,6 +20,7 @@ module Activities
       auto_pick = input.fetch(:auto_pick, false)
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
+      action_evidence = normalized_action_evidence(input[:action_evidence])
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
@@ -58,11 +59,13 @@ module Activities
       # :delegated_boundary (queue by default, follow_up from the follow-up
       # scheduler); a block routes to one focused Inbox decision.
       # @spec PROJECT-DELEGATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-004
+      # @spec BOUNDED-PHASE-AUTHORIZATION-006
       delegated_recheck = Automation::DelegatedActionAdmission.call(
         project: project,
         issue: issue,
         pull_request_number: source_pull_request_number,
         goal: goal,
+        action_evidence: action_evidence,
         boundary: input.fetch(:delegated_boundary, "queue").to_sym,
         trigger: trigger_type
       )
@@ -93,20 +96,15 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014
+      # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014 MANUAL-RUN-RETRY-010
       agent_run, duplicate, enhancement_limit_reached, enhancement_held, phase_block_reason = begin
         with_phase_rollout_lock(project, phase_rollout_observed) do
           AgentRun.transaction(requires_new: true) do
           project.lock! if automatic_authorization
-          issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
+          issue.lock! if issue
           if automatic_enhancement_held?(project, issue, goal, trigger_type)
             [ nil, false, false, true, nil ]
           elsif (existing = find_existing_run(project, issue, source_pull_request_number))
-            if existing.goal == goal
-              merge_draft_review_round_tracking!(existing,
-                count_toward_draft_review_round: count_toward_draft_review_round,
-                expected_draft_review_count: expected_draft_review_count)
-            end
             [ existing, true, false, false, nil ]
           elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
             [ nil, false, true, false, nil ]
@@ -125,7 +123,10 @@ module Activities
               trigger_type: trigger_type,
               # A PR repair may inherit manual queue priority, but its
               # authorization still comes from the automatic workflow.
-              external_metadata: automatic_authorization ? { "automatic_authorization" => true } : {},
+              external_metadata: run_external_metadata(
+                automatic_authorization: automatic_authorization,
+                action_evidence: action_evidence
+              ),
               auto_pick: auto_pick,
               count_toward_draft_review_round: count_toward_draft_review_round,
               expected_draft_review_count: expected_draft_review_count,
@@ -157,12 +158,6 @@ module Activities
         # merge_draft_review_round_tracking! prevents double-writes. Both callers
         # originate from the same poll cycle so they pass identical values; the
         # last writer wins harmlessly.
-        if existing.goal == goal
-          merge_draft_review_round_tracking!(existing,
-            count_toward_draft_review_round: count_toward_draft_review_round,
-            expected_draft_review_count: expected_draft_review_count)
-        end
-
         [ existing, true, false, false, nil ]
       end
 
@@ -193,6 +188,12 @@ module Activities
       end
 
       if duplicate
+        if agent_run.goal == goal
+          merge_draft_review_round_tracking!(agent_run,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count)
+        end
+
         logger.info(
           message: "concurrency.duplicate_run_skipped",
           agent_run_id: agent_run.id,
@@ -231,6 +232,16 @@ module Activities
     end
 
     private
+
+    def normalized_action_evidence(evidence)
+      evidence.is_a?(Hash) ? evidence.stringify_keys : {}
+    end
+
+    def run_external_metadata(automatic_authorization:, action_evidence:)
+      metadata = automatic_authorization ? { "automatic_authorization" => true } : {}
+      metadata["action_evidence"] = action_evidence if action_evidence.present?
+      metadata
+    end
 
     def with_phase_rollout_lock(project, phase_rollout_observed)
       return yield unless phase_rollout_observed
@@ -371,7 +382,11 @@ module Activities
     # WorktreeConflict failures whenever the poll cycle fired both at once. The
     # poller will re-evaluate next cycle once the in-flight run finishes.
     def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).lock("FOR UPDATE")
+      scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES)
+      # Issue admission holds the issue row already. Taking an existing run's
+      # lock here would invert terminal bookkeeping's run -> issue ordering.
+      # Reconcile optional draft metadata after releasing admission ownership.
+      scope = scope.lock("FOR UPDATE") unless issue
       if issue
         matches = scope.where(issue: issue)
         matches = matches.or(scope.where(source_pull_request_number: source_pull_request_number)) if source_pull_request_number

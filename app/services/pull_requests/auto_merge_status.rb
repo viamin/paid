@@ -23,6 +23,15 @@ module PullRequests
     def call
       return merged_status if merged?
       return merged_status if live_merged?
+      technical = TechnicalMergeBlockers.diagnostics(issue)
+      if technical.any?
+        if issue.held_for_review?
+          technical << { "signal" => "hold_for_review", "status" => "failed", "reason_code" => "hold_for_review",
+            "sanitized_message" => "A separate human-only decision is also required.",
+            "next_action" => "Resolve the recorded human-only decision before releasing its review hold.", "responsibility" => "human" }
+        end
+        return blocked_status(technical)
+      end
       return merge_permission_rejected_status if issue.merge_permission_rejected?
       return auto_merge_disabled_status unless project.auto_merge_enabled?
       return credentials_unavailable_status unless credentials_available?

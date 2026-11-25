@@ -172,6 +172,7 @@ module ApplicationHelper
     pr_p2: { bg: "bg-orange-100", text: "text-orange-700" },
     pr_p3: { bg: "bg-amber-100", text: "text-amber-700" },
     pr_continue: { bg: "bg-violet-100", text: "text-violet-700" },
+    operator_coding: { bg: "bg-indigo-100", text: "text-indigo-700" },
     issue_p1: { bg: "bg-red-100", text: "text-red-700" },
     issue_p2: { bg: "bg-orange-100", text: "text-orange-700" },
     issue_p3: { bg: "bg-amber-100", text: "text-amber-700" },

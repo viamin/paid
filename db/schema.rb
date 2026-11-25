@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -375,6 +375,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
+    t.datetime "operator_coding_priority_requested_at", comment: "Explicit operator scheduling request for an existing coding retry; execution authority remains unchanged."
     t.datetime "operator_priority_requested_at", comment: "Explicit operator scheduling request for an existing audit; original execution authority remains unchanged."
     t.bigint "originating_audit_run_id"
     t.string "parent_workflow_id", limit: 255
@@ -775,6 +776,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.datetime "expires_at", null: false
     t.bigint "issue_id", null: false
     t.bigint "project_id", null: false
+    t.jsonb "reassessment_reasons", default: [], null: false
+    t.datetime "reassessment_required_at"
     t.datetime "revoked_at"
     t.bigint "revoked_by_id"
     t.string "status", default: "active", null: false
@@ -784,6 +787,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.index ["issue_id"], name: "index_bounded_delegated_actions_on_issue_id"
     t.index ["project_id", "issue_id", "action"], name: "index_bounded_actions_on_project_issue_action"
     t.index ["project_id"], name: "index_bounded_delegated_actions_on_project_id"
+    t.index ["reassessment_required_at"], name: "index_bounded_delegated_actions_on_reassessment_required_at"
     t.index ["revoked_by_id"], name: "index_bounded_delegated_actions_on_revoked_by_id"
     t.index ["status", "expires_at"], name: "index_bounded_actions_on_status_and_expiry"
   end
@@ -2791,6 +2795,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
     t.string "tdd_review_head_sha", limit: 40, comment: "PR head SHA bound to the latest persisted TDD test-review verdict."
     t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
+    t.jsonb "technical_merge_blockers", default: [], null: false, comment: "Bounded internal technical merge stops; independent of human-intervention labels."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
@@ -3584,6 +3589,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
   end
 
+  create_table "pghero_overview_findings", comment: "Development PgHero Overview scan state; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.integer "consecutive_observations", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "database", null: false
+    t.text "finding_key", null: false
+    t.text "finding_type", null: false
+    t.datetime "first_seen_at", null: false
+    t.bigint "github_issue_number"
+    t.datetime "issue_last_updated_at"
+    t.datetime "last_seen_at", null: false
+    t.bigint "project_id", null: false
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "database", "finding_key"], name: "index_pghero_overview_findings_on_project_db_finding_key", unique: true
+  end
+
   create_table "pghero_queries", comment: "Normalized SQL for development database diagnostics; system-wide, not tenant-owned.", force: :cascade do |t|
     t.text "query"
     t.index ["query"], name: "index_pghero_queries_on_query", using: :hash
@@ -3966,6 +3987,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
+    t.datetime "pr_escalation_limits_suspended_until", comment: "Exclusive deadline for suspending automatic PR follow-up and cumulative token limits."
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
@@ -4312,6 +4334,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.index ["result", "attempted_at"], name: "idx_runner_auth_attempts_result_attempted"
     t.index ["runner_credential_id"], name: "index_runner_auth_attempts_on_runner_credential_id"
     t.index ["runner_key", "auth_source", "container_host", "attempted_at"], name: "idx_runner_auth_attempts_provider_source_host_attempted"
+  end
+
+  create_table "runner_auth_materializations", comment: "Trusted per-container provenance for managed rotating runner credential materialization.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.string "auth_source", limit: 32, null: false
+    t.string "container_id", limit: 128, null: false
+    t.datetime "created_at", null: false
+    t.datetime "credential_updated_at"
+    t.datetime "materialized_at", null: false
+    t.bigint "project_id", null: false
+    t.bigint "runner_credential_id"
+    t.string "runner_key", limit: 64, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_runner_auth_materializations_on_account_id"
+    t.index ["agent_run_id", "runner_key", "container_id"], name: "idx_runner_auth_materializations_run_runner_container", unique: true
+    t.index ["agent_run_id"], name: "index_runner_auth_materializations_on_agent_run_id"
+    t.index ["project_id"], name: "index_runner_auth_materializations_on_project_id"
+    t.index ["runner_credential_id"], name: "index_runner_auth_materializations_on_runner_credential_id"
   end
 
   create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
@@ -5203,6 +5244,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
   end
 
+  create_table "worker_readiness_observations", comment: "Per-role Temporal worker readiness heartbeats; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "deployment_revision", comment: "Complete deployment identity observed when the worker booted."
+    t.string "environment", comment: "Rails environment of the worker process that published this observation."
+    t.datetime "heartbeat_at", null: false, comment: "When the live process last published its readiness identity."
+    t.integer "pid", null: false
+    t.datetime "ready_at", null: false, comment: "When this worker process finished booting."
+    t.string "revision"
+    t.string "role", null: false
+    t.datetime "updated_at", null: false
+    t.index ["environment", "role", "pid", "ready_at"], name: "idx_on_environment_role_pid_ready_at_5fadc857e0", unique: true
+  end
+
   create_table "workflow_states", force: :cascade do |t|
     t.datetime "completed_at"
     t.datetime "created_at", null: false
@@ -5615,6 +5669,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "pghero_overview_findings", "projects"
   add_foreign_key "pghero_query_stats", "pghero_queries", column: "query_id"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
@@ -5685,6 +5740,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
   add_foreign_key "runner_auth_attempts", "agent_runs", on_delete: :nullify
   add_foreign_key "runner_auth_attempts", "projects", on_delete: :cascade
   add_foreign_key "runner_auth_attempts", "runner_credentials", on_delete: :nullify
+  add_foreign_key "runner_auth_materializations", "accounts"
+  add_foreign_key "runner_auth_materializations", "agent_runs", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "runner_credentials", on_delete: :nullify
   add_foreign_key "runner_credentials", "accounts"
   add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
@@ -7952,6 +8011,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
   execute <<~SQL
     ALTER TABLE "public"."runner_auth_attempts" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."runner_auth_attempts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."runner_auth_materializations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."runner_auth_materializations" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -10385,6 +10449,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
       WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
   WHERE ((projects.id = runner_auth_attempts.project_id) AND (projects.account_id = paid_current_account_id()))))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."runner_auth_materializations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))));
   SQL
 
   execute <<~SQL

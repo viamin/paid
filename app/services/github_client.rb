@@ -23,6 +23,7 @@ require "uri"
 class GithubClient
   DEFAULT_CHECK_RUNS_PER_PAGE = 100
   DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  PULL_REQUEST_REVIEWS_MAX_PAGES = 10
   WORKFLOW_RUNS_PER_PAGE = 100
   RETRY_MAX = 3
   RETRY_INTERVAL = 0.5
@@ -33,6 +34,9 @@ class GithubClient
   ACTIONS_LOG_TOTAL_TIMEOUT = 30
   MAX_ACTIONS_LOG_BYTES = 5.megabytes
   ACTIONS_LOG_BLOB_HOST_SUFFIX = ".blob.core.windows.net"
+  REVIEW_THREAD_MAX_PAGES = 10
+  REVIEW_THREAD_MAX_COMMENTS = 1_000
+  REVIEW_THREAD_MAX_BYTES = 2.megabytes
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -75,6 +79,12 @@ class GithubClient
 
   # Raised when GitHub cannot provide a complete tree listing for an exact path lookup.
   class IncompleteTreeError < Error; end
+
+  class IncompleteReviewsError < Error; end
+  class IncompleteComparisonError < Error; end
+
+  COMPARE_FILE_LIMIT = 300
+  COMPARISON_FILE_STATUSES = %w[added removed modified renamed copied changed unchanged].freeze
 
   # Project credentials can be backed by a shared token client, so comment
   # policy belongs in a project-scoped decorator rather than on that shared
@@ -127,6 +137,7 @@ class GithubClient
     def add_labels_to_issue(...) = write_or_suppressed { __getobj__.add_labels_to_issue(...) }
     def remove_label_from_issue(...) = write_or_suppressed { __getobj__.remove_label_from_issue(...) }
     def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
+    def pull_request_reviews(...) = __getobj__.pull_request_reviews(...)
 
     # Issue creation is not itself a label write, so it must survive
     # suppression — but the create request's `labels:` argument adds labels
@@ -421,9 +432,15 @@ class GithubClient
   # @param options [Hash] Additional options passed to Octokit
   # @return [Array<Sawyer::Resource>] List of issues
   def issues(repo, labels: nil, state: "open", **options)
-    opts = { state: state, **options }
-    opts[:labels] = Array(labels).join(",") if labels
-    handle_errors { client.issues(repo, opts) }
+    handle_errors { client.issues(repo, issue_options(labels:, state:, options:)) }
+  end
+
+  # Lists every issue matching the requested filters.
+  #
+  # @return [Array<Sawyer::Resource>] List of issues across all pages
+  def all_issues(repo, labels: nil, state: "open", **options)
+    opts = issue_options(labels:, state:, options:)
+    handle_errors { with_auto_paginate { client.issues(repo, opts) } }
   end
 
   # Lists files changed in a pull request.
@@ -457,6 +474,33 @@ class GithubClient
         deletions: file.deletions,
         patch: file.patch
       }
+    end
+  end
+
+  # Lists files changed between two immutable commits with full metadata,
+  # refusing incomplete evidence above +max_files+. Unlike +detailed_pull_request_files+ (which reflects
+  # a pull request's *mutable* current head), this binds the diff to the exact
+  # SHAs the caller captured, so a concurrent head change cannot swap the
+  # evidence out from under a SHA-pinned assessment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @param max_files [Integer] Maximum complete file list accepted
+  # @raise [IncompleteComparisonError] if the local or upstream limit prevents a complete listing
+  # @return [Array<Hash>] :filename, :status, :additions, :deletions, :changes, :patch
+  def detailed_compare_files(repo, base, head, max_files: 100)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      files = comparison.files
+      # GitHub only returns up to 300 changed files, even with pagination:
+      # https://docs.github.com/en/rest/commits/commits#compare-two-commits
+      if !files.is_a?(Array) || files.size > max_files || files.size >= COMPARE_FILE_LIMIT ||
+          !files.all? { |file| complete_comparison_file?(file) }
+        raise IncompleteComparisonError, "GitHub comparison file evidence is incomplete"
+      end
+
+      compare_files_payload(files)
     end
   end
 
@@ -964,6 +1008,7 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Threads with :id, :is_resolved, :comments keys
+  # @spec FOCUSED-RUN-011
   def review_threads(repo, number)
     owner, name = repo.split("/", 2)
     query = <<~GRAPHQL
@@ -974,8 +1019,21 @@ class GithubClient
               nodes {
                 id
                 isResolved
-                comments(first: 50) {
+                firstComment: comments(first: 1) {
                   nodes {
+                    id
+                    body
+                    path
+                    line
+                    author { login }
+                    createdAt
+                    originalCommit { oid }
+                  }
+                }
+                recentComments: comments(last: 50) {
+                  totalCount
+                  nodes {
+                    id
                     body
                     path
                     line
@@ -996,17 +1054,51 @@ class GithubClient
     threads = data.dig("data", "repository", "pullRequest", "reviewThreads", "nodes") || []
 
     threads.map do |thread|
+      recent_comments = thread.dig("recentComments", "nodes") || []
+      original_comment = thread.dig("firstComment", "nodes", 0)
+      original_comment_id = original_comment&.dig("id").to_s.presence
+      comment_count = thread.dig("recentComments", "totalCount").to_i
+      raise IncompleteTreeError, "review thread #{thread["id"]} omitted its original comment" if comment_count.positive? && original_comment_id.nil?
+
+      comments = [ original_comment, *recent_comments ].compact.uniq { |comment| comment["id"] }
+      comments = review_thread_comments(thread["id"]) if comments.size != comment_count
+      if comments.size != comment_count
+        raise IncompleteTreeError, "review thread #{thread["id"]} omitted review comments"
+      end
+
       {
         id: thread["id"],
         is_resolved: thread["isResolved"],
-        comments: (thread.dig("comments", "nodes") || []).map do |c|
+        comment_count: comment_count,
+        original_comment_id: original_comment_id,
+        comments: comments.map do |c|
           {
-            body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
+            id: c["id"], body: c["body"], path: c["path"], line: c["line"], author: c.dig("author", "login"),
             created_at: c["createdAt"], commit_id: c.dig("originalCommit", "oid")
           }
         end
       }
     end
+  end
+
+  # Reads immutable pull-request ref identities over GraphQL. Unlike REST GETs,
+  # this POST bypasses the shared HTTP cache and is suitable for freshness gates.
+  # @spec FOCUSED-RUN-011
+  def pull_request_ref_oids(repo, number)
+    owner, name = repo.split("/", 2)
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) { baseRefOid headRefOid }
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name, number: number)
+    raise_graphql_errors(data, context: "reading refs for #{repo}##{number}")
+    pull_request = data.dig("data", "repository", "pullRequest") || {}
+
+    { base: pull_request["baseRefOid"], head: pull_request["headRefOid"] }
   end
 
   # Resolves a review thread on a pull request via GraphQL.
@@ -1079,9 +1171,34 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
+  # @raise [IncompleteReviewsError] if pagination cannot prove the listing complete
+  # @spec PROMPT-ASSEMBLY-026
   def pull_request_reviews(repo, number)
     handle_errors do
-      reviews = with_auto_paginate { client.pull_request_reviews(repo, number, per_page: 100) }
+      pages = 0
+      truncated = false
+      reviews = with_auto_paginate do
+        client.paginate("/repos/#{repo}/pulls/#{number}/reviews", per_page: 100) do |collected, response|
+          pages += 1
+          if pages + 1 >= PULL_REQUEST_REVIEWS_MAX_PAGES
+            truncated = response.rels[:next].present?
+            break collected.concat(Array(response.data))
+          end
+
+          collected.concat(Array(response.data))
+        end
+      end
+      last_response = client.last_response
+      if truncated || last_response.nil? || last_response.rels[:next].present?
+        Rails.logger.warn(
+          message: "github_client.pull_request_reviews_pagination_truncated",
+          repo: repo,
+          pr_number: number,
+          max_pages: PULL_REQUEST_REVIEWS_MAX_PAGES,
+          pages_observed: pages + 1
+        )
+        raise IncompleteReviewsError, "GitHub review listing is incomplete within its page or rate budget"
+      end
       reviews.map do |r|
         {
           id: r.id,
@@ -1420,6 +1537,61 @@ class GithubClient
       pull_request = alert.dig("dependabotUpdate", "pullRequest")
       pull_requests[alert["number"]] = [ dependabot_remediation_pr(pull_request) ] if pull_request
     end
+  end
+
+  def review_thread_comments(thread_id)
+    query = <<~GRAPHQL
+      query($threadId: ID!, $after: String) {
+        node(id: $threadId) {
+          ... on PullRequestReviewThread {
+            comments(first: 100, after: $after) {
+              nodes {
+                id
+                body
+                path
+                line
+                author { login }
+                createdAt
+                originalCommit { oid }
+              }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    GRAPHQL
+
+    comments = []
+    after = nil
+    cursors = {}
+    page_count = 0
+    evidence_bytes = 0
+    loop do
+      raise IncompleteTreeError, "review thread #{thread_id} exceeded its page budget" if page_count >= REVIEW_THREAD_MAX_PAGES
+
+      data = graphql_request(query, threadId: thread_id, after:)
+      page_count += 1
+      raise_graphql_errors(data, context: "fetching comments for review thread #{thread_id}")
+      connection = data.dig("data", "node", "comments")
+      raise IncompleteTreeError, "review thread #{thread_id} was unavailable" unless connection
+
+      nodes = connection["nodes"] || []
+      evidence_bytes += JSON.generate(nodes).bytesize
+      comments.concat(nodes)
+      if comments.size > REVIEW_THREAD_MAX_COMMENTS || evidence_bytes > REVIEW_THREAD_MAX_BYTES
+        raise IncompleteTreeError, "review thread #{thread_id} exceeded its evidence budget"
+      end
+
+      page_info = connection["pageInfo"] || {}
+      break unless page_info["hasNextPage"]
+
+      after = page_info["endCursor"]
+      raise IncompleteTreeError, "review thread #{thread_id} pagination returned no cursor" if after.blank?
+      raise IncompleteTreeError, "review thread #{thread_id} pagination repeated cursor" if cursors.key?(after)
+
+      cursors[after] = true
+    end
+    comments.uniq { |comment| comment["id"] }
   end
 
   def dependabot_vulnerability_alerts(owner, name, state)
@@ -1980,6 +2152,10 @@ class GithubClient
     client.auto_paginate = original
   end
 
+  def issue_options(labels:, state:, options:)
+    options.merge(state: state).tap { |opts| opts[:labels] = Array(labels).join(",") if labels }
+  end
+
   def graphql_request(query, **variables)
     # Mutations are not idempotent — retrying them after a transient failure
     # (where the server may have applied the mutation before returning 5xx)
@@ -2286,15 +2462,33 @@ class GithubClient
     end
   end
 
+  def complete_comparison_file?(file)
+    return false unless file.respond_to?(:to_h) && !file.is_a?(Array)
+
+    metadata = file.to_h.symbolize_keys
+    return false unless %i[filename status sha].all? { |key| metadata[key].is_a?(String) && metadata[key].present? }
+    return false unless COMPARISON_FILE_STATUSES.include?(metadata[:status])
+    return false unless metadata[:sha].match?(/\A[0-9a-f]{40}\z/i)
+    return false unless %i[additions deletions changes].all? { |key| metadata[key].is_a?(Integer) && metadata[key] >= 0 }
+    return true unless %w[renamed copied].include?(metadata[:status])
+
+    metadata[:previous_filename].is_a?(String) && metadata[:previous_filename].present?
+  end
+
+  # Blob SHAs and rename provenance ride along so downstream consumers can
+  # mechanically verify byte-identical imports without re-fetching diffs
+  # (@spec AUTO-MERGE-013).
   def compare_files_payload(files)
     files.map do |file|
       {
         filename: file.filename.to_s,
+        sha: file.sha.to_s,
         status: file.status.to_s,
         additions: file.additions.to_i,
         deletions: file.deletions.to_i,
         changes: file.changes.to_i,
-        patch: file.patch.to_s
+        patch: file.patch.to_s,
+        previous_filename: file.previous_filename.to_s
       }
     end
   end

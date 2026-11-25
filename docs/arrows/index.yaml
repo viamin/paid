@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-19
+last_updated: 2026-11-23
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -661,6 +661,14 @@ arrows:
     status: OK
     audited: 2026-10-02
     blockedBy: [intent-conformance-review, approved-intent-merge-guard]
+  outcome-feedback:
+    title: Optional Outcome Feedback
+    path: docs/intent/outcome-feedback/outcome-feedback-design.md
+    specs: docs/intent/outcome-feedback/outcome-feedback-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: MAPPED
+    next: "Draft RDR-082: owner review and LID handoff before implementation; no runtime policy change."
   delivery-telemetry:
     title: Human-led Delivery Telemetry
     path: docs/intent/delivery-telemetry/delivery-telemetry-design.md

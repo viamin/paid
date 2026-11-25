@@ -27,6 +27,14 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Returns a safe observation of the filesystem backing this execution
+      # backend, or a named reason why that observation is unavailable. A
+      # backend must never substitute the control-plane filesystem for a
+      # daemon it cannot prove shares that storage.
+      def backing_storage_observation(now: Time.current)
+        { reason: "backing_storage_unsupported" }
+      end
+
       def capacity_snapshot_list_container_options
         {}
       end
@@ -46,29 +54,32 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_container(_config)
+      # `deadline` is an operation-level, monotonic remaining-time budget. Docker
+      # implementations must apply it to their client transport rather than
+      # relying on callers to asynchronously interrupt a request.
+      def create_container(_config = nil, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def start_container(_container)
+      def start_container(_container, deadline: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def stop_container(_container, **)
+      def stop_container(_container, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def delete_container(_container, **)
+      def delete_container(_container, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def exec_in_container(_container, _command, **)
+      def exec_in_container(_container, _command, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
       # The command must read a known byte count. This transport keeps stdin
       # open until exec exits; the caller must enforce its execution deadline.
-      def exec_in_container_with_stdin(_container, _command, stdin:, wait:, **, &)
+      def exec_in_container_with_stdin(_container, _command, stdin:, wait:, deadline: nil, **, &)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
@@ -104,11 +115,11 @@ module Containers
         list_containers(filters: { label: [ "#{Previews::TunnelManager::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
       end
 
-      def get_network(_name)
+      def get_network(_name, deadline: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_network(_name, _config)
+      def create_network(_name, _config = nil, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 

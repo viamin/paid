@@ -81,9 +81,10 @@ module Activities
       labels.intersect?(project.priority_label_names)
     end
 
-    # @spec FOCUSED-RUN-007
+    # @spec FOCUSED-RUN-007 PR-ESCALATION-028
     def pr_auto_continue_token_limit_result
       return if source_pull_request_number.blank?
+      return if project.pr_escalation_limits_suspended?
 
       used = pr_auto_continue_tokens_used
       limit = source_pull_request&.pr_auto_continue_token_limit_effective_limit(project.max_pr_auto_continue_tokens) ||

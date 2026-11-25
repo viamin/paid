@@ -2023,7 +2023,10 @@ RSpec.describe "Runners" do
           Runners::TestAgent::Result,
           success?: true,
           message: "Agent is healthy",
-          error_type: nil
+          error_type: nil,
+          execution_source: :host_harness,
+          authentication_source: :unconfirmed,
+          standalone_audit_readiness: :not_applicable
         )
         allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 
@@ -2031,8 +2034,12 @@ RSpec.describe "Runners" do
 
         expect(response).to have_http_status(:ok)
         json = JSON.parse(response.body)
-        expect(json["success"]).to be(true)
         expect(json["message"]).to eq("Agent is healthy")
+        expect(json).to include(
+          "execution_source" => "host_harness",
+          "authentication_source" => "unconfirmed",
+          "standalone_audit_readiness" => "not_applicable"
+        )
       end
 
       it "returns error details when agent test fails" do
@@ -2041,7 +2048,10 @@ RSpec.describe "Runners" do
           Runners::TestAgent::Result,
           success?: false,
           message: "Invalid API key",
-          error_type: :authentication
+          error_type: :authentication,
+          execution_source: :container_smoke_test,
+          authentication_source: :unconfirmed,
+          standalone_audit_readiness: :not_applicable
         )
         allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 
@@ -2060,7 +2070,10 @@ RSpec.describe "Runners" do
           Runners::TestAgent::Result,
           success?: true,
           message: "Agent is healthy",
-          error_type: nil
+          error_type: nil,
+          execution_source: :host_harness,
+          authentication_source: :unconfirmed,
+          standalone_audit_readiness: :not_applicable
         )
         allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 

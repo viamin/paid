@@ -9,6 +9,9 @@
             rel: "noopener noreferrer",
             class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
       <span class="truncate text-sm text-gray-900"><%= pull_request.title %></span>
+      <% if pull_request.held_for_review? %>
+        <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Human review requested</span>
+      <% end %>
       <% if paused_run.present? %>
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
           Paused by <%= guardrail_violation_label_for(paused_run).downcase %>
@@ -17,6 +20,7 @@
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">Paused</span>
       <% end %>
     </div>
+    <%= render "projects/technical_merge_blockers", project: project, blockers: PullRequests::TechnicalMergeBlockers.entries(pull_request) %>
     <% if pull_request.labels.any? %>
       <div class="mt-1 flex flex-wrap gap-1">
         <% pull_request.labels.each do |label| %>
@@ -71,7 +75,7 @@
         <%= pull_request.auto_continue_paused? ? "▶️" : "⏸️" %>
       <% end %>
     <% end %>
-    <%# Three states: "Bump Priority" when queued automatic runs exist (only queued runs can be
+    <%# Three states: "Prioritize retry" when queued automatic runs exist (only queued runs can be
         reprioritized — claimed/running are already claimed by a worker), "Run in progress" when
         any active run exists (prevents Quick Run which would violate the unique active-run index),
         and "Quick Run" when no active runs exist. %>
@@ -88,7 +92,7 @@
                   project_agent_run_path(project, paused_run),
                   class: "text-xs font-medium text-yellow-700 hover:text-yellow-900" %>
     <% elsif pr_numbers_with_queued_auto_continue&.include?(pull_request.github_number) %>
-      <%= button_to "Bump Priority",
+      <%= button_to "Prioritize retry",
                     bump_priority_project_agent_runs_path(project, pull_request_id: pull_request.id),
                     method: :post,
                     class: "text-xs font-medium text-amber-600 hover:text-amber-900",
