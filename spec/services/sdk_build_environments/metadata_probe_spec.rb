@@ -138,15 +138,18 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
       expect(backend).not_to have_received(:create_container)
     end
 
-    it "returns unverifiable facts when the selected image cannot be inspected" do
+    # @spec RUST-SDK-BUILD-010
+    it "returns unverifiable facts without pulling an unavailable image" do
       backend = backend_with(exec_stdout: successful_probe_output)
-      allow(backend).to receive(:get_image).and_raise(Docker::Error::DockerError.new("image not found"))
+      allow(backend).to receive(:get_image).and_raise(Docker::Error::NotFoundError.new("image not found"))
+      expect(backend).not_to receive(:pull_image)
 
       facts = described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
 
       expect(facts[:probe_error]).to include("image not found")
       expect(facts[:image]).to eq(reference: "rust:1.95.0-bookworm", id: nil, digest: nil, platform: nil)
       expect(backend).not_to have_received(:create_container)
+      expect(SdkBuildEnvironments::Preflight.call(facts:)[:verdict]).to eq(:unverifiable)
     end
 
     it "hardens the disposable metadata container" do

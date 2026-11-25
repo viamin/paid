@@ -91,9 +91,12 @@
   architecture, the preflight verdict SHALL be a named failure
   (`unverifiable`, `toolchain_absent`, `toolchain_unusable`, or
   `loader_architecture_mismatch`) with a
-  remediation hint, and SHALL NOT be `compatible`.
-  *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
-  *Code:* `SdkBuildEnvironments::Preflight`.
+  remediation hint, and SHALL NOT be `compatible`. Metadata probing SHALL
+  NOT pull or build images; an unavailable image SHALL produce unverifiable
+  facts without provisioning it.
+  *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`,
+  `spec/services/sdk_build_environments/metadata_probe_spec.rb`.
+  *Code:* `SdkBuildEnvironments::Preflight`, `SdkBuildEnvironments::MetadataProbe`.
 
 - [x] **RUST-SDK-BUILD-011** — When the rake task
   `sdk_build_environment:preflight` runs, it SHALL execute the same

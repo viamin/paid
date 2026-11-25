@@ -12,11 +12,12 @@ prefix: RUST-SDK-BUILD
 > build container is provisioned. It exists because of issue #5358: an
 > agent attempted Rust SDK work on an ARM64 runner, found no cargo in the
 > agent image, installed a toolchain ad hoc, and hit
-> `Dynamic loader not found: /lib64/ld-linux-x86-64.so.2` — an x86-64
-> dynamic loader requested on an aarch64 host. The historical container
+> `Dynamic loader not found: /lib64/ld-linux-x86-64.so.2` while reporting
+> an aarch64 host. The original process and downloaded artifact were not
+> independently measured. The historical container
 > and its mutable-tag image are gone, so the original provisioning failure
-> cannot be reproduced; what Paid can own is the supported path that makes
-> that failure class impossible to hit silently.
+> cannot be reproduced; Paid provides a supported path with measured
+> profiles, explicit artifact identities and bounded command outcomes.
 
 ## Purpose
 
@@ -125,6 +126,9 @@ service runs under tests without a Docker daemon; the production probe
 uses the backend API (`system_info`, image inspect, a disposable
 metadata container with bounded resources and no network). Receipts are
 metadata-only: commands and outcomes, never credential material.
+The probe does not pull or build images. A selected image that is not
+available yields unverifiable facts without hidden network provisioning;
+the job-local recipe owns its explicitly bounded public-input preparation.
 
 The disposable container's isolation contract is backend-enforced, not
 advisory. Because the probe executes toolchain binaries from an
