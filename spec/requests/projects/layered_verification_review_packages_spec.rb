@@ -184,6 +184,24 @@ RSpec.describe "Layered verification review packages" do
       expect(coverage_section).to include("Supported")
     end
 
+    # @spec LAYERED-VERIFY-019
+    it "discloses invalidation limitations and reused evidence in the coverage report" do
+      result = obligation.check_results.sole
+      result.update_columns(recorder_verified: { "reused_result_id" => 41 })
+      metadata = audit.external_metadata.deep_dup
+      metadata.fetch("layered_verification")["impact"] = {
+        "reused_check_result_ids" => [ 41 ], "invalidated_check_result_ids" => [],
+        "limitations" => [ "Evidence without a complete dependency basis was invalidated conservatively." ]
+      }
+      audit.update!(external_metadata: metadata)
+
+      get project_agent_run_path(project, audit)
+
+      coverage_section = section(response.body, "layered-verification-coverage")
+      expect(coverage_section).to include("invalidated conservatively")
+      expect(coverage_section).to include("Reused")
+    end
+
     it "keeps an approved business validation explicit in the intent view" do
       LayeredVerification::ReviewPackages::Approve.call(
         package:, user:, provenance: { "surface" => "ui" }
