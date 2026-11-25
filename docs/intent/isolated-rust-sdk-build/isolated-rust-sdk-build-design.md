@@ -164,6 +164,14 @@ inside its isolated job-owned workspace without changing the agent image
 or requiring a Docker socket. The [job-local baseline recipe](job-local-baseline/README.md)
 contains the exact successful install, fetch and offline Core-check bodies,
 public artifact URLs, checksums, source revisions and runtime profile.
+Preparation is a single-use operation in the assigned physical `/workspace`:
+before creating a recipe directory or downloading an artifact, it rejects a
+different or symlinked root and every occupied or symlinked reserved path,
+then atomically claims the preparation slot. This prevents an interrupted or
+parallel attempt from overlaying untracked source or Cargo configuration onto
+the pinned archive. The first exclusive directory creation claims preparation;
+retained reserved paths make any retry fail closed. Ordinary checkout files
+and an existing ordinary tools parent remain available to the job.
 This is an environment baseline and a handoff to #5326, not evidence that
 the Ruby bridge, server harness or task-safe quiescence contract passed.
 The assigned job limits and canonical attempt history remain authoritative.
