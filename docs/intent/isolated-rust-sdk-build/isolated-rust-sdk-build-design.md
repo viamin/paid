@@ -168,6 +168,14 @@ This is an environment baseline and a handoff to #5326, not evidence that
 the Ruby bridge, server harness or task-safe quiescence contract passed.
 The assigned job limits and canonical attempt history remain authoritative.
 
+Public-input preparation requires the physical assigned `/workspace` directory,
+which may already contain Paid and its Git metadata. Before creating anything
+or invoking a downloader, it refuses occupied or symlinked recipe paths and a
+symlinked `tools` parent. It claims the first reserved directory exclusively so
+a repeated or concurrent preparation cannot overwrite the first attempt. An
+incomplete preparation is retained for the normal owned-artifact lifecycle;
+the script never deletes existing workspace contents to retry.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternatives rejected |

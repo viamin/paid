@@ -124,3 +124,12 @@
   *Code:* `SdkBuildEnvironments::MetadataProbe`,
   `Containers::Backends::Base#supports_network_disabled_containers?`,
   `Containers::Backends::Swarm`.
+
+- [x] **RUST-SDK-BUILD-014** — When public SDK inputs are prepared, the script
+  SHALL require the physical assigned `/workspace` root and refuse occupied or
+  symlinked reserved paths before creating directories or invoking a downloader.
+  It SHALL permit the existing Paid checkout and unrelated workspace files,
+  exclusively claim its first reserved path, and never delete existing data to
+  retry a preparation.
+  *Tests:* `spec/scripts/sdk_job_local_preparation_script_spec.rb`.
+  *Code:* `docs/intent/isolated-rust-sdk-build/job-local-baseline/prepare-inputs.sh`.

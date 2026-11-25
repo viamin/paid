@@ -33,6 +33,12 @@ Reserve the recipe's previously absent paths in the isolated job-owned
 `toolchain`, `unpack`, `cargo`, `target`, and `source.before.sha`.
 Do not overwrite an existing checkout, build directory or another run's files.
 Use the normal workspace/artifact lifecycle if these names are already owned.
+Preparation enforces the physical assigned `/workspace` root and checks every
+reserved path, including dangling links and a symlinked `tools` parent, before
+creating directories or downloading data. Existing Paid files and `.git` are
+allowed. Its first directory claim is exclusive: an interrupted preparation
+must use the normal owned-artifact lifecycle rather than overwrite or delete
+the earlier attempt's files.
 Never run these scripts on the host or stage the generated data into Paid.
 For a job whose Paid checkout is `/workspace`, exclude these reserved build
 paths in that checkout's job-local `.git/info/exclude` before preparation.
@@ -44,13 +50,18 @@ components and protoc 34, fetches the exact SDK/Core commits, verifies the
 Ruby-to-Core gitlink, exports their source archives and verifies Cargo.lock.
 Its public URLs, SHA-256 values and source identities are in `manifest.json`;
 it has no dependency on the operator's private input tar or `/tmp` files.
-The exact public-input assembly script completed end to end in the measured
+The public-input assembly body completed end to end in the measured
 agent image as UID 1001 on 2026-11-25, verifying all Rust/protoc hashes,
 SDK/Core revisions, the gitlink and Cargo.lock. It exited 0 within its
 300-second envelope with no OOM; both actual private containers and the
 owned volume were absent at 11:41:23 UTC. This preparation run executed
 no Rust compiler, SDK test or server; the three baseline phases below
-were verified separately.
+were verified separately. The guarded script was then independently reexecuted
+end to end under the same profile and bounds, exiting 0 with all owned resources
+absent at 15:29:16 UTC. That receipt records the earlier guarded hash. The explicit
+conditional used for ShellCheck was independently reexecuted with exit 0 and all
+owned resources absent at 15:53:48 UTC. Six independent workspace and parallel
+admission checks also passed; the manifest keeps each verified identity separate.
 
 Set `RECIPE_DIR` to this recipe's directory in the checked-out Paid artifact.
 Run preparation with the existing job's ordinary public-download access:

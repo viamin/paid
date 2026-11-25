@@ -67,9 +67,17 @@
   "scope": "Verified environment-only job-local Core baseline and reachable handoff inputs; not a Core/Ruby prototype, native artifact/server test, published SDK adoption, worker quiescence or new native allowance.",
   "input_preparation": {
     "file": "prepare-inputs.sh",
-    "sha256": "17729b7c6c284193d27aad6cc1669113d758baa61bdeef2b3616cacf6421e58e",
-    "status": "Exact distributed preparation script executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T11:41:23Z. No compiler or server executed by preparation; baseline phase results are separate.",
-    "verified_at": "2026-11-25T11:41:23Z"
+    "sha256": "c4918629241a608a2b021e51ad040649e0a0c36d4b2fd1dc0eedd1f93d40ecbf",
+    "status": "Exact guarded preparation script executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T15:53:48Z. Six independent workspace and parallel-admission controls also passed. No compiler or server executed by preparation; unchanged baseline phase results are separate.",
+    "previous_verified_sha256": "17729b7c6c284193d27aad6cc1669113d758baa61bdeef2b3616cacf6421e58e",
+    "previous_verified_at": "2026-11-25T11:41:23Z",
+    "previous_verification": "Exact distributed preparation script executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T11:41:23Z. No compiler or server executed by preparation; baseline phase results are separate.",
+    "previous_guarded_verification": {
+      "sha256": "8c31959d7ce46331d9d4d5c5e8f0c0aab488f9cd7210a54e2437d2e7e400675a",
+      "verified_at": "2026-11-25T15:29:16Z",
+      "status": "Guarded public-input assembly executed successfully in the measured agent image as UID1001,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T15:29:16Z. No compiler/server executed by preparation; unchanged baseline phases retain separate receipts."
+    },
+    "verified_at": "2026-11-25T15:53:48Z"
   },
   "same_image_additional_tools": {
     "unzip": true,

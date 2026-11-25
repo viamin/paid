@@ -3,7 +3,31 @@
 # This assembles the pinned public input identities used by the successful baseline.
 set -eu
 : "${WORK_ROOT:?Set WORK_ROOT to an owned fresh job directory; never use the host root}"
-mkdir -p "$WORK_ROOT/downloads" "$WORK_ROOT/ruby" "$WORK_ROOT/tools/protoc" "$WORK_ROOT/toolchain-inputs"
+# @spec RUST-SDK-BUILD-014
+assigned_root=/workspace
+refuse() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+if [ "$WORK_ROOT" != "$assigned_root" ] || [ ! -d "$WORK_ROOT" ] || [ -L "$WORK_ROOT" ] || [ ! -w "$WORK_ROOT" ]; then
+  refuse "Use the physical assigned /workspace directory."
+fi
+[ "$(cd "$WORK_ROOT" && pwd -P)" = "$assigned_root" ] || refuse "The assigned workspace must not resolve elsewhere."
+if [ -L "$WORK_ROOT/tools" ] || { [ -e "$WORK_ROOT/tools" ] && [ ! -d "$WORK_ROOT/tools" ]; }; then
+  refuse "The tools parent must be an ordinary directory."
+fi
+for path in downloads ruby tools/protoc toolchain-inputs toolchain unpack cargo target source.before.sha; do
+  if [ -e "$WORK_ROOT/$path" ] || [ -L "$WORK_ROOT/$path" ]; then
+    refuse "Reserved SDK path already exists: $path"
+  fi
+done
+# The first exclusive mkdir also refuses a competing preparation after preflight.
+mkdir "$WORK_ROOT/downloads"
+mkdir "$WORK_ROOT/ruby" "$WORK_ROOT/toolchain-inputs"
+if [ ! -d "$WORK_ROOT/tools" ]; then
+  mkdir "$WORK_ROOT/tools"
+fi
+mkdir "$WORK_ROOT/tools/protoc"
 fetch_checked() {
   curl --fail --location --connect-timeout 10 --max-time 120 --silent --show-error "$1" -o "$2"
   printf '%s  %s\n' "$3" "$2" | sha256sum -c -
