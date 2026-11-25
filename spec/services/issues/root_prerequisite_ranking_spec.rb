@@ -94,6 +94,20 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     expect(ranking.paths.sole.completion_alone_makes_runnable).to be(false)
   end
 
+  # @spec DEPENDENCY-DECLARATIONS-011, PARTIAL-CLOSEOUT-048
+  it "excludes a fulfilled merged and deployed PR prerequisite from root ranking" do
+    root = issue(1)
+    blocked = issue(2)
+    fulfilled_prerequisite = create(:issue, :pull_request, project:, github_number: 3, github_state: "closed",
+      paid_state: "completed", pr_review_phase: "merged", deployed_at: Time.current)
+    depends(blocked, root)
+    depends(blocked, fulfilled_prerequisite)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ])
+
+    expect(ranking.map(&:root)).to eq([ root ])
+  end
+
   # @spec PARTIAL-CLOSEOUT-048
   it "does not treat an undeployed merged PR reached through an external dependency as a blocker" do
     upstream_project = create(:project, account:)
