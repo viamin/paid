@@ -3937,6 +3937,8 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("auth_expired")
         expect(agent_run.auth_provider).to eq("codex")
         expect(agent_run.error_message).to include("refresh_token_reused")
+        attempt = agent_run.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        expect(attempt.dig("diagnostics", "classification_provenance", "terminal_diagnostic")).to include("refresh_token_reused")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
         )
@@ -4067,6 +4069,23 @@ expect(container_service).to receive(:execute).with(
             "terminal_diagnostic" => include("authentication_error")
           )
         )
+      end
+
+      it "records the matched provider envelope instead of trailing MCP task data" do # @spec RUNNER-FALLBACK-015
+        stdout = [
+          codex_provider_auth_error,
+          codex_mcp_tool_output(content: "authentication_error authored by the completed MCP tool")
+        ].join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: stdout, stderr: "", exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        attempt = agent_run.reload.runners_attempted.find { |entry| entry["error_type"] == "auth_expired" }
+        diagnostic = attempt.dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("authentication_error")
+        expect(diagnostic).not_to include("completed MCP tool")
       end
 
       it "marks the run as auth_expired when preflight exits 0 with auth error output" do

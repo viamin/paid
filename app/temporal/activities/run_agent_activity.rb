@@ -2417,7 +2417,7 @@ module Activities
           stdout_result,
           origin: "stdout",
           event_path: "error.message",
-          terminal_diagnostic: codex_terminal_diagnostic(stdout)
+          terminal_diagnostic: codex_stdout_diagnostic(stdout)
         )
       end
 
@@ -2428,7 +2428,7 @@ module Activities
         stderr_result,
         origin: "stderr",
         event_path: "stderr",
-        terminal_diagnostic: codex_terminal_diagnostic(stderr)
+        terminal_diagnostic: sanitized_codex_diagnostic(stderr)
       )
     end
 
@@ -2436,8 +2436,21 @@ module Activities
       classification&.fetch(:reason, nil)&.to_sym == :auth_expired
     end
 
-    def codex_terminal_diagnostic(output)
-      AgentRun::ErrorMessageSanitizer.call(text: output.to_s.lines.last.to_s).truncate(500)
+    def codex_stdout_diagnostic(stdout)
+      stdout.to_s.each_line do |line|
+        classification = AgentHarness::Providers::Codex.classify_output_chunk(
+          "#{line.chomp}\n",
+          stream: :stdout,
+          stdout_buffer: +""
+        )
+        return sanitized_codex_diagnostic(line) if auth_classification?(classification)
+      end
+
+      "Codex reported auth_expired on stdout"
+    end
+
+    def sanitized_codex_diagnostic(output)
+      AgentRun::ErrorMessageSanitizer.call(text: output.to_s).truncate(500)
     end
 
     def codex_auth_provenance(classification, origin:, event_path:, terminal_diagnostic: nil)
