@@ -303,14 +303,23 @@ RSpec.describe CiWorkflowFile, :no_db do
       expect(run).to include("DEPENDENCY_SETUP_BACKOFF_SECONDS=10")
       expect(run).to include("bin/retry-with-process-group bash -c")
       expect(run).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
-      expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
-      expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
     end
+  end
 
+  # @spec TEST-SUITE-024
+  it "sets bounded ast-grep download timeouts" do
     installer = Rails.root.join("bin/install-ast-grep").read
     expect(installer).to include('--connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}"')
     expect(installer).to include('--max-time "${AST_GREP_DOWNLOAD_MAX_TIME:-300}"')
     expect(installer).to include('sha256sum -c -')
+
+    %w[test-shards shard-recovery].each do |job_name|
+      run = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install ast-grep" }.fetch("run")
+
+      expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
+      expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
+    end
   end
 
   # @spec TEST-SUITE-023
