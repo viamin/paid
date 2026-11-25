@@ -6,6 +6,8 @@ module AgentRuns
   class PrioritizeFirstImplementation
     def self.call(...) = new(...).call
 
+    def self.eligible?(agent_run:) = new(agent_run:, actor: nil).eligible?
+
     def initialize(agent_run:, actor:)
       @agent_run = agent_run
       @actor = actor
@@ -26,6 +28,16 @@ module AgentRuns
       true
     end
 
+    def eligible?
+      return false unless unclaimed_automatic_first_attempt?
+      return false if agent_run.operator_coding_priority_requested_at.present?
+      return false if agent_run.rate_limited_until&.future?
+      return false if agent_run.project.quality_paused?
+      return false unless source_still_eligible?
+
+      no_preceding_implementation?
+    end
+
     private
 
     attr_reader :agent_run, :actor
@@ -35,16 +47,6 @@ module AgentRuns
         ProjectPolicy.new(actor, agent_run.project).run_agent?
 
       raise Pundit::NotAuthorizedError, "Not authorized to prioritize a first implementation"
-    end
-
-    def eligible?
-      return false unless unclaimed_automatic_first_attempt?
-      return false if agent_run.operator_coding_priority_requested_at.present?
-      return false if agent_run.rate_limited_until&.future?
-      return false if agent_run.project.quality_paused?
-      return false unless source_still_eligible?
-
-      no_preceding_implementation?
     end
 
     def unclaimed_automatic_first_attempt?

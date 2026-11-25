@@ -51,6 +51,8 @@ module Projects
       @egress_security_events = egress_audit_events.recent.limit(50).load
       @egress_denied_event_count = egress_audit_events.count
       @session_summary = @agent_run.agent_run_session_summary
+      @first_implementation_priority_available = policy(@project).run_agent? &&
+        AgentRuns::PrioritizeFirstImplementation.eligible?(agent_run: @agent_run)
       load_continuation_authority
     end
 
