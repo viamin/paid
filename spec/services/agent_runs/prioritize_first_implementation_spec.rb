@@ -33,6 +33,14 @@ RSpec.describe AgentRuns::PrioritizeFirstImplementation do # @spec QUEUE-TIER-01
     expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested").count).to eq(1)
   end
 
+  it "refuses priority while the project is quality paused" do # @spec QUEUE-TIER-010
+    project.update!(quality_paused_at: 1.hour.ago)
+
+    expect(described_class.call(agent_run:, actor:)).to be(false)
+    expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
+    expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
+  end
+
   it "rejects cross-tenant actors and invalidated, delayed, retry, and exhausted sources" do
     expect { described_class.call(agent_run:, actor: create(:user)) }.to raise_error(Pundit::NotAuthorizedError)
 

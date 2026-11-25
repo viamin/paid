@@ -41,6 +41,7 @@ module AgentRuns
       return false unless unclaimed_automatic_first_attempt?
       return false if agent_run.operator_coding_priority_requested_at.present?
       return false if agent_run.rate_limited_until&.future?
+      return false if agent_run.project.quality_paused?
       return false unless source_still_eligible?
 
       no_preceding_implementation?

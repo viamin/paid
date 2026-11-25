@@ -132,5 +132,6 @@
   *Code:* `AgentRuns::PrioritizeFirstImplementation`,
   `Tools::PrioritizeFirstImplementation`, `AgentRun#queue_priority_tier`.
   *Test:* `spec/services/agent_runs/prioritize_first_implementation_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`,
   `spec/mcp/tools/prioritize_first_implementation_spec.rb`,
   `spec/models/agent_run_spec.rb`.

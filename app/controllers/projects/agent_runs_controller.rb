@@ -352,6 +352,11 @@ module Projects
     def prioritize_first_implementation
       authorize @project, :run_agent?
 
+      unless ActiveModel::Type::Boolean.new.cast(params[:confirmed])
+        redirect_to project_path(@project), alert: "Explicit confirmation is required to request priority."
+        return
+      end
+
       run = @project.agent_runs.find_by(id: params[:agent_run_id])
       unless run && AgentRuns::PrioritizeFirstImplementation.call(agent_run: run, actor: current_user)
         redirect_to project_path(@project), alert: "That first implementation is no longer eligible for priority."
