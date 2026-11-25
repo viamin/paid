@@ -130,19 +130,18 @@
   system SHALL add `paid-code-reviewer[bot]` to that project's trusted GitHub
   username allowlist; when that enabled reviewer leaves unresolved PR review
   threads, the PR follow-up prompt SHALL include those review comments and
-  SHALL return their thread IDs so the successful create-pr follow-up can
-  resolve them after pushing changes. The PR review-thread path SHALL also
+  SHALL return their thread IDs for the current follow-up's evidence. The PR review-thread path SHALL also
   accept GitHub's bare `paid-code-reviewer` app-author form only for configured
   review-thread feedback, without adding that bare login to the global comment
   allowlist.
   *Code:* `Project#ensure_paid_reviewer_bot_allowlisted`,
   `Prompts::BuildForPr#trusted_review_threads`,
   `Prompts::BuildForPr#unresolved_review_thread_ids`,
-  `AgentExecutionWorkflow#resolve_followup_review_threads_after_push`.
+  `AgentExecutionWorkflow`.
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
 
-- [x] **FOCUSED-RUN-011** — When the latest review from an allowlisted human
+- [x] **FOCUSED-RUN-013** — When the latest review from an allowlisted human
   or configured review bot is a nonblank `COMMENTED` standalone review body
   submitted after the completed-run cutoff, the PR scanner SHALL emit the
   existing `review_feedback` follow-up route even with no unresolved inline
@@ -153,4 +152,45 @@
   at or before that cutoff SHALL NOT route a follow-up. Existing review, merge,
   retry, and allowance decisions remain unchanged.
   *Code:* `ScanPaidPrsActivity#standalone_review_feedback_from_reviews`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+- [x] **FOCUSED-RUN-011** — When an existing pull-request follow-up pushes a
+  changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
+  captured review thread merely because the run completed, pushed, or reports
+  that the feedback was already addressed. A thread remains actionable until a
+  current-head, explicitly authorized, exact-thread-version-bound assessment supplies explicit
+  supported rationale from evidence that includes the thread's original
+  finding. Complete thread evidence SHALL be fetched within finite page,
+  request, and evidence-size budgets, rejecting missing, repeated, or cyclic
+  pagination cursors. Failed, unavailable, incomplete, malformed, stale,
+  concurrently changed, over-budget, or no-op assessment cannot resolve it.
+  Immutable comparison file lists SHALL be complete within their configured
+  limit; a local cutoff or an unprovable upstream file-list limit SHALL refuse
+  assessment. Required per-file path, status, blob identity, change counts and
+  rename provenance SHALL be structurally valid before model authorization;
+  status SHALL be a declared GitHub diff-entry status. Binary metadata does
+  not require a textual patch. The bounded model evidence SHALL retain every
+  compared file, sharing its patch budget through explicit excerpts. If all
+  file metadata and bounded per-file evidence cannot fit, assessment SHALL
+  remain unavailable before a model request. A thread omitted from the
+  bounded prompt SHALL NOT be authorized.
+  This does not prohibit a supported no-code disposition such as invalid,
+  outdated, or already-fixed feedback.
+  *Code:* `AgentExecutionWorkflow#execute`,
+  `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`,
+  `GithubClient#detailed_compare_files`.
+  *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/services/github_client_spec.rb`,
+  `spec/temporal/activities/assess_followup_review_threads_activity_spec.rb`,
+  `spec/temporal/activities/resolve_review_threads_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+
+- [x] **FOCUSED-RUN-012** — When the latest review from a body-only-capable
+  reviewer has inline comments but no unresolved review threads, Paid SHALL NOT
+  admit another coding follow-up for those resolved comments. Paid SHALL keep a
+  genuine top-level-only finding actionable, fail closed when review-comment
+  data is unavailable, and SHALL NOT infer resolution from a changed related or
+  unrelated file.
+  *Code:* `ScanPaidPrsActivity#check_review_bot_status`,
+  `Automation::Signals::PullRequestCollector#review_inline_comment_state`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

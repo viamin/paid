@@ -2307,7 +2307,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      # @spec FOCUSED-RUN-011
+      # @spec FOCUSED-RUN-013
       it "routes the trusted body through review_feedback and excludes the untrusted body" do
         result = activity.execute(project_id: project.id)
 
@@ -2337,7 +2337,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      # @spec FOCUSED-RUN-011
+      # @spec FOCUSED-RUN-013
       it "does not route the clean verdict as standalone review feedback" do
         result = activity.execute(project_id: project.id)
 
@@ -2355,7 +2355,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         stub_github_for_pr(reviews: default_clean_copilot_review)
       end
 
-      # @spec FOCUSED-RUN-011
+      # @spec FOCUSED-RUN-013
       it "does not route the clean summary as standalone review feedback" do
         result = activity.execute(project_id: project.id)
 
@@ -2377,7 +2377,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      # @spec FOCUSED-RUN-011
+      # @spec FOCUSED-RUN-013
       it "does not route the superseded body" do
         expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
       end
@@ -3278,10 +3278,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
-      it "treats the review as already addressed and does not trigger" do
+      # @spec FOCUSED-RUN-012
+      it "keeps genuine top-level-only feedback actionable" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
 
@@ -3361,7 +3364,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
                      body: "Here are some automated review suggestions.",
                      submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
-          review_threads: []
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/services/fetch_issues_activity.rb",
+                            line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
@@ -3375,7 +3385,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([ "db/schema.rb" ])
       end
 
-      it "treats the review as unaddressed because the changed files are unrelated" do
+      # @spec FOCUSED-RUN-012
+      it "keeps the review actionable because unrelated changes are not resolution evidence" do
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result).size).to eq(1)
@@ -3400,7 +3411,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
                      body: "Here are some automated review suggestions.",
                      submitted_at: 2.hours.ago, commit_id: "rev_sha" } ],
-          review_threads: []
+          review_threads: [
+            {
+              id: "thread_1",
+              is_resolved: false,
+              comments: [ { body: "Fix this", path: "app/services/fetch_issues_activity.rb",
+                            line: 10, author: "chatgpt-codex-connector" } ]
+            }
+          ]
         )
         allow(github_client).to receive(:pull_request_review_comments)
           .with(project.full_name, 42)
@@ -3414,10 +3432,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           .and_return([ "app/services/fetch_issues_activity.rb", "db/schema.rb" ])
       end
 
-      it "treats the review as addressed because the diff touches the reviewed file" do
+      # @spec FOCUSED-RUN-012
+      it "keeps the review actionable because a same-file change is not resolution evidence" do
         result = activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_comments", "review_bot_review_pending")
       end
     end
 
@@ -3478,12 +3499,49 @@ RSpec.describe Activities::ScanPaidPrsActivity do
              created_at: 2.hours.ago, path: "app/services/fetch_issues_activity.rb",
              pull_request_review_id: 1 }
           ])
-        allow(github_client).to receive(:compare_changed_files)
-          .with(project.full_name, "rev_sha", "abc123")
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
           .and_raise(GithubClient::Error, "Not Found")
       end
 
-      it "falls back to treating the review as addressed" do
+      # @spec FOCUSED-RUN-012
+      it "fails closed and keeps the review actionable" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger_types = automation_scan_results(result).first[:triggers].map { |t| t[:type] }
+        expect(trigger_types).to include("review_bot_review_pending")
+      end
+    end
+
+    context "when codex inline feedback was resolved without changing the reviewed head" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 2)
+        create(:agent_run, :completed,
+          project: project,
+          source_pull_request_number: 42,
+          completed_at: 30.minutes.ago)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "chatgpt-codex-connector", state: "COMMENTED",
+                     body: "Here are some automated review suggestions.",
+                     submitted_at: 2.hours.ago, commit_id: "abc123" } ],
+          review_threads: [])
+        allow(github_client).to receive(:pull_request_review_comments)
+          .with(project.full_name, 42)
+          .and_return([
+            { id: 10, user_login: "chatgpt-codex-connector", body: "Fix pagination",
+             created_at: 2.hours.ago, path: "app/services/github_client.rb",
+             pull_request_review_id: 1 }
+          ])
+      end
+
+      # @spec FOCUSED-RUN-012
+      it "does not dispatch another coding follow-up for the resolved comments" do
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result)).to eq([])
@@ -12746,6 +12804,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, pr_number)
       .and_return(reviews)
+    allow(github_client).to receive(:pull_request_review_comments)
+      .with(project.full_name, pr_number)
+      .and_return([])
     allow(github_client).to receive(:commit)
       .with(project.full_name, head_sha)
       .and_return(commit_data)

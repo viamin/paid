@@ -443,7 +443,7 @@ RSpec.describe Prompts::BuildForPr do
 
   # @spec PROMPT-ASSEMBLY-018
   describe "#review_feedback_context_blocked?" do
-    # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-011
+    # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-013
     it "admits a trusted current standalone commented review with no inline threads" do
       allow(github_client).to receive(:pull_request_reviews)
         .with(project.full_name, 42)

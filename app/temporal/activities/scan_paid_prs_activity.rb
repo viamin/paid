@@ -2748,6 +2748,7 @@ module Activities
 
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
 
+    # @spec FOCUSED-RUN-012
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
       allowed_bot_logins: nil)
       allowed = allowed_bot_logins || allowed_review_bot_logins(project)
@@ -2846,33 +2847,20 @@ module Activities
             # structured-log consumers distinguish this path from the
             # thread-based Copilot flow above.
             paid_agent_limit_reached_for_latest_review ? body_only_exhausted_triggers : body_only_pending_triggers
-          elsif body_only_review_bot?(latest&.dig(:user_login)) &&
-              !review_diff_touches_reviewed_files?(client, project, issue, latest)
-            # Body-only bot whose review pre-dates the last agent run
-            # (timestamp guard passed), but the interceding diff did not
-            # touch any file mentioned in the review's inline comments.
-            # Treat as still-unaddressed to prevent unrelated changes
-            # (e.g. a CI schema fix) from clearing review findings.
-            if paid_agent_limit_reached_for_latest_review
+          elsif body_only_review_bot?(latest&.dig(:user_login))
+            state = pull_request_collector(project, client:)
+              .review_inline_comment_state(issue:, review: latest)
+            if state == :unavailable
+              data_incomplete_review_trigger
+            elsif state == :present
+              resolved_inline_review_triggers(project, issue, latest)
+            elsif paid_agent_limit_reached_for_latest_review
               body_only_exhausted_triggers
             elsif RunnerSupport.runner_bot_username_for?("paid_agent", latest&.dig(:user_login))
-              # Emit paid_agent_review_pending alongside the bot triggers so
-              # the workflow queues a review run. Without this, the scanner
-              # keeps starting create_pr follow-ups that don't touch the
-              # reviewed files, and no fresh review ever re-evaluates the
-              # code (#1395).
               body_only_pending_triggers + check_paid_agent_review_status(project, issue)
             else
               body_only_pending_triggers
             end
-          elsif RunnerSupport.runner_bot_username_for?("paid_agent", latest&.dig(:user_login))
-            # Thread-based bot with all bot threads resolved, or body-only
-            # review already addressed by a subsequent agent run whose diff
-            # touches at least one reviewed file. Treat as effectively clean
-            # to avoid re-requesting reviews that would produce no new
-            # comments.
-            pending_review = check_paid_agent_review_status(project, issue)
-            pending_review.presence || []
           else
             []
           end
@@ -3253,12 +3241,16 @@ module Activities
       submitted_at > cutoff
     end
 
-    # Returns true when the diff between the review's commit and the PR
-    # HEAD touches at least one file mentioned in the review's inline
-    # comments. Falls back to false when inline comments have no file
-    # paths, because a body-only review gives us no evidence that a
-    # subsequent run addressed the feedback. Comparison fetch failures
-    # still fall back to true to avoid wedging on API errors.
+    def data_incomplete_review_trigger
+      [ { type: "review_bot_review_pending", details: "Latest review comments could not be verified", data_incomplete: true } ]
+    end
+
+    def resolved_inline_review_triggers(project, issue, review)
+      return [] unless RunnerSupport.runner_bot_username_for?("paid_agent", review&.dig(:user_login))
+
+      check_paid_agent_review_status(project, issue).presence || []
+    end
+
     def review_diff_touches_reviewed_files?(client, project, issue, review)
       return true if client.nil? || project.nil? || issue.nil?
 
@@ -3351,7 +3343,7 @@ module Activities
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
     end
 
-    # @spec FOCUSED-RUN-011
+    # @spec FOCUSED-RUN-013
     def standalone_review_feedback_from_reviews(project, reviews, last_run)
       return [] if reviews.nil?
 

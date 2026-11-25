@@ -303,7 +303,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       end
     end
 
-    # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-011
+    # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-013
     it "prepares a review-feedback prompt from a trusted standalone review finding" do
       project.update!(allowed_github_usernames: [ "reviewer" ])
       agent_run.update!(focus: "review_feedback")
