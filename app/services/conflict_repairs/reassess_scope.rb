@@ -39,7 +39,7 @@ module ConflictRepairs
     rescue GithubClient::Error
       return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
 
-      Result.new(:accepted, record("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha), nil)
+      publish("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha)
     end
 
     private
@@ -70,14 +70,26 @@ module ConflictRepairs
       return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
 
       unless current.head.sha == pr.head.sha && current.base.sha == pr.base.sha
-        return Result.new(:accepted, record("unavailable", "Provider base or head changed during scope reassessment", nil, nil, current.head.sha, current.base.sha), nil)
+        return publish("unavailable", "Provider base or head changed during scope reassessment", nil, nil, current.head.sha, current.base.sha)
       end
 
-      Result.new(:accepted, record(decision.status, decision.explanation, decision.base_imported_paths, decision.repair_authored_paths, current.head.sha, pr.base.sha), nil)
+      publish(decision.status, decision.explanation, decision.base_imported_paths, decision.repair_authored_paths, current.head.sha, pr.base.sha)
     end
 
     def unavailable(message, provider_head)
-      Result.new(:accepted, record("unavailable", message, [], [], provider_head), nil)
+      publish("unavailable", message, [], [], provider_head)
+    end
+
+    def publish(...)
+      requested_by.with_lock do
+        requested_by.account_memberships.where(account_id: project.account_id).lock.load
+        requested_by.project_memberships.where(project_id: project.id).lock.load
+        return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
+        Result.new(:accepted, record(...), nil)
+      end
+    rescue ActiveRecord::RecordNotFound
+      refused("requesting_actor_not_authorized")
     end
 
     def record(status, explanation, base_paths, repair_paths, provider_head, base_sha = nil)

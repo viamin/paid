@@ -235,7 +235,12 @@
   current integration base. Paid SHALL reauthorize the recorded requesting
   actor immediately before each provider or semantic operation and after
   external work before publishing evidence; a nil, removed, or
-  no-longer-authorized actor cannot publish evidence. After semantic work it
+  no-longer-authorized actor cannot publish evidence. The final authorization
+  and evidence insertion SHALL serialize with requester identity and account
+  or project membership changes: a revocation that commits first SHALL refuse
+  publication, while an authorized publication may commit before a later
+  revocation. Provider and semantic work SHALL remain outside that publication
+  transaction. After semantic work it
   SHALL re-read both base and head before publishing. Unavailable and stale
   outcomes are immutable, idempotent records, while a later successful bounded
   request may supersede unavailable evidence for the same artifact range.

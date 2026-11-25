@@ -123,8 +123,12 @@ same base and HEAD is the bounded recovery route. Reassessment reauthorizes its
 requesting actor before each provider and semantic operation and after external
 work before publication, then fences both provider revisions before persisting
 its immutable result. Revocation during a provider comparison or semantic
-assessment refuses further work and publication. Repeated unavailable
-or stale observations are idempotently retained; a recovered provider may add a
+assessment refuses further work and publication. Final publication locks the
+requester and their applicable account and project membership rows, rechecks
+the current policy, and inserts evidence in one short transaction. Role changes
+that commit first prevent publication; later changes wait for the authorized
+insert. Provider reads and semantic assessment hold none of these locks.
+Repeated unavailable or stale observations are idempotently retained; a recovered provider may add a
 later approved result without mutating that history. This gate does not change the
 separate review-freshness classifier or its policy exceptions.
 It persists separate base-import and repair-authored paths so the normal update
