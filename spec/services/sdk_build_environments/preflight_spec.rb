@@ -50,6 +50,18 @@ RSpec.describe SdkBuildEnvironments::Preflight, :no_db do
     end
 
     # @spec RUST-SDK-BUILD-010
+    it "records an absent optional rustup observation without failing preflight" do
+      rustup = { command: "rustup", path: nil, interpreter_path: nil, execution_status: nil }
+
+      receipt = described_class.call(facts: facts(toolchains: [ *facts[:toolchains], rustup ]))
+
+      expect(receipt[:verdict]).to be(:compatible)
+      expect(receipt[:toolchains]).to include(hash_including(command: "rustup", path: nil))
+      expect(receipt[:checks]).not_to include(hash_including(name: "toolchain_presence:rustup"))
+      expect(receipt[:checks]).not_to include(hash_including(name: "toolchain_loader:rustup"))
+    end
+
+    # @spec RUST-SDK-BUILD-010
     it "fails when a required toolchain command cannot run" do
       toolchains = facts[:toolchains].map do |toolchain|
         toolchain.merge(execution_status: toolchain[:command] == "cargo" ? 127 : 0)

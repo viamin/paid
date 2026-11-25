@@ -15,8 +15,8 @@ RSpec.describe "sdk_build_environment:preflight" do
       image: { reference: "rust:1.95.0-bookworm", id: "sha256:7cf1", digest: "sha256:6258", platform: "arm64" },
       process_architecture: "aarch64",
       toolchains: [
-        { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: "/lib/ld-linux-aarch64.so.1" },
-        { command: "rustc", path: "/usr/local/rustup/toolchains/bin/rustc", interpreter_path: "/lib/ld-linux-aarch64.so.1" }
+        { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: "/lib/ld-linux-aarch64.so.1", execution_status: 0 },
+        { command: "rustc", path: "/usr/local/rustup/toolchains/bin/rustc", interpreter_path: "/lib/ld-linux-aarch64.so.1", execution_status: 0 }
       ]
     }.merge(overrides)
   end
