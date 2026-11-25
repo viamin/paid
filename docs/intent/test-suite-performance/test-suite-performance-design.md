@@ -58,11 +58,10 @@ and hosted-runner stalls without skipping setup or relaxing the shard's
 360-minute job boundary.
 
 The same shard paths install the pinned ast-grep binary before running specs.
-Each release-asset transfer has explicit connection and total-transfer bounds.
-The existing finite, process-group supervisor retries the complete install and
-reaps a timed-out curl descendant before the next fresh connection. The
-downloaded archive remains checksum-verified before installation; exhausted
-retries fail the shard rather than skipping structural-search coverage.
+Each release-asset transfer has explicit connection and total-transfer bounds,
+then uses the existing finite retry policy. The downloaded archive remains
+checksum-verified before installation; exhausted retries fail the shard rather
+than skipping structural-search coverage.
 
 ## Platform-dropped shard recovery
 

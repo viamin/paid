@@ -23,7 +23,8 @@ RSpec.describe Activities::RunAgentActivity do
     # The run's admission guard locks and reloads the project, which reloads
     # its token association too. Stub the external boundary rather than the
     # discarded cached association.
-    comments_url = %r{https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/comments}
+    repo = Regexp.escape(project.full_name)
+    comments_url = %r{\Ahttps://api\.github\.com/repos/#{repo}/issues/\d+/comments(?:\?.*)?\z}
     stub_request(:get, comments_url)
       .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
@@ -6771,7 +6772,8 @@ expect(container_service).to receive(:execute).with(
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
-        comments_url = %r{https://api.github.com/repos/#{project_without_creator.full_name}/issues/#{issue_for_orphan.github_number}/comments}
+        repo = Regexp.escape(project_without_creator.full_name)
+        comments_url = %r{\Ahttps://api\.github\.com/repos/#{repo}/issues/#{issue_for_orphan.github_number}/comments(?:\?.*)?\z}
         stub_request(:get, comments_url)
           .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 

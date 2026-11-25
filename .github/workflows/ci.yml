@@ -354,14 +354,28 @@ jobs:
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # Bound a stalled GitHub release-asset transfer and supervise each
-          # complete attempt in its own process group. This ensures a timed
-          # out curl cannot survive to contend with the next fresh connection.
+          # Bound a stalled GitHub release-asset transfer well below the
+          # outer retry attempt so a later retry can use a fresh connection.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
           export AST_GREP_DOWNLOAD_MAX_TIME=60
-          DEPENDENCY_SETUP_TIMEOUT=90s \
-            DEPENDENCY_SETUP_BACKOFF_SECONDS=10 \
-            bin/retry-with-process-group bash -c 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            5m \
+            "ast-grep install timed out or failed" \
+            bash -lc 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
 
       - name: Install PostgreSQL client
         # @spec TOOLCHAIN-PIN-028
@@ -734,13 +748,28 @@ jobs:
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # Keep dropped-shard recovery on the same bounded, process-group
-          # supervised release download contract as the matrix shards.
+          # Keep dropped-shard recovery on the same bounded release download
+          # contract as the matrix shards.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
           export AST_GREP_DOWNLOAD_MAX_TIME=60
-          DEPENDENCY_SETUP_TIMEOUT=90s \
-            DEPENDENCY_SETUP_BACKOFF_SECONDS=10 \
-            bin/retry-with-process-group bash -c 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            5m \
+            "ast-grep install timed out or failed" \
+            bash -lc 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
 
       - name: Install PostgreSQL client
         # @spec TOOLCHAIN-PIN-028
