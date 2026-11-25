@@ -246,8 +246,9 @@
   *Code:* `Workflows::AgentExecutionWorkflow#execute`,
   `Activities::CompleteExistingPrRunActivity`.
 
-- [x] **TEMPORAL-ORCHESTRATION-019** — When a queued existing `AgentRun` is
-  resumed by `CreateAgentRunActivity`, Paid SHALL record secret-free,
+- [x] **TEMPORAL-ORCHESTRATION-019** — When `CreateAgentRunActivity` resumes
+  an existing `AgentRun` that is `queued` or in the scheduler's pre-agent
+  `running` state, Paid SHALL record secret-free,
   per-stage start, completion, and failure diagnostics for runner
   revalidation, feature assessment, issue-state publication, model selection,
   prompt preparation, user-settings/tier validation, marketplace attachment,
@@ -256,7 +257,7 @@
   attempt, stage, outcome, and elapsed time; it SHALL NOT include prompts,
   credentials, provider payloads, or exception messages. Before every resumed
   setup stage, Paid SHALL verify that the activity attempt still owns the
-  queued run and that the run is not terminal. A superseded, cancelled, or
+  queued-run resume attempt and that the run is not terminal. A superseded, cancelled, or
   late attempt SHALL stop before it can admit `RunAgent` work or overwrite a
   newer terminal outcome. Retried setup SHALL retain the original run and
   workflow identity, tolerate already-persisted idempotent side effects, and
