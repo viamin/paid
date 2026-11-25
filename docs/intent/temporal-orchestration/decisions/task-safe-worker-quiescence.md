@@ -262,21 +262,27 @@ token and unregisters eager work before it can support resume.
 
 The local checkout was recreated with `git clone --branch v1.11.0 --depth 1
 --recurse-submodules`; `HEAD` and the checked-out submodule resolved to the
-revisions above. A disposable Rust 1.88.0 toolchain was then installed outside
-the Paid repository, using `RUSTUP_HOME=/workspace/.paid-temporal-rustup` and
-`CARGO_HOME=/workspace/.paid-temporal-cargo`. It could not execute even
-`cargo --version`: the installed `cargo` proxy failed before Cargo started
-with `OrbStack ERROR: Dynamic loader not found: /lib64/ld-linux-x86-64.so.2`.
-The host reported `aarch64`; reinstalling with the
-`aarch64-unknown-linux-gnu` default-host option produced the same proxy-loader
-failure. Consequently `cargo test -p temporal-sdk-core --lib worker
---no-default-features` was not run, and no Core/Ruby prototype patch or
-SDK/server harness result is claimed.
+revisions above. An earlier disposable Rust installation failed before Cargo
+started because its proxy could not find an x86 dynamic loader on an aarch64
+host. That historical failure does not describe the current build baseline.
 
-The checkout and toolchain were disposable research material and are not a
-retained artifact or a Paid dependency. Issue #5358 owns provision of a
-compatible isolated Rust runner. Once it supplies a verified runner, the
-prototype owner must freshly clone the exact Ruby/Core revisions above there,
-record the image and toolchain evidence, and run the baseline command before
-preparing or claiming a Core/Ruby patch or lifecycle harness. No further local
-toolchain installation or operating SDK pin change is part of this decision.
+The exact source baseline was subsequently compiled in an isolated linux/arm64
+Rust 1.95.0-bookworm environment (the checked-in Core development toolchain),
+with protoc 34.0. `cargo fetch --locked` completed with network access, then
+`cargo check --locked --offline --package temporalio-sdk-core` completed
+successfully from the Ruby SDK workspace. The Ruby `Cargo.lock` was unchanged
+before and after both commands. This proves only that the pinned Core baseline
+builds with its actual package name, `temporalio-sdk-core`; it is not a worker
+test, a Core/Ruby prototype, or a lifecycle-harness result.
+
+This runner has the exact sources available at
+`/tmp/paid-temporalio-prototype`, but it has neither a Cargo/Rust toolchain nor
+a container runtime. It therefore cannot honestly prepare a compiled local
+Core/Ruby patch or execute the required disposable-server harness. No
+uncompiled or simulated admission primitive is retained as a substitute. Issue
+5358 owns provision of a compatible isolated Rust runner. Once it supplies a
+verified runner, the prototype owner must freshly clone the exact Ruby/Core
+revisions above there, run the successful baseline command with the checked-in
+toolchain and lockfile, then retain the actual Core/Ruby patch, harness result,
+and cleanup receipt. No further local toolchain installation or operating SDK
+pin change is part of this decision.
