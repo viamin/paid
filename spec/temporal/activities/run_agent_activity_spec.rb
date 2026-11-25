@@ -162,6 +162,22 @@ RSpec.describe Activities::RunAgentActivity do
     reset_at
   end
 
+  # @spec TEMPORAL-ORCHESTRATION-019
+  it "rejects a terminal run before starting agent execution" do
+    agent_run.update!(status: "failed", error_message: "newer terminal failure")
+
+    expect(activity).not_to receive(:run_agent_with_runner)
+
+    expect {
+      activity.execute(agent_run_id: agent_run.id)
+    }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+      expect(error.type).to eq("RunAgentAdmissionSuperseded")
+      expect(error.non_retryable).to be(true)
+    }
+
+    expect(agent_run.reload).to have_attributes(status: "failed", error_message: "newer terminal failure")
+  end
+
   def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
     attempts.times do
       timed_out_run = create_runner_backed_agent_run(project: project, runner: runner)

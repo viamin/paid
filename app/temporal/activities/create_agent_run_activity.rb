@@ -531,6 +531,10 @@ module Activities
       resume_queued_stage(agent_run, attempt, "configuration_bundle_assignment") { assign_configuration_bundle(agent_run) }
       resume_queued_stage(agent_run, attempt, "strategy_selection") { select_and_log_orchestration_strategy(agent_run) }
 
+      # A terminal update can race the final stage's completion check. Recheck
+      # immediately before returning the payload that admits RunAgent.
+      ensure_queued_resume_attempt_current!(agent_run, attempt)
+
       logger.info(
         message: "agent_execution.queued_run_resumed",
         agent_run_id: agent_run.id,

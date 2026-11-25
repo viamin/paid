@@ -216,7 +216,10 @@ state. The scheduler's pre-agent `running` state remains eligible alongside
 performs setup. A later Temporal attempt supersedes an earlier one, and a
 terminal run supersedes both. A superseded attempt raises a typed non-retryable
 setup error instead of returning a successful activity result, so it cannot
-advance the workflow to `RunAgent` or overwrite the newer terminal result.
+advance the workflow to `RunAgent` or overwrite the newer terminal result. The
+activity repeats that check immediately before returning its admission payload,
+and `RunAgent` separately rejects an already-terminal run before starting
+agent work.
 Setup remains idempotent on retry: runner synchronization, marketplace
 attachment, model selection, policy persistence, configuration assignment, and
 strategy logging reuse their existing persisted records. This is an
