@@ -3977,6 +3977,24 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "retains an incomplete terminal stdout auth diagnostic" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.failure(
+          error: "exit 1",
+          stdout: JSON.generate(type: "error", message: "authentication_error"),
+          stderr: "",
+          exit_code: 1
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        diagnostic = agent_run.reload.runners_attempted
+          .find { |entry| entry["error_type"] == "auth_expired" }
+          .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("authentication_error")
+      end
+
       it "records the late stderr refresh-token diagnostic without startup or trailing noise" do # @spec RUNNER-FALLBACK-015
         stderr = ([ "Codex startup diagnostic" ] * 100 + [ "refresh_token_reused", "private-terminal-noise" ]).join("\n")
         result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
