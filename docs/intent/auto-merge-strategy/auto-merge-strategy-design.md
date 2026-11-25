@@ -120,8 +120,10 @@ auto-merge blocker and the merge activity rechecks it against a freshly fetched
 HEAD before provider merge I/O. An assessment for another HEAD cannot block a
 newer independent result, while a later complete approved assessment for the
 same base and HEAD is the bounded recovery route. Reassessment reauthorizes its
-requesting actor immediately before provider and semantic work, then fences both
-provider revisions before persisting its immutable result. Repeated unavailable
+requesting actor before each provider and semantic operation and after external
+work before publication, then fences both provider revisions before persisting
+its immutable result. Revocation during a provider comparison or semantic
+assessment refuses further work and publication. Repeated unavailable
 or stale observations are idempotently retained; a recovered provider may add a
 later approved result without mutating that history. This gate does not change the
 separate review-freshness classifier or its policy exceptions.

@@ -131,4 +131,70 @@ RSpec.describe ConflictRepairs::ReassessScope do
 
     expect(result.evidence.integration_base_sha).to eq("base-sha")
   end
+
+  it "refuses comparison work when the requester loses authorization during the head read" do
+    allow(client).to receive(:pull_request) do
+      requester.add_role(:viewer, project.account)
+      expect(AgentRunPolicy.new(requester.reload, run).retry?).to be(false)
+      pr
+    end
+    expect(client).not_to receive(:compare_summary)
+    expect(ConflictRepairs::AssessScope).not_to receive(:call)
+
+    expect(described_class.call(agent_run: run, requested_by: requester))
+      .to have_attributes(status: :refused, reason: "requesting_actor_not_authorized", evidence: nil)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run)).to be_empty
+  end
+
+  it "refuses further provider and semantic work after revocation during comparison" do
+    expect(client).to receive(:compare_summary).once do
+      requester.add_role(:viewer, project.account)
+      expect(AgentRunPolicy.new(requester.reload, run).retry?).to be(false)
+      { files: [] }
+    end
+    expect(ConflictRepairs::AssessScope).not_to receive(:call)
+
+    expect(described_class.call(agent_run: run, requested_by: requester))
+      .to have_attributes(status: :refused, reason: "requesting_actor_not_authorized", evidence: nil)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run)).to be_empty
+  end
+
+  it "refuses publication when the requester loses authorization during semantic assessment" do
+    allow(ConflictRepairs::AssessScope).to receive(:call) do
+      requester.add_role(:viewer, project.account)
+      expect(AgentRunPolicy.new(requester.reload, run).retry?).to be(false)
+      ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "bounded repair", base_imported_paths: [], repair_authored_paths: [])
+    end
+
+    expect(described_class.call(agent_run: run, requested_by: requester))
+      .to have_attributes(status: :refused, reason: "requesting_actor_not_authorized", evidence: nil)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run)).to be_empty
+    expect(run.reload).to have_attributes(status: "failed", result_commit_sha: "result-sha")
+  end
+
+  it "refuses publication when the requester loses authorization during the final provider read" do
+    allow(ConflictRepairs::AssessScope).to receive(:call).and_return(
+      ConflictRepairs::AssessScope::Result.new(status: "approved", explanation: "bounded repair", base_imported_paths: [], repair_authored_paths: []))
+    reads = 0
+    allow(client).to receive(:pull_request) do
+      reads += 1
+      requester.add_role(:viewer, project.account) if reads == 2
+      pr
+    end
+
+    expect(described_class.call(agent_run: run, requested_by: requester))
+      .to have_attributes(status: :refused, reason: "requesting_actor_not_authorized", evidence: nil)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run)).to be_empty
+  end
+
+  it "does not record an unavailable outcome for a requester revoked during failed provider work" do
+    allow(client).to receive(:pull_request) do
+      requester.add_role(:viewer, project.account)
+      raise GithubClient::Error, "provider unavailable"
+    end
+
+    expect(described_class.call(agent_run: run, requested_by: requester))
+      .to have_attributes(status: :refused, reason: "requesting_actor_not_authorized", evidence: nil)
+    expect(ConflictRepairScopeEvidence.where(agent_run: run)).to be_empty
+  end
 end
