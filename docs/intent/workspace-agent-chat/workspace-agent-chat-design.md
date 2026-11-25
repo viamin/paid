@@ -25,8 +25,9 @@ runner/model that passes the mode, credential, project-policy, privacy, and
 availability gates. Each turn creates a Paid-owned request record before a
 stateless native CLI invocation. The invoker uses the current system prompt and
 last 20 non-system messages within a 64 KiB UTF-8 framed budget, receives
-streamed progress, and persists only final assistant content plus sanitized
-provenance and reported usage.
+streamed progress, enforces a 60-second no-progress read deadline and a
+10-minute monotonic whole-turn deadline, and persists only final assistant
+content plus sanitized provenance and reported usage.
 
 The execution service will compose existing workspace provisioning/reopen,
 credential materialization, network policy, and `agent_harness` contracts; it
@@ -51,7 +52,7 @@ the system never changes a session mode implicitly.
 
 ## Implementation and verification plan
 
-#5351 first writes failing focused specs for each `WORKSPACE-AGENT-CHAT-*`
+Issue #5351 first writes failing focused specs for each `WORKSPACE-AGENT-CHAT-*`
 claim, adds a permanent system flow for labeled mode selection/history
 preservation, then implements the flag, persistence, eligibility, invoker, and
 recovery behavior. It must prove actual supported CLI execution in the

@@ -30,9 +30,11 @@
 
 - [ ] **WORKSPACE-AGENT-CHAT-004** — When a native CLI turn reports progress,
   completion, usage, cancellation, or failure, the system SHALL stream supported
-  progress, persist final assistant content and sanitized mode/runner/model/
-  container/request provenance, retain reported usage without inventing unknown
-  values, and avoid persisting raw credentials or diagnostic output.
+  progress, apply the 60-second no-progress read deadline and 10-minute
+  monotonic whole-turn deadline from RDR-064, persist final assistant content and
+  sanitized mode/runner/model/container/request provenance, retain reported
+  usage without inventing unknown values, and avoid persisting raw credentials
+  or diagnostic output.
   *Planned tests:* focused invoker/accounting/cancellation specs.
 
 - [ ] **WORKSPACE-AGENT-CHAT-005** — When a candidate fails or fallback is
