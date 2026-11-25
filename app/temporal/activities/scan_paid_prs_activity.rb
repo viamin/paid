@@ -1368,7 +1368,8 @@ module Activities
     # This method persists auto-merge diagnostics for the bot path and detects
     # follow-up triggers (CI failures, merge conflicts, labels).
     def scan_bot_authored_ready_pr(project, client, issue, pr_data:, checks:, mergeable:, progress_state:)
-      auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
+      auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:,
+        head_sha: pr_head_sha(pr_data), integration_base_sha: pr_base_sha(pr_data))
       triggers = cheap_ready_triggers(project, issue, pr_data: pr_data, checks: checks)
 
       return nil if triggers.empty?
@@ -1531,7 +1532,8 @@ module Activities
 
       if third_party_bot_author?(project, issue.github_creator_login)
         return auto_merge_eligible_bot?(project, client, issue,
-          checks: checks, mergeable: pr_data[:mergeable])
+          checks: checks, mergeable: pr_data[:mergeable],
+          head_sha: pr_head_sha(pr_data), integration_base_sha: pr_base_sha(pr_data))
       end
 
       auto_merge_eligible?(project, client, issue,
@@ -2169,6 +2171,10 @@ module Activities
 
     def pr_head_sha(pr_data)
       pr_data&.head&.sha
+    end
+
+    def pr_base_sha(pr_data)
+      pr_data&.base&.sha
     end
 
     def pr_head_commit_timestamp(client, project, issue, pr_data)
@@ -4017,6 +4023,9 @@ module Activities
       intent_conformance_ok = IntentConformance::Signal.ok?(
         project: project, issue: issue, head_sha: pr_head_sha(pr_data)
       )
+      conflict_repair_scope_ok = PullRequests::ConflictRepairScopeGate.call(
+        project:, issue:, head_sha: pr_head_sha(pr_data), integration_base_sha: pr_base_sha(pr_data)
+      ).allowed?
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
@@ -4030,8 +4039,9 @@ module Activities
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label,
         hold_for_review: hold_for_review,
+        intent_conformance_ok: intent_conformance_ok,
         technical_merge_clear: !PullRequests::TechnicalMergeBlockers.blocked?(issue),
-        intent_conformance_ok: intent_conformance_ok
+        conflict_repair_scope_ok: conflict_repair_scope_ok
       )
 
       AutoMergeSignalBuild.new(
@@ -4044,7 +4054,7 @@ module Activities
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
     # strategy. Bot PRs skip owner-approval and review-feedback gates.
     # @spec AUTO-MERGE-005
-    def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:)
+    def auto_merge_eligible_bot?(project, client, issue, checks:, mergeable:, head_sha: nil, integration_base_sha: nil)
       dependabot_eligible = project.auto_merge_dependabot?
       merge_executor_supported = supported_dependency_update_merge_author?(issue.github_creator_login)
       checks_green = !checks.nil? && checks.any? && all_checks_green?(checks)
@@ -4062,6 +4072,9 @@ module Activities
 
       skip_label = issue.auto_merge_skipped?
       hold_for_review = issue.held_for_review?
+      conflict_repair_scope_ok = PullRequests::ConflictRepairScopeGate.call(
+        project:, issue:, head_sha:, integration_base_sha:
+      ).allowed?
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
@@ -4074,6 +4087,7 @@ module Activities
         dependencies_resolved: dependencies_resolved,
         skip_auto_merge: skip_label,
         hold_for_review: hold_for_review,
+        conflict_repair_scope_ok: conflict_repair_scope_ok,
         technical_merge_clear: !PullRequests::TechnicalMergeBlockers.blocked?(issue)
       )
 

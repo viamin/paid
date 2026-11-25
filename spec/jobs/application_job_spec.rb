@@ -396,6 +396,14 @@ RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
       expect(job.send(:tenant_account)).to eq(account)
     end
 
+    # @spec AUTO-MERGE-011
+    it "extracts agent_run_id from ReassessConflictRepairScopeJob arguments" do
+      project = create(:project)
+      agent_run = create(:agent_run, project:)
+
+      expect(ReassessConflictRepairScopeJob.new(agent_run.id).send(:tenant_account)).to eq(project.account)
+    end
+
     it "extracts account_id from serialized HandleExceptionJob arguments" do
       account = instance_double(Account)
       job = HandleExceptionJob.new("account_id" => 123, "exception_class" => "RuntimeError")

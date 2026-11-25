@@ -334,6 +334,15 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "reassess_conflict_repair_scope",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { agent_run_id: agent_run.id, confirmed: true } },
+        ui_call: ->(user) {
+          run_record = Pundit.policy_scope!(user, AgentRun).find(agent_run.id)
+          authorize_record!(user, run_record, :retry?)
+        }
+      },
+      {
         tool_name: "record_change_intent",
         denied_user: -> {
           project

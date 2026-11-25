@@ -182,7 +182,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -230,7 +230,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -385,7 +385,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         Automation::Providers::Data::PullRequest.new(
           number: 42, title: "Test", body: nil, state: :open, draft: false,
           merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
-          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          base_ref: "main", base_sha: "base-sha", author_login: "user", labels: [], created_at: Time.current,
           updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
           raw_state: "open"
         )
@@ -401,6 +401,65 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(provider).to receive(:merge_pull_request).and_return(merge_result)
         allow(provider).to receive(:add_labels)
         allow(provider).to receive(:add_comment)
+      end
+
+      def allow_source_closure_refresh
+        client = instance_double(GithubClient, update_pull_request: nil)
+        allow(project).to receive(:client).and_return(client)
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+        client
+      end
+
+      # @spec AUTO-MERGE-010
+      it "stops before merge I/O when the fetched HEAD has rejected repair scope evidence" do
+        client = allow_source_closure_refresh
+        create(:agent_run, :automatic, :failed,
+          project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+          source_pull_request_number: issue.github_number, result_commit_sha: "abc",
+          external_metadata: {
+            "conflict_repair_scope_assessment" => {
+              "status" => "rejected", "explanation" => "Out of scope",
+              "base_sha" => "pre-repair", "head_sha" => "abc",
+              "integration_base_sha" => "base-sha",
+              "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
+            }
+          })
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(client).to have_received(:update_pull_request)
+          .with(project.pr_target_repository, 42, body: "\n\n---\n\nTracks #42")
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          status: "blocked", reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED
+        )
+      end
+
+      # @spec AUTO-MERGE-010
+      it "rechecks a conflict-scope stop that appears after scan eligibility but before merge" do
+        client = allow_source_closure_refresh
+        expect(PullRequests::ConflictRepairScopeGate.call(
+          project: project, issue: issue, head_sha: "abc", integration_base_sha: "base-sha"
+        )).to be_allowed
+        create(:agent_run, :automatic, :failed,
+          project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+          source_pull_request_number: issue.github_number, result_commit_sha: "abc",
+          external_metadata: {
+            "conflict_repair_scope_assessment" => {
+              "status" => "unavailable", "explanation" => "Assessment timed out",
+              "base_sha" => "pre-repair", "head_sha" => "abc",
+              "integration_base_sha" => "base-sha",
+              "base_imported_paths" => [], "repair_authored_paths" => []
+            }
+          })
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(client).to have_received(:update_pull_request)
+          .with(project.pr_target_repository, 42, body: "\n\n---\n\nTracks #42")
+        expect(provider).not_to have_received(:merge_pull_request)
       end
 
       def record_source_closeout_assessment(source_issue)
@@ -771,6 +830,27 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(issue.reload.pr_review_phase).to eq("merged")
+      end
+
+      # @spec AUTO-MERGE-010
+      it "reconciles an out-of-band merge despite rejected current-HEAD repair scope evidence" do
+        create(:agent_run, :automatic, :failed,
+          project: project, issue: issue, goal: "create_pr", focus: "merge_conflict",
+          source_pull_request_number: issue.github_number, result_commit_sha: "abc",
+          external_metadata: {
+            "conflict_repair_scope_assessment" => {
+              "status" => "rejected", "explanation" => "Out of scope",
+              "base_sha" => "pre-repair", "head_sha" => "abc",
+              "base_imported_paths" => [], "repair_authored_paths" => [ "Gemfile" ]
+            }
+          })
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: true)
+        expect(issue.reload.pr_review_phase).to eq("merged")
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(issue.auto_merge_attempts).to be_empty
       end
 
       it "clears a prior merge-permission rejection recorded on the issue" do

@@ -13,7 +13,7 @@ module Projects
     before_action :set_project
     before_action :set_agent_run, only: [
       :show, :cancel, :retry, :retry_source_closure, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance,
-      :promote_session_summary
+      :promote_session_summary, :reassess_conflict_repair_scope
     ]
 
     def index
@@ -765,6 +765,23 @@ module Projects
       end
       audit_event("agent_run.source_closure_recovery_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
       redirect_to project_agent_run_path(@project, @agent_run), notice: "Source-closure recovery was queued without rerunning coding."
+    end
+
+    # @spec AUTO-MERGE-011
+    def reassess_conflict_repair_scope
+      authorize @agent_run, :retry?
+      unless ConflictRepairs::ReassessScope.reassessable_producer?(@agent_run)
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not an immutable failed automatic conflict-repair artifact."
+        return
+      end
+
+      job = ReassessConflictRepairScopeJob.perform_later(@agent_run.id, requested_by_id: current_user.id)
+      unless job && job.successfully_enqueued?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "Scope reassessment could not be queued. Please try again."
+        return
+      end
+      audit_event("agent_run.conflict_repair_scope_reassessment_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+      redirect_to project_agent_run_path(@project, @agent_run), notice: "Conflict-repair scope reassessment was queued without rerunning coding."
     end
 
     def terminate

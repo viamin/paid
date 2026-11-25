@@ -266,6 +266,25 @@ RSpec.describe "Accounts" do
       expect(account.account_activity_events.recent.first.action).to eq("membership.removed")
     end
 
+    it "retains conflict-repair evidence after removing the requester's final membership" do # @spec AUTO-MERGE-011
+      requester = create(:user, account: account)
+      membership = create(:account_membership, :viewer, account: account, user: requester)
+      project = create(:project, account: account)
+      issue = create(:issue, :pull_request, project: project)
+      run = create(:agent_run, project: project, issue: issue, external_metadata: { "pre_run_head_sha" => "pre" })
+      evidence = ConflictRepairScopeEvidence.create!(agent_run: run, account: account, project: project, issue: issue,
+        requested_by: requester, pre_run_sha: "pre", integration_base_sha: "base", result_sha: "head",
+        provider_head_sha: "head", status: "approved", explanation: "bounded")
+
+      expect do
+        delete account_membership_path(membership)
+      end.to change(User, :count).by(-1)
+        .and change(AccountMembership, :count).by(-1)
+
+      expect(response).to redirect_to(account_path)
+      expect(evidence.reload.requested_by).to be_nil
+    end
+
     it "switches the removed user to another account when they still have one" do
       membership = create(:account_membership, :viewer, account: account, user: create(:user, account: account))
       secondary_account = create(:account)

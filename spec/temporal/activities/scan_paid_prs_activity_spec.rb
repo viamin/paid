@@ -5871,6 +5871,65 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when current-head automatic conflict repair scope evidence exists" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], pr_review_phase: "ready")
+      end
+
+      def record_conflict_repair(status:, assessment: nil, head_sha: "abc123")
+        create(:agent_run, :automatic, :failed,
+          project: project, issue: pr_issue, goal: "create_pr", focus: "merge_conflict",
+          source_pull_request_number: 42, result_commit_sha: head_sha,
+          external_metadata: assessment || {
+            "conflict_repair_scope_assessment" => {
+              "status" => status, "explanation" => "Scope #{status}",
+              "base_sha" => "pre-repair", "head_sha" => head_sha,
+              "integration_base_sha" => "base-sha",
+              "base_imported_paths" => [], "repair_authored_paths" => []
+            }
+          })
+      end
+
+      before do
+        project.update!(owner_reviewer_login: "viamin", auto_merge_mode: "all")
+        pr_issue
+        stub_owner_approval_ready_signals(review_freshness: :fresh)
+      end
+
+      # @spec AUTO-MERGE-010
+      it "does not emit the owner-approved merge trigger for unavailable, rejected, or malformed current-head evidence" do
+        [
+          { status: "unavailable" },
+          { status: "rejected" },
+          { status: "approved", assessment: { "conflict_repair_scope_assessment" => { "status" => "approved" } } }
+        ].each do |attributes|
+          record_conflict_repair(**attributes)
+          result = activity.execute(project_id: project.id)
+
+          types = automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } }
+          expect(types).not_to include("owner_approved")
+          expect(pr_issue.reload.auto_merge_blockers.dig("failed", 0, "signal")).to eq("conflict_repair_scope_ok")
+          AgentRun.delete_all
+        end
+      end
+
+      # @spec AUTO-MERGE-010
+      it "emits the owner-approved trigger for approved evidence and ignores another head's stopped repair" do
+        record_conflict_repair(status: "approved")
+        result = activity.execute(project_id: project.id)
+        expect(automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } })
+          .to include("owner_approved")
+
+        AgentRun.delete_all
+        record_conflict_repair(status: "unavailable", head_sha: "old-head")
+        result = activity.execute(project_id: project.id)
+        expect(automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } })
+          .to include("owner_approved")
+      end
+    end
+
     context "when paid_agent review-goal retries are exhausted without posting a review (#3086)" do
       let(:pr_issue) do
         create(:issue, :pull_request,
@@ -12839,7 +12898,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     pr_number: 42
   )
     pr_data = OpenStruct.new(
-      base: OpenStruct.new(ref: base_branch),
+      base: OpenStruct.new(ref: base_branch, sha: "base-sha"),
       head: OpenStruct.new(sha: head_sha, repo: OpenStruct.new(fork: head_repo_fork)),
       mergeable: mergeable,
       draft: draft,
