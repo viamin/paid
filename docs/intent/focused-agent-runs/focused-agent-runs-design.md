@@ -80,15 +80,20 @@ valid no-change outcome for the feedback it was shown, but its status hides
 it from the completed-run lookup — so the same trusted comment kept
 re-admitting follow-ups (#5180).
 
-`check_conversation_comments` therefore takes its cutoff from the latest of
-the caller-supplied run only when it includes conversation scope (a
-`completed` run, or the focused run during `focus_resolved` attribution), the
-newest completed `create_pr` run, and the newest `create_pr`/`no_output`/
-`no_changes` run whose focus actually includes the
-conversation section — `conversation` itself, plus the unscoped `general`
-and `label_action` focuses that include every applicable section (the same
-rule as `Prompts::BuildForPr#include_section?`). No-change runs with other
-focuses never saw the comments, so they consume nothing. All other cutoff
+`check_conversation_comments` therefore considers completed `create_pr` runs
+and `create_pr`/`no_output`/`no_changes` runs whose focus includes the
+conversation section — `conversation` itself, plus unscoped `general` and
+`label_action` (the same rule as `Prompts::BuildForPr#include_section?`).
+For recorded prompt preparation, the cutoff is the latest successful
+preparation's start, provided it finished before terminal completion.
+Completion time cannot acknowledge a comment that arrived after the prompt
+was assembled. A failed or late preparation supplies no acknowledgment;
+legacy runs with no preparation record retain their completion-time cutoff.
+Take the maximum context cutoff across all eligible run history, rather than
+choosing by completion order, so a late-finishing older prompt does not hide
+a newer context or cause duplicate follow-ups. This is a scalar indexed
+phase lookup in the existing project/PR history query; it neither loads all
+phases nor rewrites run timestamps. Other focuses consume nothing. All other cutoff
 consumers (review threads, changes requested, review-bot status, CI, policy
 and budget gates) keep using completed runs only.
 

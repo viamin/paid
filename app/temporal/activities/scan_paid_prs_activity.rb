@@ -3286,43 +3286,36 @@ module Activities
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
     end
 
-    # The conversation cutoff is the latest of the caller-supplied run (a
-    # completed run, or the focused run during focus_resolved attribution)
-    # and the newest terminal no-change run that actually included
-    # conversation scope. A no_output/no_changes create_pr run is a valid
-    # no-change outcome for the feedback it was shown; without it the same
-    # trusted comment keeps re-admitting follow-ups (#5180).
-    def conversation_feedback_cutoff(project, issue, last_run)
-      completed_run = conversation_scope_completed_run(project, issue)
-      no_change_run = conversation_scope_no_change_run(project, issue)
-      [ conversation_scope_completed_at(last_run), completed_run&.completed_at, no_change_run&.completed_at ].compact.max
+    # Completion cannot acknowledge feedback arriving after prompt preparation.
+    # Aggregate context boundaries across eligible history because preparation
+    # order and completion order can differ. Legacy runs without a preparation
+    # record retain the supported completion-time/no-change behavior (#5180).
+    def conversation_feedback_cutoff(project, issue, _last_run) # @spec FOCUSED-RUN-010
+      conversation_scope_runs(project, issue).maximum(Arel.sql(conversation_context_cutoff_sql))
     end
 
-    # A successful focused repair must not acknowledge feedback excluded from
-    # its prompt. The focus is the durable prompt-scope provenance for legacy
-    # runs, while PromptAssembly retains richer section provenance when enabled.
-    def conversation_scope_completed_at(run) # @spec FOCUSED-RUN-010
-      return unless run&.goal == "create_pr"
-      return unless run.focus.in?(CONVERSATION_SCOPE_FOCUSES)
-
-      run.completed_at
-    end
-
-    def conversation_scope_completed_run(project, issue)
-      pr_run_history_scope(project, issue)
+    def conversation_scope_runs(project, issue)
+      scope = pr_run_history_scope(project, issue)
         .where(goal: "create_pr", focus: CONVERSATION_SCOPE_FOCUSES)
-        .completed
-        .order(completed_at: :desc)
-        .first
+        .where.not(completed_at: nil)
+      scope.where(status: "completed")
+        .or(scope.where(status: "no_output", error_message: "no_changes"))
     end
 
-    def conversation_scope_no_change_run(project, issue)
-      pr_run_history_scope(project, issue)
-        .where(goal: "create_pr", status: "no_output", error_message: "no_changes")
-        .where(focus: CONVERSATION_SCOPE_FOCUSES)
-        .where.not(completed_at: nil)
-        .order(completed_at: :desc)
-        .first
+    def conversation_context_cutoff_sql
+      <<~SQL.squish
+        CASE WHEN EXISTS (
+          SELECT 1 FROM agent_run_phases AS prompt_phase
+          WHERE prompt_phase.agent_run_id = agent_runs.id
+            AND prompt_phase.phase_key = 'prepare_pr_prompt'
+        ) THEN (
+          SELECT MAX(prompt_phase.started_at) FROM agent_run_phases AS prompt_phase
+          WHERE prompt_phase.agent_run_id = agent_runs.id
+            AND prompt_phase.phase_key = 'prepare_pr_prompt'
+            AND prompt_phase.status = 'completed'
+            AND prompt_phase.finished_at <= agent_runs.completed_at
+        ) ELSE agent_runs.completed_at END
+      SQL
     end
 
     def fetch_reviews(client, project, issue)
