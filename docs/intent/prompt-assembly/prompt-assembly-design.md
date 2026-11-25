@@ -105,6 +105,14 @@ limits. They are context only: unlike inline threads, they carry no resolvable
 thread ID and do not authorize resolution or alter review, merge, retry, or
 allowance policy.
 
+The chronological review listing must be complete within the finite page and
+rate budgets. A remaining next page when either budget stops collection makes
+the read unavailable rather than
+presenting its old prefix as the latest author state. Both prompt builders
+block focused review-feedback preparation when the standalone fetch is
+unavailable, even without inline threads. The builder caches that unavailable
+state for the preparation attempt; a successful empty result remains distinct.
+
 ## Quarantine
 
 Repository-derived code/docs and knowledge-base content are `:quarantined`.

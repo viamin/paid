@@ -151,9 +151,10 @@ module Prompts
 
     # @spec PROMPT-ASSEMBLY-018, PROMPT-ASSEMBLY-026
     def review_feedback_context_blocked?
-      focus == "review_feedback" &&
-        human_review_threads_present? &&
-        !review_feedback_present?
+      return false unless focus == "review_feedback"
+
+      top_level_reviews
+      @top_level_reviews_unavailable || (human_review_threads_present? && !review_feedback_present?)
     end
 
     # Returns the assembled prompt text. Existing callers (PreparePrPromptActivity,
@@ -1178,8 +1179,11 @@ module Prompts
 
     def top_level_reviews
       @top_level_reviews ||= github_client.pull_request_reviews(project.full_name, pr_number)
-    rescue GithubClient::Error
-      []
+    rescue GithubClient::Error => error
+      @top_level_reviews_unavailable = true
+      Rails.logger.warn(message: "prompts.pr_review_context_unavailable", project_id: project.id,
+        pr_number: pr_number, error_class: error.class.name)
+      @top_level_reviews = []
     end
 
     def trusted_review_thread_author?(login)

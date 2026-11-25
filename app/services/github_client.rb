@@ -77,6 +77,8 @@ class GithubClient
   # Raised when GitHub cannot provide a complete tree listing for an exact path lookup.
   class IncompleteTreeError < Error; end
 
+  class IncompleteReviewsError < Error; end
+
   # Project credentials can be backed by a shared token client, so comment
   # policy belongs in a project-scoped decorator rather than on that shared
   # instance. All other GitHub operations, including PR body updates, pass
@@ -1087,6 +1089,7 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
+  # @raise [IncompleteReviewsError] if pagination cannot prove the listing complete
   # @spec PROMPT-ASSEMBLY-026
   def pull_request_reviews(repo, number)
     handle_errors do
@@ -1103,13 +1106,16 @@ class GithubClient
           collected.concat(Array(response.data))
         end
       end
-      if truncated
+      last_response = client.last_response
+      if truncated || last_response.nil? || last_response.rels[:next].present?
         Rails.logger.warn(
           message: "github_client.pull_request_reviews_pagination_truncated",
           repo: repo,
           pr_number: number,
-          max_pages: PULL_REQUEST_REVIEWS_MAX_PAGES
+          max_pages: PULL_REQUEST_REVIEWS_MAX_PAGES,
+          pages_observed: pages + 1
         )
+        raise IncompleteReviewsError, "GitHub review listing is incomplete within its page or rate budget"
       end
       reviews.map do |r|
         {

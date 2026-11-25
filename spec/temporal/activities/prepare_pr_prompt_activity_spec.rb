@@ -271,6 +271,38 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
     end
 
+    [ Prompts::BuildForPr::LEGACY_PROMPT_BUILDER, Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER ].each do |builder|
+      [ false, true ].each do |inline|
+        # @spec PROMPT-ASSEMBLY-018 PROMPT-ASSEMBLY-026
+        it "refuses unavailable standalone review context for #{builder} with inline=#{inline}" do
+          agent_run.update!(focus: "review_feedback")
+          FeatureFlags.enable!(:prompt_assembly, project: project) if builder == Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER
+          project.update!(allowed_github_usernames: [ "reviewer" ])
+          threads = inline ? [ { id: "thread_1", is_resolved: false,
+            comments: [ { body: "Valid inline context", author: "reviewer" } ] } ] : []
+          allow(github_client).to receive(:review_threads).and_return(threads)
+          allow(github_client).to receive(:pull_request_reviews).and_raise(GithubClient::Error, "Review fetch unavailable")
+
+          expect { activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true) }
+            .to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("ReviewFeedbackContextBlocked") }
+          expect(agent_run.reload.custom_prompt).to eq("placeholder")
+          expect(github_client).to have_received(:pull_request_reviews).once
+        end
+      end
+
+      # @spec PROMPT-ASSEMBLY-018 PROMPT-ASSEMBLY-026
+      it "accepts successful empty standalone review context for #{builder}" do
+        agent_run.update!(focus: "review_feedback")
+        FeatureFlags.enable!(:prompt_assembly, project: project) if builder == Prompts::BuildForPr::PROMPT_ASSEMBLY_BUILDER
+
+        result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+        expect(result[:includes_review_threads]).to be(false)
+        expect(agent_run.reload.custom_prompt).not_to eq("placeholder")
+        expect(github_client).to have_received(:pull_request_reviews).once
+      end
+    end
+
     # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-011
     it "prepares a review-feedback prompt from a trusted standalone review finding" do
       project.update!(allowed_github_usernames: [ "reviewer" ])

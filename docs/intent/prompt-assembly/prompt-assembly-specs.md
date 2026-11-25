@@ -133,9 +133,11 @@
   system SHALL treat bot-authored unresolved review threads as actionable
   follow-up context rather than blocking prompt preparation solely because the
   bot comments are excluded from prompt instructions. Prompt preparation SHALL
-  raise `ReviewFeedbackContextBlocked` only when at least one unresolved
-  human-authored review thread exists and neither its comments nor a current
-  trusted standalone review body are prompt-eligible.
+  raise `ReviewFeedbackContextBlocked` when standalone review retrieval is
+  unavailable or incomplete, or when at least one unresolved human-authored
+  review thread exists and neither its comments nor a current trusted
+  standalone review body are prompt-eligible. A successful empty review fetch
+  SHALL remain distinct from unavailable context in both builder paths.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
 - [x] **PROMPT-ASSEMBLY-026** — When a current PR has a nonblank standalone
@@ -151,9 +153,13 @@
   SHALL not enter repair context despite its nonblank `COMMENTED` body. The
   latest review state from an eligible author SHALL supersede that author's
   earlier body, and standalone review bodies SHALL not produce resolvable
-  inline-thread IDs or authority.
-  *Code:* `Prompts::BuildForPr`.
+  inline-thread IDs or authority. Review collection SHALL remain complete
+  within its finite page and rate budgets; a remaining next page at either budget SHALL
+  report unavailable context rather than expose an old prefix as the latest
+  review state.
+  *Code:* `GithubClient#pull_request_reviews`, `Prompts::BuildForPr`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/services/github_client_spec.rb`,
   `spec/temporal/activities/prepare_pr_prompt_activity_spec.rb`.
 
 - [x] **PROMPT-ASSEMBLY-019** — When `AgentRun#effective_prompt` resolves a

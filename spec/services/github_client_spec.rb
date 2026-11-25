@@ -1811,9 +1811,10 @@ RSpec.describe GithubClient do
     let(:repo) { "owner/repo" }
 
     context "when reviews exist" do
-      def stub_review_pages(repo:, number:, page_count:)
+      def stub_review_pages(repo:, number:, page_count:, remaining: nil)
         (1..page_count).each do |page|
           headers = { "Content-Type" => "application/json" }
+          headers["X-RateLimit-Remaining"] = remaining.to_s if remaining
           if page < page_count
             headers["Link"] = "<#{api_base}/repos/#{repo}/pulls/#{number}/reviews?page=#{page + 1}>; rel=\"next\""
           end
@@ -1895,7 +1896,38 @@ RSpec.describe GithubClient do
       end
 
       # @spec PROMPT-ASSEMBLY-026
-      it "caps review pagination at the configured tenth page and records truncation" do
+      it "refuses incomplete review pagination after an exhausted rate budget" do
+        stub_review_pages(repo: repo, number: 44, page_count: 2, remaining: 0)
+
+        expect { client.pull_request_reviews(repo, 44) }
+          .to raise_error(GithubClient::IncompleteReviewsError)
+        expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/44/reviews")
+          .with(query: hash_including("page" => "2"))).not_to have_been_requested
+      end
+
+      # @spec PROMPT-ASSEMBLY-026
+      it "accepts a complete review listing after an exhausted rate budget" do
+        stub_review_pages(repo: repo, number: 44, page_count: 1, remaining: 0)
+
+        expect(client.pull_request_reviews(repo, 44).map { |review| review[:id] }).to eq([ 1 ])
+      end
+
+      # @spec PROMPT-ASSEMBLY-026
+      it "accepts a complete tenth review page without losing its latest state" do
+        max_pages = GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES
+        stub_review_pages(repo: repo, number: 43, page_count: max_pages)
+
+        result = client.pull_request_reviews(repo, 43)
+
+        expect(result.map { |review| review[:id] }).to eq((1..max_pages).to_a)
+        expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
+          .with(query: hash_including("page" => max_pages.to_s))).to have_been_requested.once
+        expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
+          .with(query: hash_including("page" => (max_pages + 1).to_s))).not_to have_been_requested
+      end
+
+      # @spec PROMPT-ASSEMBLY-026
+      it "refuses incomplete review pagination without requesting page eleven" do
         max_pages = GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES
         stub_review_pages(repo: repo, number: 43, page_count: max_pages + 1)
 
@@ -1904,9 +1936,11 @@ RSpec.describe GithubClient do
           max_pages: max_pages
         ))
 
-        result = client.pull_request_reviews(repo, 43)
+        expect { client.pull_request_reviews(repo, 43) }
+          .to raise_error(GithubClient::Error, /incomplete/)
 
-        expect(result.map { |review| review[:id] }).to eq((1..max_pages).to_a)
+        expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
+          .with(query: hash_including("page" => max_pages.to_s))).to have_been_requested.once
         expect(a_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
           .with(query: hash_including("page" => (max_pages + 1).to_s))).not_to have_been_requested
       end
