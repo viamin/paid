@@ -71,7 +71,7 @@ module SdkBuildEnvironments
     end
 
     def run_disposable_probe
-      container = backend.create_container(container_config)
+      container = backend.create_container(container_config, deadline: PROBE_DEADLINE_SECONDS)
       backend.start_container(container, deadline: PROBE_DEADLINE_SECONDS)
       stdout, _stderr, _exit_code = backend.exec_in_container(container, [ "sh", "-c", probe_script ],
         deadline: PROBE_DEADLINE_SECONDS)
@@ -91,11 +91,9 @@ module SdkBuildEnvironments
         "HostConfig" => {
           "ReadonlyRootfs" => true,
           "CapDrop" => [ "ALL" ],
-          "Resources" => {
-            "Memory" => CONTAINER_MEMORY_BYTES,
-            "NanoCpus" => CONTAINER_NANO_CPUS,
-            "PidsLimit" => CONTAINER_PID_LIMIT
-          }
+          "Memory" => CONTAINER_MEMORY_BYTES,
+          "NanoCpus" => CONTAINER_NANO_CPUS,
+          "PidsLimit" => CONTAINER_PID_LIMIT
         }
       }
     end

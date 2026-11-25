@@ -103,6 +103,38 @@ RSpec.describe SdkBuildEnvironments::Preflight, :no_db do
       expect(receipt[:verdict]).to be(:unverifiable)
     end
 
+    # @spec RUST-SDK-BUILD-009
+    it "fails when the observed process identity disagrees with the engine and image" do
+      toolchains = [
+        { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: "/lib64/ld-linux-x86-64.so.2" },
+        { command: "rustc", path: "/usr/local/rustup/toolchains/bin/rustc", interpreter_path: "/lib64/ld-linux-x86-64.so.2" }
+      ]
+
+      receipt = described_class.call(facts: facts(process_architecture: "x86_64", toolchains: toolchains))
+
+      expect(receipt[:verdict]).to be(:process_architecture_mismatch)
+      expect(receipt[:checks]).to include(hash_including(name: "process_architecture", healthy: false))
+    end
+
+    # @spec RUST-SDK-BUILD-010
+    it "fails when the metadata probe did not complete" do
+      receipt = described_class.call(facts: facts(toolchains: [], probe_error: "Docker::Error::TimeoutError: deadline exceeded"))
+
+      expect(receipt[:verdict]).to be(:unverifiable)
+      expect(receipt[:checks]).to include(hash_including(name: "probe", healthy: false))
+    end
+
+    # @spec RUST-SDK-BUILD-010
+    it "requires cargo and rustc even when the probe reports an empty inventory" do
+      receipt = described_class.call(facts: facts(toolchains: []))
+
+      expect(receipt[:verdict]).to be(:toolchain_absent)
+      expect(receipt[:checks]).to include(
+        hash_including(name: "toolchain_presence:cargo", healthy: false),
+        hash_including(name: "toolchain_presence:rustc", healthy: false)
+      )
+    end
+
     it "fails with unverifiable when a toolchain interpreter cannot be resolved" do
       toolchains = [ { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: nil } ]
 
