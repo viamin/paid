@@ -290,25 +290,54 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(run).to include(%q{noble_client="$(client_pattern 24\\\\.04)"})
   end
 
-  # @spec TEST-SUITE-024
-  it "bounds checksum-verified ast-grep installation in every shard path" do
+  # @spec TEST-SUITE-024 TEST-SUITE-025
+  it "uses a validated ast-grep cache before bounded checksum-verified installation in every shard path" do
     %w[test-shards shard-recovery].each do |job_name|
-      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
-        .find { |step| step["name"] == "Install ast-grep" }
-      run = install_step.fetch("run")
-
-      expect(run).to include('mkdir -p "$HOME/.local/bin"')
-      expect(run).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
-      expect(run).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
-      expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15")
-      expect(run).to include("AST_GREP_DOWNLOAD_MAX_TIME=60")
+      expect(ast_grep_cache_step(job_name)).to include(
+        "uses" => "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+        "with" => {
+          "path" => "~/.local/bin",
+          "key" => "ast-grep-0.45.1-${{ runner.os }}-${{ runner.arch }}"
+        }
+      )
+      expect(ast_grep_install_step(job_name).fetch("run")).to include(*ast_grep_installation_contract)
     end
 
     installer = Rails.root.join("bin/install-ast-grep").read
-    expect(installer).to include('--connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}"')
-    expect(installer).to include('--max-time "${AST_GREP_DOWNLOAD_MAX_TIME:-300}"')
-    expect(installer).to include('sha256sum -c -')
+    expect(installer).to include(*ast_grep_downloader_contract)
+  end
+
+  def ast_grep_cache_step(job_name)
+    ast_grep_steps(job_name).find { |step| step["name"] == "Install ast-grep" }
+  end
+
+  def ast_grep_install_step(job_name)
+    ast_grep_steps(job_name).find { |step| step["name"] == "Verify or install ast-grep" }
+  end
+
+  def ast_grep_steps(job_name)
+    workflow.fetch("jobs").fetch(job_name).fetch("steps")
+  end
+
+  def ast_grep_installation_contract
+    [
+      'mkdir -p "$HOME/.local/bin"',
+      'echo "$HOME/.local/bin" >> "$GITHUB_PATH"',
+      '"$HOME/.local/bin/ast-grep" --version | grep -Fqx \'ast-grep 0.45.1\'',
+      'rm -f "$HOME/.local/bin/ast-grep" "$HOME/.local/bin/sg"',
+      'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep',
+      "for attempt in 1 2 3 4 5",
+      "AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15",
+      "AST_GREP_DOWNLOAD_MAX_TIME=60"
+    ]
+  end
+
+  def ast_grep_downloader_contract
+    [
+      '--connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}"',
+      '--max-time "${AST_GREP_DOWNLOAD_MAX_TIME:-300}"',
+      'sha256sum -c -'
+    ]
   end
 
   # @spec TEST-SUITE-023

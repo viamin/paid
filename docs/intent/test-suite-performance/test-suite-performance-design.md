@@ -61,7 +61,10 @@ The same shard paths install the pinned ast-grep binary before running specs.
 Each release-asset transfer has explicit connection and total-transfer bounds,
 then uses the existing finite retry policy. The downloaded archive remains
 checksum-verified before installation; exhausted retries fail the shard rather
-than skipping structural-search coverage.
+than skipping structural-search coverage. A version- and platform-scoped cache
+is restored before that download and its binary is validated before use. An
+invalid or missing cache falls through to the same bounded, checksum-verified
+installation path rather than being treated as successful setup.
 
 ## Platform-dropped shard recovery
 
