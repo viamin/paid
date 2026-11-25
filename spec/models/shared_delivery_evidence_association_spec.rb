@@ -68,4 +68,16 @@ RSpec.describe SharedDeliveryEvidenceAssociation do # @spec PARTIAL-CLOSEOUT-063
       end
     end
   end
+
+  # @spec TENANT-ACCESS-003 PARTIAL-CLOSEOUT-064
+  it "fails closed when preserved historical evidence has no authorizer" do
+    pull_request = merged_pr(project)
+    association = described_class.create!(account:, project:, issue: target,
+      pull_request:, authorized_by: owner, pull_request_url: pull_request.github_html_url,
+      revision: pull_request.merged_commit_sha)
+
+    association.update_column(:authorized_by_id, nil)
+
+    expect(association.reload).not_to be_current
+  end
 end

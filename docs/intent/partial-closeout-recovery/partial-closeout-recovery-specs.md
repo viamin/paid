@@ -16,6 +16,23 @@
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
   `spec/security/tenant_context_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-064** — When normal account-membership removal deletes
+  a user who requested a queued or consumed acceptance audit, Paid SHALL retain
+  the request, audit, and run lineage while nullifying only the historical
+  requester reference. When it deletes a user who authorized shared-delivery
+  evidence, Paid SHALL retain the association's account, project, source,
+  producer, URL, revision, and revocation lineage while nullifying only the
+  authorizer reference; that association SHALL no longer be current and SHALL
+  fail closed for closeout evidence and audit admission. The same removal with
+  a successor membership or no historical artifacts SHALL retain its existing
+  behavior. Historical attribution SHALL NOT grant queued work execution
+  authority after revocation.
+  *Code:* `app/models/issue_continuation_request.rb`,
+  `app/models/shared_delivery_evidence_association.rb`,
+  `app/models/user.rb`.
+  *Test:* `spec/services/accounts/remove_membership_spec.rb`,
+  `spec/models/shared_delivery_evidence_association_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
   attempt under one logical audit identity — the issue plus the closeout-evidence
   source revision — fails transiently because transport or infrastructure was
