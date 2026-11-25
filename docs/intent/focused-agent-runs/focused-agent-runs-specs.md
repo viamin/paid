@@ -155,7 +155,11 @@
   limit; a local cutoff or an unprovable upstream file-list limit SHALL refuse
   assessment. Required per-file path, status, blob identity, change counts and
   rename provenance SHALL be structurally valid before model authorization;
-  binary metadata does not require a textual patch. A thread omitted from the
+  status SHALL be a declared GitHub diff-entry status. Binary metadata does
+  not require a textual patch. The bounded model evidence SHALL retain every
+  compared file, sharing its patch budget through explicit excerpts. If all
+  file metadata and bounded per-file evidence cannot fit, assessment SHALL
+  remain unavailable before a model request. A thread omitted from the
   bounded prompt SHALL NOT be authorized.
   This does not prohibit a supported no-code disposition such as invalid,
   outdated, or already-fixed feedback.

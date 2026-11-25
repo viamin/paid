@@ -129,6 +129,38 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     end
   end
 
+  describe "complete bounded comparison evidence" do
+    # @spec FOCUSED-RUN-011
+    it "retains every changed file while sharing the bounded patch evidence" do
+      files = 100.times.map { |index| { filename: "app/file_#{index}.rb", patch: "+changed line\n" * 500 } }
+      allow(github_client).to receive(:detailed_compare_files).and_return(files)
+
+      result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+      expect(result[:authorized]).to be(true)
+      expect(Llm::Request).to have_received(:call) do |prompt:, **|
+        evidence = JSON.parse(prompt.split("Current-head PR diff evidence:\n", 2).last)
+        expect(evidence.fetch("items").map { |file| file.fetch("filename") }).to eq(files.pluck(:filename))
+        expect(evidence.fetch("truncated")).to be(false)
+        expect(JSON.generate(evidence).bytesize).to be <= described_class::DIFF_EVIDENCE_BYTES
+        expect(prompt.bytesize).to be <= described_class::MAX_PROMPT_BYTES
+        expect(prompt).to include(described_class::TRUNCATION_MARKER)
+      end
+    end
+
+    # @spec FOCUSED-RUN-011
+    it "refuses model authorization when complete metadata cannot fit the evidence budget" do
+      stub_const("Activities::AssessFollowupReviewThreadsActivity::DIFF_EVIDENCE_BYTES", 300)
+      allow(github_client).to receive(:detailed_compare_files)
+        .and_return([ { filename: "app/#{'nested/' * 100}input.rb", patch: "+validate(input)" } ])
+
+      result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+      expect(result[:authorized]).to be(false)
+      expect(Llm::Request).not_to have_received(:call)
+    end
+  end
+
   # @spec FOCUSED-RUN-011
   it "assesses a long thread with both its original finding and recent replies" do
     long_thread = {

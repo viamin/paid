@@ -149,8 +149,13 @@ immutable comparison file list within the request's file ceiling. The GitHub
 client raises a typed unavailable error when the local ceiling or upstream
 file-list cap prevents proving completeness, rather than silently dropping
 paths. Required per-file path/status, blob identity, nonnegative change counts
-and rename provenance are checked before returning evidence; absent binary
-patch text is permitted. Patch and thread excerpts retain explicit byte-budget markers. Only
+and rename provenance are checked before returning evidence; status must match
+the provider's [diff-entry schema](https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json).
+Absent binary patch text is permitted. The bounded diff keeps every file's
+metadata and shares the patch budget among complete or explicitly marked
+excerpts. If complete metadata and minimum per-file excerpts cannot fit, the
+assessment remains unavailable before calling the model. File omission cannot
+authorize resolution. Patch and thread excerpts retain explicit byte-budget markers. Only
 thread IDs actually included in the bounded prompt receive content-version
 bindings and may be authorized; omitted findings remain actionable.
 

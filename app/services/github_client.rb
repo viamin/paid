@@ -82,6 +82,7 @@ class GithubClient
   class IncompleteComparisonError < Error; end
 
   COMPARE_FILE_LIMIT = 300
+  COMPARISON_FILE_STATUSES = %w[added removed modified renamed copied changed unchanged].freeze
 
   # Project credentials can be backed by a shared token client, so comment
   # policy belongs in a project-scoped decorator rather than on that shared
@@ -2438,6 +2439,7 @@ class GithubClient
 
     metadata = file.to_h.symbolize_keys
     return false unless %i[filename status sha].all? { |key| metadata[key].is_a?(String) && metadata[key].present? }
+    return false unless COMPARISON_FILE_STATUSES.include?(metadata[:status])
     return false unless metadata[:sha].match?(/\A[0-9a-f]{40}\z/i)
     return false unless %i[additions deletions changes].all? { |key| metadata[key].is_a?(Integer) && metadata[key] >= 0 }
     return true unless %w[renamed copied].include?(metadata[:status])

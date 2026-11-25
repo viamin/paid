@@ -15,6 +15,7 @@ module Activities
     COMMENT_BYTES = 2_000
     COMMENTS_PER_THREAD_BYTES = 10_000
     PATCH_BYTES = 4_000
+    MIN_PATCH_BYTES = 200
     THREAD_EVIDENCE_BYTES = 20_000
     DIFF_EVIDENCE_BYTES = 30_000
     MAX_PROMPT_BYTES = 55_000
@@ -41,7 +42,10 @@ module Activities
       threads = threads.select { |thread| included_ids.include?(thread[:id].to_s) }
       return unavailable if threads.empty?
 
-      assessment_prompt = prompt(head_sha, prompt_threads, bounded_evidence(evidence))
+      diff_evidence = bounded_evidence(evidence)
+      return unavailable unless diff_evidence
+
+      assessment_prompt = prompt(head_sha, prompt_threads, diff_evidence)
       return unavailable if assessment_prompt.bytesize > MAX_PROMPT_BYTES
 
       response = Llm::Request.call(prompt: assessment_prompt, agent_run: agent_run, timeout: TIMEOUT)
@@ -101,6 +105,9 @@ module Activities
         current-head evidence and cannot be blank. Omit inconclusive findings.
 
         Current head: #{head_sha}
+        Every compared file is listed. Patch excerpts carry an explicit
+        truncation marker; omitted patch text is not evidence of a repair.
+        Leave a finding inconclusive when the supplied evidence cannot support it.
         Captured unresolved threads:
         #{JSON.generate(threads)}
 
@@ -123,11 +130,16 @@ module Activities
     end
 
     def bounded_evidence(evidence)
-      items = Array(evidence).map do |file|
-        attributes = file.to_h.deep_symbolize_keys
-        attributes.merge(patch: bounded_text(attributes[:patch], PATCH_BYTES))
+      files = Array(evidence).map { |file| file.to_h.deep_symbolize_keys }
+      patch_bytes = PATCH_BYTES
+      loop do
+        items = files.map { |file| file.merge(patch: bounded_text(file[:patch], patch_bytes)) }
+        complete = { items: items, truncated: false, truncation: nil }
+        return complete if JSON.generate(complete).bytesize <= DIFF_EVIDENCE_BYTES
+        return if patch_bytes == MIN_PATCH_BYTES
+
+        patch_bytes = [ patch_bytes / 2, MIN_PATCH_BYTES ].max
       end
-      bounded_collection(items, DIFF_EVIDENCE_BYTES)
     end
 
     def bounded_collection(items, byte_budget)

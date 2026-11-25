@@ -2280,6 +2280,31 @@ RSpec.describe GithubClient do
         .to eq([ metadata.merge(previous_filename: "", patch: "") ])
     end
 
+    %w[added removed modified renamed copied changed unchanged].each do |status|
+      it "accepts declared comparison file status #{status}" do
+        metadata = { filename: "file.rb", sha: "b" * 40, status:,
+          additions: 1, deletions: 0, changes: 1, previous_filename: "original.rb", patch: "+fixed" }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect(client.detailed_compare_files(repo, "base123", "head456").sole[:status]).to eq(status)
+      end
+    end
+
+    [ "unknown", "MODIFIED", " modified" ].each do |status|
+      it "refuses undeclared comparison file status #{status.inspect}" do
+        metadata = { filename: "file.rb", sha: "b" * 40, status:,
+          additions: 1, deletions: 0, changes: 1, patch: "+fixed" }
+        stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+          .to_return(status: 200, body: { files: [ metadata ] }.to_json,
+            headers: { "Content-Type" => "application/json" })
+
+        expect { client.detailed_compare_files(repo, "base123", "head456") }
+          .to raise_error(GithubClient::IncompleteComparisonError)
+      end
+    end
+
     it "refuses to return a partial comparison at max_files" do
       stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
         .to_return(
