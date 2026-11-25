@@ -629,6 +629,49 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec PARTIAL-CLOSEOUT-063
+    it "suppresses replacement coding for current shared delivery evidence" do
+      issue = create(:issue, project:, paid_state: "completed")
+      pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,
+        pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/5371",
+        merged_commit_sha: "a" * 40)
+      actor = create(:user, :member, account: project.account)
+      Issues::AssociateSharedDeliveryEvidence.call(
+        issue:, pull_request:, actor:)
+
+      expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+    end
+
+    # @spec PARTIAL-CLOSEOUT-063
+    it "permits replacement coding when shared delivery evidence is reopened" do
+      issue = create(:issue, project:, paid_state: "completed")
+      pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,
+        pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/5371",
+        merged_commit_sha: "a" * 40)
+      actor = create(:user, :member, account: project.account)
+      Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request:, actor:)
+      pull_request.update!(github_state: "open")
+
+      expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-063
+    it "fails open to replacement coding for legacy evidence with a wrong repository URL" do
+      issue = create(:issue, project:, paid_state: "completed")
+      pull_request = create(:issue, :pull_request, :closed, project:, github_number: 5371,
+        pr_review_phase: "merged", github_html_url: "https://github.com/other/repo/pull/5371",
+        merged_commit_sha: "a" * 40)
+      actor = create(:user, account: project.account)
+      SharedDeliveryEvidenceAssociation.insert!({
+        account_id: project.account_id, project_id: project.id, issue_id: issue.id,
+        pull_request_id: pull_request.id, authorized_by_id: actor.id,
+        pull_request_url: pull_request.github_html_url, revision: pull_request.merged_commit_sha,
+        created_at: Time.current, updated_at: Time.current
+      })
+
+      expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+    end
+
     it "excludes completed issues when the produced PR has not been synced yet" do
       issue = create(:issue, project: project, paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
