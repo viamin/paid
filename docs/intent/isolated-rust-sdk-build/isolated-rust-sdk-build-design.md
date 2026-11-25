@@ -140,13 +140,25 @@ than silently dropping the flag, and it maps the Engine `HostConfig`
 forms of the read-only root filesystem and the direct `NanoCpus` limit
 into the service spec so those requirements survive translation too.
 
-## Independent runnability
+## Independent runnability and consumer invocation
 
 `rake sdk_build_environment:preflight` runs the same classification
 against a real backend and prints the receipt as JSON. It performs
 metadata probes only, provisions nothing, and requires no run, project,
 or worker state — the environment prerequisite stays independently
 runnable, per the issue's "no explicit dependency on #5326" constraint.
+
+The existing SDK prototype owner invokes the usable baseline through the
+confirmation-gated `build_pinned_rust_sdk_core` agent tool, supplying its
+authorized project and acting agent-run identifiers. The tool resolves the
+run's selected backend through `Containers.backend_for`; it does not grant
+the agent a Docker socket, host path, or a new native-attempt allowance.
+`SdkBuildEnvironments::PinnedCoreBuild` first requires a compatible
+preflight, builds a temporary image from the immutable SDK/Core source pins,
+then starts a separate capability-dropped, network-disabled container for
+`cargo check --locked --offline --package temporalio-sdk-core`. It returns
+the command, bounded output, exit status, preflight, and cleanup receipt,
+and removes both the container and temporary image in `ensure`.
 
 ## Decisions & Alternatives
 
@@ -157,12 +169,13 @@ runnable, per the issue's "no explicit dependency on #5326" constraint.
 | Digest-pinned official toolchain images | Root verified the official ARM64 images by immutable digest; mutable tags would reintroduce exactly the unmeasured-identity gap that made the historical failure undiagnosable. | Trusting `rust:latest`-style tags; vendoring a toolchain into the repo. |
 | Injectable facts probe | Keeps classification hermetic and testable without a daemon, following the `AppleVerification::Setup::Shell` precedent. | Requiring a live daemon in unit tests; shelling out from the model layer. |
 | Record Ruby build profile with the pins | The static/shared ABI gap silently invalidates cross-profile load claims (root's ABI control receipts). Recording it makes the limitation structural rather than tribal knowledge. | Treating "Ruby 3.4.13" as sufficient identity. |
+| Dedicated agent tool for the Core baseline | Gives #5326 one job-scoped invocation through its existing authorization and selected backend, while keeping Docker authority inside Paid. | Giving an agent a Docker socket; a generic user-command build service. |
 
 ## What this is not
 
-- **Not an SDK test harness.** No SDK source is cloned, built, or tested
-  by this segment's code; the recipe and preflight are consumed by
-  #5326's finite-attempt harness.
+- **Not an SDK test harness.** The fixed Core check establishes only the
+  version-bound build baseline; client/server workflows and native artifact
+  load evidence remain #5326's finite-attempt harness concern.
 - **Not a runner selection change.** Preflight classifies whatever
   backend and image it is given; it does not move runs between backends
   or alter scheduling.
