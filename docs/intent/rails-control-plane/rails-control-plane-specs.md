@@ -102,7 +102,8 @@
   Queue eligibility SHALL honor GoodJob queue expressions, pauses, scheduling,
   and retained ownership. Progress in an unrelated pool SHALL not reset a
   stalled pool's window, and idle or occupied intervals SHALL not consume the
-  next continuously waiting window.
+  next continuously waiting window. A GoodJob dispatch timestamp SHALL reset
+  the eligible pool's progress window before that execution completes.
   *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
   `spec/lib/paid/good_job_worker/health_snapshot_spec.rb`,
   `spec/lib/paid/worker_readiness_spec.rb`.

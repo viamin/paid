@@ -109,14 +109,22 @@ module Paid
       end
 
       def progress_stalled?(key, scheduler, now)
-        count = scheduler[:total_executions_count] || scheduler["total_executions_count"] || 0
+        progress = progress_token(scheduler)
         window = @progress_windows[key]
-        if window.nil? || window[:count] != count
-          @progress_windows[key] = { count:, observed_at: now }
+        if window.nil? || window[:progress] != progress
+          @progress_windows[key] = { progress:, observed_at: now }
           return false
         end
 
         now - window[:observed_at] > progress_timeout
+      end
+
+      # GoodJob updates execution_at as it dispatches a job, before the job
+      # completes. Tracking it alongside the terminal execution count prevents
+      # a legitimate dispatch from looking stalled while it is still running.
+      def progress_token(scheduler)
+        [ scheduler[:total_executions_count] || scheduler["total_executions_count"] || 0,
+          scheduler[:execution_at] || scheduler["execution_at"] ]
       end
 
       def schedulers(snapshot)
