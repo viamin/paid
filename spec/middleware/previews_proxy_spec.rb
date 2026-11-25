@@ -462,22 +462,55 @@ RSpec.describe PreviewsProxy do
       expect(response.status).to eq(502)
     end
 
-    it "streams the upstream response body without materializing it in memory" do
-      stub_streaming_http_response(
-        port:,
-        code: "200",
-        headers: { "content-type" => "text/plain", "content-length" => "11" },
-        chunks: [ "hello ", "world" ],
-        forbid_body: true
-      )
+    context "when the upstream pauses before completing its response" do
+      let(:upstream_stream) do
+        release = Queue.new
+        waiting = Queue.new
+        finished = Queue.new
+        chunks = Enumerator.new do |stream|
+          stream << "he"
+          stream << "llo "
+          waiting << true
+          raise Timeout::Error, "response was buffered before delivery" unless release.pop(timeout: 2)
 
-      status, headers, body = middleware.call(authorized_env_for("/previews/s3cret-token/stream"))
-      chunks = []
-      body.each { |chunk| chunks << chunk }
+          stream << "wo"
+          stream << "rld"
+          finished << true
+        end
+        { chunks:, release:, waiting:, finished: }
+      end
 
-      expect(status).to eq(200)
-      expect(headers["content-length"]).to eq("11")
-      expect(chunks).to eq([ "hello ", "world" ])
+      before do
+        stub_streaming_http_response(
+          port:,
+          code: "200",
+          headers: { "content-type" => "text/plain", "content-length" => "11" },
+          chunks: upstream_stream.fetch(:chunks),
+          forbid_body: true
+        )
+      end
+
+      it "streams the upstream response body without materializing it in memory" do
+        status, headers, body = middleware.call(authorized_env_for("/previews/s3cret-token/stream"))
+        received = +""
+        body.each do |chunk|
+          received << chunk
+          next unless received.bytesize == 6
+
+          expect(upstream_stream.fetch(:waiting).pop(timeout: 2)).to be(true)
+          expect(upstream_stream.fetch(:finished)).to be_empty
+          expect(received).to eq("hello ")
+          upstream_stream.fetch(:release) << true
+        end
+
+        expect(status).to eq(200)
+        expect(headers["content-length"]).to eq("11")
+        expect(upstream_stream.fetch(:finished).pop(timeout: 2)).to be(true)
+        expect(received).to eq("hello world")
+      ensure
+        upstream_stream.fetch(:release).push(true)
+        body&.close
+      end
     end
   end
 

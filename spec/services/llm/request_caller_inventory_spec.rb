@@ -22,6 +22,7 @@ RSpec.describe Llm::Request do
     app/services/issues/partial_completion_assessment.rb
     app/services/knowledge/context_intake/generate_questions.rb
     app/services/knowledge/decisions/draft.rb
+    app/services/layered_verification/unmapped_material.rb
     app/services/models/meta_agent_selector.rb
     app/services/operational_supervisor/analyze.rb
     app/services/partial_closeouts/assess_evidence.rb
@@ -35,6 +36,7 @@ RSpec.describe Llm::Request do
     app/services/style_guides/extract.rb
     app/temporal/activities/analyze_issue_activity.rb
     app/temporal/activities/analyze_knowledge_gaps_activity.rb
+    app/temporal/activities/assess_followup_review_threads_activity.rb
     app/temporal/activities/decompose_feature_activity.rb
     ].freeze
   end

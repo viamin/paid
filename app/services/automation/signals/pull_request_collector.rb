@@ -288,6 +288,24 @@ module Automation
         mark_base_merge_range_status(:not_evaluated, false)
       end
 
+      # Distinguishes genuine top-level-only feedback from a review that had
+      # inline comments whose threads are now resolved. Unknown stays explicit
+      # so scanner admission fails closed instead of treating a fetch failure
+      # as an empty review.
+      # @spec FOCUSED-RUN-012
+      def review_inline_comment_state(issue:, review:)
+        review_id = review[:id]
+        return :unavailable if review_id.nil?
+
+        review_comments = fetch_review_comments(issue:)
+        return :unavailable if review_comments.nil?
+
+        inline_comment = review_comments.any? do |comment|
+          comment[:pull_request_review_id].to_s == review_id.to_s
+        end
+        inline_comment ? :present : :absent
+      end
+
       # Returns true when the diff between the review's commit and the PR
       # HEAD touches a file named in the review's inline comments.
       def review_diff_touches_reviewed_files?(issue:, review:, pr_data: nil)

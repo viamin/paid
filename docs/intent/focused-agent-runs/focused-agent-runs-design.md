@@ -61,6 +61,39 @@ resolved focus flows through the workflow into the created agent run.
   classes, with an explicit instruction to ignore the fix-forward directive
   for them so the agent neither regresses nor silently fixes them.
 
+## Review-thread closure evidence
+
+The review-feedback prompt captures trusted unresolved thread identities so a
+follow-up can address the feedback, but capture, successful execution, a push,
+or a rebase are not proof that any particular finding is repaired. Before the
+public GitHub mutation, `AssessFollowupReviewThreadsActivity` obtains a fresh
+agent-harness judgment over the captured threads at the current head. Its exact
+structured response is mechanically checked for explicit authorization, captured trusted IDs, a
+supported disposition, explicit rationale, the observed head SHA, and a digest
+of the exact thread content assessed. Complete evidence is paginated only for
+captured threads and is bounded by finite request, page, comment, and byte
+budgets; missing or cyclic cursors and budget overflow fail closed rather than
+authorizing a partial thread. `ResolveReviewThreadsActivity` reads the head and
+threads again immediately before its mutation, and requires every authorized
+thread digest to remain unchanged. The workflow leaves findings open when
+either boundary is unavailable, invalid, stale, or inconclusive. The Temporal
+patch guard retains old recorded resolution commands for replay until the
+patch-guard sunset sweep authorizes their removal. This preserves valid no-code
+dispositions (for example invalid, outdated, or already-fixed feedback) without
+hiding feedback appended after assessment or equating unrelated changed lines
+or generic agent success with repair evidence.
+
+The PR scanner consumes that public thread state at the next admission
+boundary. A body-only-capable reviewer is not assumed to have produced only a
+top-level finding: when its latest review has inline comments and none of their
+threads remains unresolved, the scanner treats that inline feedback as closed
+and does not enqueue the same coding follow-up again. Associated-comment state
+is checked before timestamp-based body-only follow-up decisions, including for
+a fresh review. A genuine top-level-only
+finding remains actionable, as does any review whose comment data cannot be
+fetched. Changed files are not closure evidence; partial or unrelated changes
+continue to require an open thread or a fresh reviewer disposition.
+
 ## Focus-scoped quality scoring
 
 Quality weights are selected per focus (`QualityMetric::FOCUS_WEIGHTS`,
@@ -90,6 +123,28 @@ focuses never saw the comments, so they consume nothing. All other cutoff
 consumers (review threads, changes requested, review-bot status, CI, policy
 and budget gates) keep using completed runs only.
 
+## Standalone review-feedback routing
+
+Standalone GitHub review bodies use the same latest-review-per-author and
+completed-run cutoff mechanics as `CHANGES_REQUESTED` reviews. A nonblank
+trusted `COMMENTED` review body may therefore route one normal
+`review_feedback` follow-up even when GitHub cannot create an inline thread.
+A clean verdict produced by the configured Paid Agent reviewer carries its
+review marker, and a configured review-bot summary matching the shared
+clean-review classifier is excluded from standalone findings even though
+GitHub represents either as a nonblank `COMMENTED` review. A later clean review supersedes
+the earlier body, and reviews observed before the completed-run cutoff are not
+requeued. This is prompt context only: it does not manufacture a review-thread
+identifier, resolve review state, or renew retry and allowance budgets.
+
+A configured bot's `COMMENTED` review that has associated inline comments is
+not an independent standalone finding. It continues through the existing
+thread lifecycle, including resolved-inline suppression. The standalone route
+requires a known absence of associated inline comments for such bot reviews;
+unavailable comment state remains an incomplete review gate, not coding work
+or an all-clear result. Human standalone findings retain their existing trust
+and cutoff rules.
+
 ## `focus_resolved` attribution
 
 A new `focus_resolved` metric (0.0 / 1.0) measures whether the focused
@@ -110,6 +165,23 @@ state (`record_focus_resolution` → `focus_resolution_scores`):
 The composite score is recomputed with the focus-specific weights once the
 `focus_resolved` value lands. Attribution runs only for the focuses in
 `FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES` (i.e. not `general`).
+
+## Verified follow-up thread resolution
+
+Follow-up thread resolution binds its semantic assessment to a complete
+immutable comparison file list within the request's file ceiling. The GitHub
+client raises a typed unavailable error when the local ceiling or upstream
+file-list cap prevents proving completeness, rather than silently dropping
+paths. Required per-file path/status, blob identity, nonnegative change counts
+and rename provenance are checked before returning evidence; status must match
+the provider's [diff-entry schema](https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json).
+Absent binary patch text is permitted. The bounded diff keeps every file's
+metadata and shares the patch budget among complete or explicitly marked
+excerpts. If complete metadata and minimum per-file excerpts cannot fit, the
+assessment remains unavailable before calling the model. File omission cannot
+authorize resolution. Patch and thread excerpts retain explicit byte-budget markers. Only
+thread IDs actually included in the bounded prompt receive content-version
+bindings and may be authorized; omitted findings remain actionable.
 
 ## PR automation fuses
 

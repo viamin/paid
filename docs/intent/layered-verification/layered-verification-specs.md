@@ -115,14 +115,18 @@
   `spec/services/layered_verification/audits/ingest_results_spec.rb`
   *Code:* `app/models/layered_verification_check_result.rb` (#4432, #4433)
 
-- [ ] **LAYERED-VERIFY-009** — An audit's linkage-freshness producer SHALL
+- [x] **LAYERED-VERIFY-009** — An audit's linkage-freshness producer SHALL
   report, as a `LayeredVerificationCheckResult`, any source/spec/code material
   within declared scope that has no `LayeredVerificationCorrespondenceClaim`
   referencing it at all, combining mechanical structural diffing with a
   bounded semantic read-through (`agent_harness`) for material a structural
   diff cannot detect (a new clause inside an existing paragraph).
-  *Tests:* `spec/services/layered_verification/linkage_freshness_spec.rb`
-  *Code:* `LayeredVerification::LinkageFreshness` (#4432, #4435)
+  *Tests:* `spec/services/layered_verification/linkage_freshness_spec.rb`,
+  `spec/services/layered_verification/unmapped_material_spec.rb`,
+  `spec/temporal/activities/run_layered_verification_checks_activity_spec.rb`
+  *Code:* `LayeredVerification::LinkageFreshness`,
+  `LayeredVerification::UnmappedMaterial`, executed by
+  `Activities::RunLayeredVerificationChecksActivity` (#4432, #4435)
 
 ## Model-check command integration
 
@@ -368,17 +372,21 @@
 
 ## Change impact, interruption, and cancellation
 
-- [ ] **LAYERED-VERIFY-019** — A change to an obligation's source, its
+- [x] **LAYERED-VERIFY-019** — A change to an obligation's source, its
   declared model, or a check's execution environment SHALL invalidate every
   `LayeredVerificationCheckResult` whose `input_revision` no longer matches;
   evidence with established non-overlapping scope SHALL be retained, and
   evidence whose overlap cannot be established with confidence SHALL be
   invalidated by conservative fallback, with the limitation disclosed in the
   next audit report.
-  *Tests:* `spec/services/layered_verification/invalidation_spec.rb`
-  *Code:* `LayeredVerification::Invalidation` (#4435)
+  *Tests:* `spec/services/layered_verification/invalidation_spec.rb`,
+  `spec/services/layered_verification/audits/record_reuse_spec.rb`,
+  `spec/temporal/activities/run_layered_verification_checks_activity_spec.rb`
+  *Code:* `LayeredVerification::Invalidation`,
+  `LayeredVerification::Audits::RecordReuse` (admission impact consumed by
+  `Activities::RunLayeredVerificationChecksActivity`) (#4435)
 
-- [ ] **LAYERED-VERIFY-020** — An interrupted (cancelled, infrastructure
+- [x] **LAYERED-VERIFY-020** — An interrupted (cancelled, infrastructure
   failure, or budget-exhausted) `layered_verification_audit` or
   `layered_verification_repair` run SHALL, on retry, revalidate the freshness
   of recorded `LayeredVerificationCheckResult` rows, the obligation's current
@@ -387,8 +395,12 @@
   recorded check result and finding and SHALL report the run's outcome as
   explicitly incomplete, never as a pass. A repair's code mutation SHALL NOT
   be replayed merely because the surrounding audit retried.
-  *Tests:* `spec/services/layered_verification/resumption_spec.rb`
-  *Code:* `LayeredVerification::Resumption` (#4435)
+  *Tests:* `spec/services/layered_verification/resumption_spec.rb`,
+  `spec/services/layered_verification/audits/resume_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`
+  *Code:* `LayeredVerification::Resumption`,
+  `LayeredVerification::Audits::Resume`, entered through
+  `Projects::AgentRunsController#retry` (#4435)
 
 ## Business-review package
 
@@ -458,7 +470,8 @@
   to the obligations whose declared scope intersects the pull request's
   changed files, never an automatic full audit of every project obligation.
   An audit request — PR-triggered or manual — whose resolved obligation scope
-  and pinned revision match an already-active audit SHALL NOT be admitted,
+  intersects an already-active audit's scope at the same pinned revision SHALL
+  NOT be admitted,
   regardless of trigger source. A PR-triggered audit whose obligation scope
   cannot be resolved from the changed files SHALL surface an actionable
   request (correct the project's trigger configuration or request a bounded

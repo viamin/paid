@@ -99,6 +99,8 @@ module Activities
 
       # @spec MANUAL-RUN-RETRY-001
       schedule_manual_run_retry_if_eligible(agent_run)
+      # @spec MANUAL-RUN-RETRY-010
+      schedule_manual_issue_create_pr_retry_if_eligible(agent_run)
       # @spec PARTIAL-CLOSEOUT-056
       schedule_acceptance_audit_retry_if_eligible(agent_run)
       schedule_technical_enhancement_recovery_if_eligible(agent_run)
@@ -205,6 +207,19 @@ module Activities
       ).schedule(
         attempt: agent_run,
         job_class: RetryFailedManualRunJob,
+        delay: RetryFailedManualRunJob.method(:retry_delay)
+      )
+    end
+
+    def schedule_manual_issue_create_pr_retry_if_eligible(agent_run)
+      return unless AgentRuns::ManualIssueCreatePrRetryPolicy.manual_issue_create_pr_run?(agent_run)
+
+      RetryableAttempts::RetryAttempt.new(
+        policy: AgentRuns::ManualIssueCreatePrRetryPolicy.new,
+        decision_point: "manual_issue_create_pr_failed_run_retry"
+      ).schedule(
+        attempt: agent_run,
+        job_class: RetryFailedManualIssueCreatePrJob,
         delay: RetryFailedManualRunJob.method(:retry_delay)
       )
     end

@@ -29,15 +29,7 @@ module RetryableAttempts
         terminal_attempt = policy.attempt_class.lock.find_by(id: attempt_id)
         next Result.new(:skipped, :missing_attempt, nil, nil) unless terminal_attempt
 
-        claim_number = retry_number || policy.next_attempt(terminal_attempt)
-        assessment = policy.assess(terminal_attempt, retry_number: claim_number)
-        next record_skip(terminal_attempt, assessment) unless assessment.eligible?
-
-        successor = policy.build_successor!(terminal_attempt, assessment.attempt)
-        next record_reason(terminal_attempt, :not_admitted, assessment.attempt) unless successor
-
-        policy.record_claim!(terminal_attempt, successor:, decision_point:, retry_number: assessment.attempt)
-        Result.new(:claimed, :retry_claimed, terminal_attempt, successor)
+        claim_with_policy_lock(terminal_attempt, retry_number)
       end
     rescue ActiveRecord::RecordNotUnique => error
       raise unless policy.duplicate_claim_conflict?(error)
@@ -64,6 +56,27 @@ module RetryableAttempts
       end
 
       record_reason(attempt, assessment.reason, assessment.attempt)
+    end
+
+    def claim_with_policy_lock(terminal_attempt, retry_number)
+      with_policy_lock(terminal_attempt) do
+        terminal_attempt.reload
+        claim_number = retry_number || policy.next_attempt(terminal_attempt)
+        assessment = policy.assess(terminal_attempt, retry_number: claim_number)
+        next record_skip(terminal_attempt, assessment) unless assessment.eligible?
+
+        successor = policy.build_successor!(terminal_attempt, assessment.attempt)
+        next record_reason(terminal_attempt, :not_admitted, assessment.attempt) unless successor
+
+        policy.record_claim!(terminal_attempt, successor:, decision_point:, retry_number: assessment.attempt)
+        Result.new(:claimed, :retry_claimed, terminal_attempt, successor)
+      end
+    end
+
+    def with_policy_lock(terminal_attempt, &)
+      return yield unless policy.respond_to?(:with_claim_lock)
+
+      policy.with_claim_lock(terminal_attempt, &)
     end
 
     def record_reason(attempt, reason, retry_number)

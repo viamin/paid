@@ -624,6 +624,20 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       end
     end
 
+    # @spec MANUAL-RUN-RETRY-010 AGENT-RETRY-019 EAGER-QUEUE-019
+    context "with a failed manual issue implementation" do
+      it "schedules bounded recovery independently of disabled auto-pick" do
+        project.update!(auto_pick_enabled: false, retry_failed_manual_runs: true)
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          goal: "create_pr", trigger_type: "manual", auto_pick: false)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Runner unavailable")
+        }.to have_enqueued_job(RetryFailedManualIssueCreatePrJob).with(agent_run.id, 1)
+      end
+    end
+
     context "with a GitHub App push-permission rejection" do
       let(:client) { instance_double(GithubClient) }
 
