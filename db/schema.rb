@@ -376,6 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
     t.datetime "operator_coding_priority_requested_at", comment: "Explicit operator scheduling request for an existing coding retry; execution authority remains unchanged."
+    t.datetime "operator_first_implementation_priority_requested_at", comment: "Explicit operator scheduling request for an existing automatic first implementation; execution authority remains unchanged."
     t.datetime "operator_priority_requested_at", comment: "Explicit operator scheduling request for an existing audit; original execution authority remains unchanged."
     t.bigint "originating_audit_run_id"
     t.string "parent_workflow_id", limit: 255
@@ -7150,12 +7151,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -7210,12 +7211,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
-  SQL
-
   create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
