@@ -3893,8 +3893,15 @@ class AgentRun < ApplicationRecord
 
   def initiating_user_belongs_to_project_account
     return if initiating_user.account_id == project.account_id
+    return if historical_initiator_cancellation?
 
     errors.add(:initiating_user, "must belong to the same account as the project")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-064 TENANT-ACCESS-003
+  def historical_initiator_cancellation?
+    persisted? && status == "cancelled" && status_in_database.in?(UNFINISHED_STATUSES) &&
+      (changed_attribute_names_to_save - %w[status completed_at duration_seconds error_message updated_at]).empty?
   end
 
   def sync_legacy_provider_bridge_columns

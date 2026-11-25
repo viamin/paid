@@ -44,6 +44,27 @@ RSpec.describe Tools::ManageSharedDeliveryEvidence do
     expect(SharedDeliveryEvidenceAssociation.where(issue:)).to be_empty
   end
 
+  it "revokes deleted-authorizer history and permits a separately authorized replacement" do # @spec PARTIAL-CLOSEOUT-064
+    association = Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request:, actor:)
+    operator = create(:user, :owner, account:)
+    Accounts::RemoveMembership.call(account:, membership: actor.account_membership_for(account), actor: operator)
+    historical = association.reload.attributes.except("revoked_at", "updated_at")
+    operator_session = create(:chat_session, account:, created_by: operator, project:)
+    tool = described_class.new(user: operator, session: operator_session)
+
+    result = tool.call(project_id: project.id, issue_id: issue.id, action: "revoke", confirmed: true)
+
+    expect(result).to include(id: association.id, active: false)
+    expect(association.reload.attributes.except("revoked_at", "updated_at")).to eq(historical)
+    expect(association).not_to be_current
+    replacement = tool.call(project_id: project.id, issue_id: issue.id,
+      pull_request_id: pull_request.id, action: "associate", confirmed: true)
+    expect(replacement.fetch(:id)).not_to eq(association.id)
+    expect(SharedDeliveryEvidenceAssociation.find(replacement.fetch(:id)))
+      .to have_attributes(authorized_by_id: operator.id, revoked_at: nil)
+    expect(association.reload.authorized_by_id).to be_nil
+  end
+
   it "cannot resolve records from another project" do
     foreign_issue = create(:issue)
 

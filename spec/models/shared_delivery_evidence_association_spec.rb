@@ -80,4 +80,32 @@ RSpec.describe SharedDeliveryEvidenceAssociation do # @spec PARTIAL-CLOSEOUT-063
 
     expect(association.reload).not_to be_current
   end
+
+  it "requires an authorizer for a new association" do # @spec PARTIAL-CLOSEOUT-064
+    pull_request = merged_pr(project)
+    association = described_class.new(account:, project:, issue: target, pull_request:,
+      pull_request_url: pull_request.github_html_url, revision: pull_request.merged_commit_sha)
+
+    expect(association).not_to be_valid
+    expect(association.errors[:authorized_by]).to be_present
+  end
+
+  it "does not clear a live authorizer through an ordinary update" do # @spec PARTIAL-CLOSEOUT-064
+    pull_request = merged_pr(project)
+    association = described_class.create!(account:, project:, issue: target, pull_request:,
+      authorized_by: owner, pull_request_url: pull_request.github_html_url, revision: pull_request.merged_commit_sha)
+
+    expect(association.update(authorized_by: nil, revoked_at: Time.current)).to be(false)
+    expect(association.reload.authorized_by_id).to eq(owner.id)
+  end
+
+  it "does not rewrite actorless history while revoking it" do # @spec PARTIAL-CLOSEOUT-064
+    pull_request = merged_pr(project)
+    association = described_class.create!(account:, project:, issue: target, pull_request:,
+      authorized_by: owner, pull_request_url: pull_request.github_html_url, revision: pull_request.merged_commit_sha)
+    association.update_column(:authorized_by_id, nil)
+
+    expect(association.update(revoked_at: Time.current, revision: "b" * 40)).to be(false)
+    expect(association.reload.revision).to eq(pull_request.merged_commit_sha)
+  end
 end

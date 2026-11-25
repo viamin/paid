@@ -113,6 +113,22 @@ RSpec.describe Accounts::RemoveMembership do
     expect(member.account_membership_for(account)).to be_nil
   end
 
+  it "cancels an audit after its requester moves to a successor account without rewriting history" do # @spec PARTIAL-CLOSEOUT-064 TENANT-ACCESS-003
+    audit = acceptance_audit
+    original = audit.agent_run.attributes.slice("initiating_user_id", "project_id", "issue_id",
+      "continuation_request_id", "trigger_type", "runner_id", "external_metadata")
+    successor_account = create(:account)
+    member.add_role(:member, successor_account)
+
+    remove_member
+
+    expect(member.reload.account).to eq(successor_account)
+    expect(AgentRuns::RecheckIssueEligibility.call(audit.agent_run)).to be(true)
+    expect(audit.agent_run.reload.status).to eq("cancelled")
+    expect(audit.agent_run.attributes.slice(*original.keys)).to eq(original)
+    expect(audit.request.reload.status).to eq("superseded")
+  end
+
   # @spec ACCOUNT-ADMIN-005 PARTIAL-CLOSEOUT-064
   it "removes the last member without historical artifacts" do
     expect { remove_member }.to change(User, :count).by(-1)

@@ -11,11 +11,8 @@ class NullifyHistoricalActorReferencesOnUserDeletion < ActiveRecord::Migration[8
   end
 
   def down
-    remove_foreign_key(:issue_continuation_requests, column: :requested_by_id)
-    remove_foreign_key(:shared_delivery_evidence_associations, column: :authorized_by_id)
-    add_foreign_key :issue_continuation_requests, :users, column: :requested_by_id
-    add_foreign_key :shared_delivery_evidence_associations, :users, column: :authorized_by_id
-    require_shared_delivery_authorizer
+    raise ActiveRecord::IrreversibleMigration,
+      "Nullified historical attribution cannot be reconstructed safely; use a reviewed forward migration."
   end
 
   private
@@ -42,13 +39,6 @@ class NullifyHistoricalActorReferencesOnUserDeletion < ActiveRecord::Migration[8
             )
           );
       SQL
-    end
-  end
-
-  def require_shared_delivery_authorizer
-    safety_assured do
-      execute "DROP POLICY IF EXISTS tenant_isolation ON shared_delivery_evidence_associations"
-      EnableTenantRlsOnSharedDeliveryEvidenceAssociations.new.up
     end
   end
 end

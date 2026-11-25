@@ -27,11 +27,27 @@
   a successor membership or no historical artifacts SHALL retain its existing
   behavior. Historical attribution SHALL NOT grant queued work execution
   authority after revocation.
+  An authorized, confirmed operator revocation SHALL remain usable after the
+  historical authorizer reference is nullified, preserving that row and allowing
+  a separately authorized replacement association. New authorless associations
+  and ordinary updates clearing a live authorizer SHALL remain invalid.
+  When the requester survives in a successor account, current-authority denial
+  SHALL still cancel the original queued run and supersede the request without
+  rewriting its initiator or project. This historical-attribution exception
+  SHALL NOT permit new cross-account initiation, resumption, or reassignment.
+  Rollback of the nullifying migration SHALL refuse before changing foreign keys
+  or tenant policy because missing historical attribution cannot be reconstructed.
   *Code:* `app/models/issue_continuation_request.rb`,
   `app/models/shared_delivery_evidence_association.rb`,
+  `app/models/agent_run.rb`,
+  `db/migrate/20261125140307_nullify_historical_actor_references_on_user_deletion.rb`,
   `app/models/user.rb`.
   *Test:* `spec/services/accounts/remove_membership_spec.rb`,
-  `spec/models/shared_delivery_evidence_association_spec.rb`.
+  `spec/models/shared_delivery_evidence_association_spec.rb`,
+  `spec/models/agent_run_historical_initiator_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/migrations/nullify_historical_actor_references_on_user_deletion_spec.rb`,
+  `spec/mcp/tools/manage_shared_delivery_evidence_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
   attempt under one logical audit identity — the issue plus the closeout-evidence

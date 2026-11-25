@@ -36,7 +36,14 @@ class SharedDeliveryEvidenceAssociation < ApplicationRecord
   def same_tenant_and_project
     errors.add(:project, "must own the source and pull request") unless [ issue, pull_request ].all? { |record| record&.project_id == project_id }
     errors.add(:account, "must own the project") unless project&.account_id == account_id
-    errors.add(:authorized_by, "must belong to the account") unless authorized_by&.account_id == account_id
+    return if authorized_by&.account_id == account_id || historical_authorizer_revocation?
+
+    errors.add(:authorized_by, "must belong to the account")
+  end
+
+  def historical_authorizer_revocation?
+    persisted? && authorized_by_id.nil? && authorized_by_id_in_database.nil? &&
+      revoked_at.present? && (changed_attribute_names_to_save - %w[revoked_at updated_at]).empty?
   end
 
   def merged_pull_request
