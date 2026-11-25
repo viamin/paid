@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
   let(:account) { create(:account) }
+  let(:actor) { create(:user, :member, account:) }
   let(:project) { create(:project, account: account, owner: "acme", repo: "alpha") }
   let(:issue) { create(:issue, project: project, github_state: "open") }
 
@@ -63,6 +64,67 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(result.merged_prs.map(&:number)).to contain_exactly(12)
     expect(result.merged_prs.first.url).to eq(pr.github_url)
     expect(result.terminal_at).to be_present
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "accepts a current, authorized shared merged PR without reparenting it" do
+    source = create(:issue, project:, github_state: "open")
+    pr = merged_pr(project:, number: 5305, parent_issue_id: source.id, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    association = Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+
+    expect(association).to be_persisted
+    expect(pr.reload.parent_issue_id).to eq(source.id)
+    expect(described_class.call(issue).merged_prs.map(&:url)).to contain_exactly(pr.github_html_url)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "fails closed when a shared delivery PR revision changes" do
+    pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    pr.update!(merged_commit_sha: "b" * 40)
+
+    expect(described_class.call(issue).present?).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "fails closed when a shared delivery PR is reopened" do
+    pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    pr.update!(github_state: "open")
+
+    expect(described_class.call(issue).present?).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "refuses to associate a reopened PR with a historical merged phase" do
+    pr = merged_pr(project:, number: 5305, github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+    pr.update!(github_state: "open")
+
+    expect {
+      Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    }.to raise_error(ActiveRecord::RecordInvalid, /must be a merged pull request/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "rejects a stored PR URL outside the pull request repository" do
+    pr = merged_pr(project:, number: 5305,
+      github_html_url: "https://github.com/other/repository/pull/5305", merged_commit_sha: "a" * 40)
+
+    expect {
+      Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    }.to raise_error(ActiveRecord::RecordInvalid, /canonical GitHub URL/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "rejects an actor without project issue-management permission" do
+    viewer = create(:user, :viewer, account:)
+    pr = merged_pr(project:, number: 5305,
+      github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40)
+
+    expect {
+      Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor: viewer)
+    }.to raise_error(Pundit::NotAuthorizedError)
+    expect(SharedDeliveryEvidenceAssociation.where(issue:)).to be_empty
   end
 
   it "collects a merged PR matched via the originating run's pull_request_number" do
@@ -228,6 +290,23 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     after = described_class.call(issue)
 
     expect(after.digest).to eq(before.digest)
+    expect(after.pr_body_revision).not_to eq(before.pr_body_revision)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-063
+  it "tracks a replacement association pinned to a new merge revision" do
+    pr = merged_pr(project:, number: 5305,
+      github_html_url: "https://github.com/acme/alpha/pull/5305", merged_commit_sha: "a" * 40,
+      body: "Shared implementation")
+    association = Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    before = described_class.call(issue)
+
+    association.update!(revoked_at: Time.current)
+    pr.update!(merged_commit_sha: "b" * 40)
+    Issues::AssociateSharedDeliveryEvidence.call(issue:, pull_request: pr, actor:)
+    after = described_class.call(issue)
+
+    expect(after.digest).not_to eq(before.digest)
     expect(after.pr_body_revision).not_to eq(before.pr_body_revision)
   end
 end

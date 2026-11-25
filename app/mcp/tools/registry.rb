@@ -26,6 +26,7 @@ module Tools
       "Tools::PrioritizeFirstImplementation",
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
+      "Tools::ManageSharedDeliveryEvidence",
       "Tools::ListLayeredVerificationReviewPackages",
       "Tools::GetLayeredVerificationReviewPackage",
       "Tools::ApproveLayeredVerificationReviewPackage",

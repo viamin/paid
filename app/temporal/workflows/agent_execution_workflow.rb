@@ -481,7 +481,6 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
           if source_pull_request_number
-            # Resolve review threads (best-effort, non-fatal)
             resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
 
             # Existing PR: mark complete with existing PR details. The
@@ -602,11 +601,21 @@ module Workflows
           end
         else
           # No changes produced by agent
-          resolve_no_change_followup_review_threads(agent_run_id,
-            source_pull_request_number,
-            pr_run_without_prompt,
-            pr_prompt_result,
-            agent_result)
+
+          # Pre-#5288 no-change histories recorded the ResolveReviewThreads
+          # command HERE — before MarkAgentRunCompleteActivity — whenever the
+          # agent reported the feedback already addressed. Evaluate the patch
+          # once, at the point where old and new code diverge, so the marker
+          # anchors deterministically. Old histories (no marker) replay the
+          # recorded command in its recorded position; new executions never
+          # trust a bare agent assertion and instead run the evidence-backed
+          # assessment after completion (below). A single execution does
+          # exactly one of the two. # @spec FOCUSED-RUN-011
+          evidence_backed_followup = Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
+          unless evidence_backed_followup
+            replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number,
+              pr_run_without_prompt, pr_prompt_result, agent_result)
+          end
 
           if goal == "analyze_issue" && issue_id.present?
             # Analyze-issue runs assess readiness without producing code changes.
@@ -637,6 +646,9 @@ module Workflows
           # Still request a review-bot review for existing PR runs: the
           # previous run may have pushed a fix the bot has not reviewed yet.
           if source_pull_request_number && !complete_result[:skipped]
+            if evidence_backed_followup
+              assess_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, pr_prompt_result)
+            end
             request_review_bot_review(project_id, source_pull_request_number)
             queue_refactor_followup_if_needed(
               goal: goal,
@@ -987,26 +999,96 @@ module Workflows
       )
     end
 
-    def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
-      return unless pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
+    # @spec FOCUSED-RUN-011
+    def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, prompt_result)
+      return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
 
-      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
+      resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
     end
 
-    def resolve_no_change_followup_review_threads(agent_run_id, source_pull_request_number, pr_run_without_prompt, pr_prompt_result, agent_result)
+    # New-position evidence-backed resolution for no-change existing-PR
+    # follow-ups. The caller runs this only under the patch; old histories took
+    # the legacy compatibility branch instead. # @spec FOCUSED-RUN-011
+    def assess_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, prompt_result)
+      return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
+
+      resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
+    end
+
+    # Pre-#5288 compatibility branch. Reproduces the exact ResolveReviewThreads
+    # command the old no-change path recorded before MarkAgentRunCompleteActivity
+    # so an old history replays deterministically. The caller gates this on the
+    # absence of the evidence-backed patch, so new executions never reach it.
+    # @spec FOCUSED-RUN-011
+    def replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number, pr_run_without_prompt, prompt_result, agent_result)
       return unless source_pull_request_number && pr_run_without_prompt &&
-        pr_prompt_result[:includes_review_threads] &&
-        pr_prompt_result[:review_thread_ids].present? &&
+        prompt_result[:includes_review_threads] &&
+        prompt_result[:review_thread_ids].present? &&
         agent_result[:review_threads_already_addressed]
 
-      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
+      resolve_review_threads(agent_run_id, thread_ids: prompt_result[:review_thread_ids])
     end
 
-    def resolve_review_threads(agent_run_id, thread_ids: nil)
-      input = { agent_run_id: agent_run_id }
-      input[:thread_ids] = thread_ids if thread_ids.present?
+    def resolve_followup_review_threads_with_evidence(agent_run_id, thread_ids)
+      if Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
+        resolution = run_activity(Activities::AssessFollowupReviewThreadsActivity,
+          { agent_run_id: agent_run_id, thread_ids: thread_ids }, timeout: 180, retry_policy: NO_RETRY)
+        resolve_assessed_review_threads(agent_run_id, thread_ids, resolution)
+      else
+        # Retain the command recorded by pre-#5288 histories. The guard may be
+        # removed only after the registry's sunset sweep confirms no history can
+        # replay this branch. New histories always take the assessed path above.
+        resolve_review_threads(agent_run_id, thread_ids: thread_ids)
+      end
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.review_thread_assessment_unavailable",
+        agent_run_id: agent_run_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
 
-      run_activity(Activities::ResolveReviewThreadsActivity, input, timeout: 60)
+    def resolve_assessed_review_threads(agent_run_id, captured_thread_ids, resolution)
+      rationales = string_keyed_hash(resolution[:rationales])
+      thread_versions = string_keyed_hash(resolution[:thread_versions])
+      return unless valid_review_thread_resolution?(captured_thread_ids, resolution, rationales, thread_versions)
+
+      run_activity(Activities::ResolveReviewThreadsActivity,
+        { agent_run_id: agent_run_id,
+          thread_ids: resolution[:thread_ids],
+          expected_head_sha: resolution[:head_sha],
+          rationales: rationales,
+          thread_versions: thread_versions }, timeout: 60)
+    end
+
+    # thread_ids are String elements of an Array, left untouched by
+    # BaseWorkflow#run_activity's deep_symbolize_keys normalization of the
+    # activity result, while nested Hash keys are symbolized by that same call.
+    # Re-stringify them so the lookups below match thread_id by value rather
+    # than by type.
+    def string_keyed_hash(value)
+      return {} unless value.is_a?(Hash)
+
+      value.transform_keys(&:to_s)
+    end
+
+    def valid_review_thread_resolution?(captured_thread_ids, resolution, rationales, thread_versions)
+      return false unless resolution.is_a?(Hash) && resolution[:authorized] == true
+      return false unless resolution[:head_sha].is_a?(String) && resolution[:head_sha].present?
+
+      thread_ids = resolution[:thread_ids]
+      thread_ids.is_a?(Array) && thread_ids.present? && thread_ids.uniq == thread_ids &&
+        thread_ids.all? { |thread_id| captured_thread_ids.include?(thread_id) } &&
+        thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? } &&
+        thread_ids.all? { |thread_id| ReviewThreads::ContentDigest.valid?(thread_versions[thread_id]) }
+    end
+
+    def resolve_review_threads(agent_run_id, thread_ids:)
+      run_activity(Activities::ResolveReviewThreadsActivity,
+        { agent_run_id: agent_run_id, thread_ids: thread_ids }, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

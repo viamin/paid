@@ -178,7 +178,7 @@ module Activities
 
     def raise_review_feedback_context_blocked!
       raise Temporalio::Error::ApplicationError.new(
-        "Review feedback follow-up has unresolved review threads but no prompt-eligible review comments",
+        "Review feedback context is unavailable, incomplete, or missing required trusted comments",
         type: "ReviewFeedbackContextBlocked",
         non_retryable: true
       )
