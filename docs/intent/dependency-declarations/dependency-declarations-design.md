@@ -78,6 +78,12 @@ contract is consumed by readiness, queue admission and dequeue rechecks,
 lifecycle reporting, partial-closeout prerequisite state, and root ranking so
 that presentation cannot contradict admission.
 
+Each consumer evaluates fulfillment on the prerequisite, independently of the
+dependent's workflow state. Root ranking retains explicitly queued
+recommend-close work as a dependent and excludes fulfilled merged-and-deployed
+PR targets from the roots that still block it. SQL joins identify the dependent
+and prerequisite separately so their lifecycle states cannot be interchanged.
+
 ## Blocking graph invariant
 
 Every `IssueDependency` local-edge write validates the proposed account-scoped

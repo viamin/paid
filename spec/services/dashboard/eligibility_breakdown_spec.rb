@@ -256,7 +256,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
     # @spec QUEUE-HANDOFF-004
     it "preserves deployment and external dependency blockers" do
-      deployment_target = create(:issue, :closed, :pull_request, project: project, paid_state: "new")
+      deployment_target = create(:issue, :closed, :pull_request, project: project, paid_state: "new", pr_review_phase: "merged")
       deployment_held = create(:issue, project: project, github_state: "open", paid_state: "new")
       create(:issue_dependency, issue: deployment_held, depends_on_issue: deployment_target, requires_deployment: true)
       external_held = create(:issue, project: project, github_state: "open", paid_state: "new")

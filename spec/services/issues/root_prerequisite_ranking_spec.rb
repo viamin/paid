@@ -79,6 +79,21 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     expect(ranking.paths.sole.issues).to eq([ root, blocked ])
   end
 
+  # @spec PARTIAL-CLOSEOUT-048 DEPENDENCY-DECLARATIONS-011
+  it "excludes a fulfilled merged PR when checking whether one root unblocks queue work" do
+    root = issue(1)
+    blocked = issue(2)
+    fulfilled = create(:issue, :pull_request, project:, github_number: 3, github_state: "closed",
+      paid_state: "completed", pr_review_phase: "merged", deployed_at: Time.current)
+    depends(blocked, root)
+    create(:issue_dependency, issue: blocked, depends_on_issue: fulfilled, requires_deployment: true)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking.root).to eq(root)
+    expect(ranking.paths.sole.completion_alone_makes_runnable).to be(true)
+  end
+
   # @spec PARTIAL-CLOSEOUT-048
   it "does not claim sole unblockability while an undeployed merged PR also blocks the work" do
     root = issue(1)
