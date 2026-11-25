@@ -71,6 +71,13 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
     expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :project_or_issue_paused)
   end
 
+  it "refuses recovery when the current hard-stop cost budget is exhausted" do
+    run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
+    create(:cost_budget, :hard_stop, project:, current_usage_cents: 100_000)
+
+    expect(policy.assess(run)).to have_attributes(eligible?: false, reason: :cost_budget_exhausted)
+  end
+
   it "carries the operator-authorized review depth snapshot onto the successor" do
     run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false,
       review_depth_snapshot: "focused")

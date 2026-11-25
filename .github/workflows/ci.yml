@@ -384,7 +384,7 @@ jobs:
           sudo install -d /usr/share/postgresql-common/pgdg
           key_ready=false
           for attempt in 1 2 3; do
-            if curl -fsSL --retry 3 --retry-delay 5 --max-time 60 \
+            if curl -fsSL --connect-timeout 10 --max-time 20 \
               https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_download" \
               && gpg --batch --with-colons --show-keys "$key_download" | awk -F: '$1 == "fpr" { valid = ($10 == "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"); exit } END { exit(valid ? 0 : 1) }'; then
               sudo mv "$key_download" "$keyring"
@@ -406,7 +406,7 @@ jobs:
           apt_with_retry() {
             local attempt
             for attempt in 1 2 3; do
-              if sudo timeout 5m apt-get \
+              if sudo timeout 90s apt-get \
                 -o Acquire::http::Timeout=30 \
                 -o Acquire::https::Timeout=30 \
                 -o Acquire::Retries=3 "$@"; then
@@ -763,7 +763,7 @@ jobs:
           sudo install -d /usr/share/postgresql-common/pgdg
           key_ready=false
           for attempt in 1 2 3; do
-            if curl -fsSL --retry 3 --retry-delay 5 --max-time 60 \
+            if curl -fsSL --connect-timeout 10 --max-time 20 \
               https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_download" \
               && gpg --batch --with-colons --show-keys "$key_download" | awk -F: '$1 == "fpr" { valid = ($10 == "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"); exit } END { exit(valid ? 0 : 1) }'; then
               sudo mv "$key_download" "$keyring"
@@ -785,7 +785,7 @@ jobs:
           apt_with_retry() {
             local attempt
             for attempt in 1 2 3; do
-              if sudo timeout 5m apt-get \
+              if sudo timeout 90s apt-get \
                 -o Acquire::http::Timeout=30 \
                 -o Acquire::https::Timeout=30 \
                 -o Acquire::Retries=3 "$@"; then

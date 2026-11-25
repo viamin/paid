@@ -448,14 +448,16 @@ module Automation
           # SecurityAlerts::ProcessCodeScanningAlerts pass is (#4052). An
           # ordinary GitHub issue's merged PR keeps blocking it forever, same
           # as before.
-          def merged_block_issue_ids(project) # @spec EAGER-QUEUE-011
+          def merged_block_issue_ids(project) # @spec EAGER-QUEUE-011 PARTIAL-CLOSEOUT-064
             merged_ids = (
               merged_linked_pr_parent_issue_ids(project).pluck(:parent_issue_id) +
               Issue.merged_paid_generated_pull_request_source_issue_ids(project: project).pluck(:issue_id) +
               SharedDeliveryEvidenceAssociation.where(project:, revoked_at: nil)
                 .joins("INNER JOIN issues shared_prs ON shared_prs.id = shared_delivery_evidence_associations.pull_request_id")
                 .joins("INNER JOIN projects shared_pr_projects ON shared_pr_projects.id = shared_prs.project_id")
+                .joins("INNER JOIN users shared_delivery_authorizers ON shared_delivery_authorizers.id = shared_delivery_evidence_associations.authorized_by_id")
                 .where("shared_prs.project_id = shared_delivery_evidence_associations.project_id")
+                .where("shared_delivery_authorizers.account_id = shared_delivery_evidence_associations.account_id")
                 .where("shared_prs.github_state = 'closed' AND shared_prs.pr_review_phase = 'merged' AND shared_prs.github_html_url = shared_delivery_evidence_associations.pull_request_url AND shared_prs.merged_commit_sha = shared_delivery_evidence_associations.revision")
                 .where(<<~SQL.squish)
                   shared_delivery_evidence_associations.pull_request_url = CASE

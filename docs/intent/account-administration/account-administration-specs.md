@@ -33,3 +33,12 @@
   surface.
   *Code:* `app/controllers/account_audit_logs_controller.rb`.
   *Test:* `spec/requests/accounts_spec.rb`.
+
+- [x] **ACCOUNT-ADMIN-005** — When an account removes a member whose account
+  access is represented by historical continuation requests, acceptance-audit
+  runs, or shared-delivery evidence, the normal membership-removal service
+  SHALL complete the revocation and preserve the historical rows and their
+  non-actor lineage. If removal deletes the user, the historical actor reference
+  SHALL be nullified rather than block the transaction or delete history.
+  *Code:* `app/services/accounts/remove_membership.rb`, `app/models/user.rb`.
+  *Test:* `spec/services/accounts/remove_membership_spec.rb`.

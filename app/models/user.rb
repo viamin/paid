@@ -53,6 +53,11 @@ class User < ApplicationRecord
   # @spec AUTO-MERGE-011
   has_many :requested_conflict_repair_scope_evidences, class_name: "ConflictRepairScopeEvidence",
     foreign_key: :requested_by_id, dependent: :nullify, inverse_of: :requested_by
+  has_many :issue_continuation_requests, foreign_key: :requested_by_id,
+    dependent: :nullify, inverse_of: :requested_by
+  has_many :authorized_shared_delivery_evidence_associations,
+    class_name: "SharedDeliveryEvidenceAssociation", foreign_key: :authorized_by_id,
+    dependent: :nullify, inverse_of: :authorized_by
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
@@ -223,6 +228,7 @@ class User < ApplicationRecord
     end
   end
 
+  # @spec ACCOUNT-ADMIN-005 PARTIAL-CLOSEOUT-064
   def revoke_account_access!(account)
     TenantContext.with_system_access do
       with_lock do
