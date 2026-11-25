@@ -5,6 +5,8 @@ module ConflictRepairs
   # It performs no coding and never rewrites the producer's history.
   # @spec AUTO-MERGE-011
   class ReassessScope
+    RequestingActorUnauthorized = Class.new(StandardError)
+
     Result = Data.define(:status, :evidence, :reason) do
       def accepted? = status == :accepted
     end
@@ -37,9 +39,9 @@ module ConflictRepairs
 
       assess(pr)
     rescue GithubClient::Error
-      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
-
-      Result.new(:accepted, record("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha), nil)
+      unavailable_after_provider_failure
+    rescue RequestingActorUnauthorized
+      refused("requesting_actor_not_authorized")
     end
 
     private
@@ -80,13 +82,38 @@ module ConflictRepairs
       Result.new(:accepted, record("unavailable", message, [], [], provider_head), nil)
     end
 
+    def unavailable_after_provider_failure
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
+      Result.new(:accepted, record("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha), nil)
+    rescue RequestingActorUnauthorized
+      refused("requesting_actor_not_authorized")
+    end
+
     def record(status, explanation, base_paths, repair_paths, provider_head, base_sha = nil)
       attributes = { agent_run:, account: project.account, project:, issue:, requested_by:, pre_run_sha:,
         integration_base_sha: base_sha || "unavailable", result_sha: agent_run.result_commit_sha,
         provider_head_sha: provider_head, status:, explanation:, base_imported_paths: base_paths || [], repair_authored_paths: repair_paths || [] }
-      ConflictRepairScopeEvidence.create_or_find_by!(attributes.slice(:agent_run, :pre_run_sha, :integration_base_sha, :result_sha, :provider_head_sha, :status)) do |evidence|
-        evidence.assign_attributes(attributes)
+      ActiveRecord::Base.transaction do
+        locked_requester = lock_requester_authorization!
+        raise RequestingActorUnauthorized unless AgentRunPolicy.new(locked_requester, agent_run).retry?
+
+        ConflictRepairScopeEvidence.create_or_find_by!(attributes.slice(:agent_run, :pre_run_sha, :integration_base_sha, :result_sha, :provider_head_sha, :status)) do |evidence|
+          evidence.assign_attributes(attributes)
+        end
       end
+    end
+
+    # Lock every row that can grant or revoke +retry?+ before checking it and
+    # publishing immutable evidence. A concurrent revocation consequently
+    # commits before this decision (which refuses) or after its publication.
+    def lock_requester_authorization!
+      requester = User.lock.find_by(id: requested_by&.id)
+      raise RequestingActorUnauthorized unless requester
+
+      AccountMembership.lock.where(user: requester, account: project.account).load
+      ProjectMembership.lock.where(user: requester, project:).load
+      requester.reload
     end
 
     def requesting_actor_authorized?
