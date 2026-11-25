@@ -280,6 +280,20 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.container_host_for(service)).to eq("worker-1")
   end
 
+  it "does not claim support for network-disabled containers" do
+    expect(backend.supports_network_disabled_containers?).to be(false)
+  end
+
+  # @spec RUST-SDK-BUILD-012
+  it "refuses network-disabled container configs instead of silently attaching the default network" do
+    request = stub_request(:post, "#{manager_url}/services/create").to_return(status: 200, body: { "ID" => service_id }.to_json)
+
+    expect {
+      backend.create_container(container_config.merge("NetworkDisabled" => true))
+    }.to raise_error(Docker::Error::DockerError, /network-disabled container/)
+    expect(request).not_to have_been_made
+  end
+
   # @spec LLM-ROUTING-013
   it "applies create deadlines to the Swarm manager transport" do
     stub_request(:post, "#{manager_url}/services/create")
@@ -612,6 +626,31 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     )
   end
 
+  # @spec RUST-SDK-BUILD-012
+  it "maps read-only rootfs from HostConfig when callers use Docker-style nesting" do
+    payload = backend.send(
+      :service_spec,
+      container_config.deep_merge(
+        "ReadonlyRootfs" => nil,
+        "HostConfig" => { "ReadonlyRootfs" => true }
+      )
+    )
+
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "ReadOnly")).to be(true)
+  end
+
+  # @spec RUST-SDK-BUILD-012
+  it "maps the direct NanoCpus HostConfig limit without requiring a quota/period pair" do
+    payload = backend.send(
+      :service_spec,
+      container_config.deep_merge(
+        "HostConfig" => { "NanoCpus" => 500_000_000, "CpuQuota" => nil, "CpuPeriod" => nil }
+      )
+    )
+
+    expect(payload.dig("TaskTemplate", "Resources", "Limits", "NanoCPUs")).to eq(500_000_000)
+  end
+
   def expect_service_spec(payload)
     expect(payload).to include(
       "Name" => "paid-agent",
@@ -629,7 +668,9 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(payload.dig("TaskTemplate", "ContainerSpec", "Privileges")).to eq(
       "NoNewPrivileges" => true
     )
+    expect(payload.dig("TaskTemplate", "ContainerSpec", "ReadOnly")).to be(true)
     expect(payload.dig("TaskTemplate", "Resources", "Limits", "Pids")).to eq(4096)
+    expect(payload.dig("TaskTemplate", "Resources", "Limits", "NanoCPUs")).to eq(2_000_000_000)
 
     tmpfs_mounts = payload.dig("TaskTemplate", "ContainerSpec", "Mounts").select { |m| m["Type"] == "tmpfs" }
     tmp_mount = tmpfs_mounts.find { |m| m["Target"] == "/tmp" }

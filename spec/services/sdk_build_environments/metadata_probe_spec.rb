@@ -44,7 +44,8 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
     backend = instance_double(Containers::Backends::LocalDocker, identifier: "local")
     image = instance_double(Docker::Image)
     allow(backend).to receive_messages(
-      system_info: { "Architecture" => "aarch64" }
+      system_info: { "Architecture" => "aarch64" },
+      supports_network_disabled_containers?: true
     )
     allow(backend).to receive(:get_image).with("rust:1.95.0-bookworm").and_return(image)
     allow(image).to receive(:info).and_return({
@@ -156,6 +157,20 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
 
       expect(backend).to have_received(:delete_container).with(container, deadline: kind_of(Numeric), force: true)
       expect(probe_calls[:exec_command]).to include("sh", "-c")
+    end
+
+    # @spec RUST-SDK-BUILD-012
+    it "rejects backends that cannot enforce a network-disabled probe container before starting one" do
+      backend = backend_with(exec_stdout: successful_probe_output)
+      allow(backend).to receive(:supports_network_disabled_containers?).and_return(false)
+
+      facts = described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
+
+      expect(facts[:process_architecture]).to be_nil
+      expect(facts[:toolchains]).to eq([])
+      expect(facts[:probe_error]).to include("cannot enforce a network-disabled probe container", '"local"')
+      expect(backend).not_to have_received(:create_container)
+      expect(backend).not_to have_received(:delete_container)
     end
   end
 end

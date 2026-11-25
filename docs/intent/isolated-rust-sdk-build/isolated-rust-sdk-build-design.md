@@ -122,6 +122,24 @@ uses the backend API (`system_info`, image inspect, a disposable
 metadata container with bounded resources and no network). Receipts are
 metadata-only: commands and outcomes, never credential material.
 
+The disposable container's isolation contract is backend-enforced, not
+advisory. Because the probe executes toolchain binaries from an
+operator-selected image, the backend must be able to honor
+`NetworkDisabled`; the probe asks
+`Containers::Backends::Base#supports_network_disabled_containers?` and
+refuses to start anything on a backend that cannot. The Swarm service
+API is such a backend — its spec has no `NetworkDisabled` field, a
+service with no network attachments lands its task on the node's
+default bridge network, and the engine's predefined `none` network is
+not a swarm-attachable network (the swarm store only exposes `bridge`
+and `host`) — so `rake sdk_build_environment:preflight` under
+`CONTAINER_BACKEND=swarm` yields an `unverifiable` receipt naming the
+limitation instead of running the probe on the default network. The
+Swarm translation also raises for a `NetworkDisabled` config rather
+than silently dropping the flag, and it maps the Engine `HostConfig`
+forms of the read-only root filesystem and the direct `NanoCpus` limit
+into the service spec so those requirements survive translation too.
+
 ## Independent runnability
 
 `rake sdk_build_environment:preflight` runs the same classification

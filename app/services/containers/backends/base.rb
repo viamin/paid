@@ -15,6 +15,19 @@ module Containers
         true
       end
 
+      # Whether a container-create config's top-level "NetworkDisabled"
+      # flag is honored for containers this backend starts. Backends that
+      # pass configs straight to the Docker Engine API honor it (the
+      # daemon creates the container with no network); backends that
+      # translate configs into a different runtime API must override this
+      # to return false when that runtime cannot express a
+      # network-disabled container, so isolation-dependent callers can
+      # refuse to start one.
+      # @spec RUST-SDK-BUILD-012
+      def supports_network_disabled_containers?
+        true
+      end
+
       def owns_host?(_host)
         false
       end
