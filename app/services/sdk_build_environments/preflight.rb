@@ -134,7 +134,7 @@ module SdkBuildEnvironments
     def toolchain_checks
       toolchains_for_checks.flat_map do |toolchain|
         command = toolchain[:command]
-        [ presence_check(command, toolchain), loader_check(command, toolchain) ]
+        [ presence_check(command, toolchain), loader_check(command, toolchain), execution_check(command, toolchain) ]
       end
     end
 
@@ -167,6 +167,19 @@ module SdkBuildEnvironments
       )
     end
 
+    def execution_check(command, toolchain)
+      status = toolchain[:execution_status]
+      required = REQUIRED_TOOLCHAINS.include?(command)
+      Check.new(
+        name: "toolchain_execution:#{command}",
+        healthy: !required || status == 0,
+        details: { command: command, execution_status: status },
+        verdict: :toolchain_unusable,
+        remediation_hint: required && status != 0 ?
+          "#{command} --version exited with status #{status.inspect}; use a runnable digest-pinned toolchain image." : nil
+      )
+    end
+
     def loader_hint(command, verdict, classification)
       case verdict
       when :loader_architecture_mismatch
@@ -178,7 +191,9 @@ module SdkBuildEnvironments
 
     def toolchain_receipts
       toolchains.map do |toolchain|
-        toolchain.merge(architecture: toolchain[:binary_architecture]).slice(:command, :path, :interpreter_path, :architecture)
+        toolchain.merge(architecture: toolchain[:binary_architecture]).slice(
+          :command, :path, :interpreter_path, :architecture, :execution_status
+        )
       end
     end
 
@@ -188,7 +203,9 @@ module SdkBuildEnvironments
 
     def toolchains_for_checks
       required = REQUIRED_TOOLCHAINS.map do |command|
-        toolchains.find { |toolchain| toolchain[:command] == command } || { command: command, path: nil, interpreter_path: nil }
+        toolchains.find { |toolchain| toolchain[:command] == command } || {
+          command: command, path: nil, interpreter_path: nil, execution_status: nil
+        }
       end
       required + toolchains.reject { |toolchain| REQUIRED_TOOLCHAINS.include?(toolchain[:command]) }
     end

@@ -6,13 +6,16 @@ module SdkBuildEnvironments
   # Collects the environment facts preflight classifies: engine identity
   # and architecture, the selected image's id/digest/platform, the actual
   # process architecture inside the image, and each toolchain binary's
-  # resolved path with its ELF loader mapping. Toolchain observation runs
+  # resolved path, ELF loader mapping, and required-command execution status.
+  # Toolchain observation runs
   # in a disposable hardened container — network-disabled, read-only root,
   # all capabilities dropped, bounded memory/CPU/PIDs — and the container
   # is always removed, success or failure. Receipts are metadata-only;
   # no credential material is read or returned.
   class MetadataProbe
+    # @spec RUST-SDK-BUILD-010
     DEFAULT_COMMANDS = %w[cargo rustc rustup].freeze
+    REQUIRED_EXECUTION_COMMANDS = %w[cargo rustc].freeze
     COMMAND_FORMAT = /\A[a-z_][a-z0-9_-]*\z/.freeze
     HEADER_BYTES = 4096
     CONTAINER_MEMORY_BYTES = 128 * 1024 * 1024
@@ -98,6 +101,8 @@ module SdkBuildEnvironments
       }
     end
 
+    # Runs only version commands, suppressing their output, so the receipt
+    # establishes executability without capturing potentially noisy tool output.
     def probe_script
       <<~SH
         uname -m
@@ -110,39 +115,52 @@ module SdkBuildEnvironments
             printf '\\n'
           fi
         done
+        for t in #{REQUIRED_EXECUTION_COMMANDS.join(' ')}; do
+          if command -v "$t" >/dev/null 2>&1; then
+            "$t" --version >/dev/null 2>&1
+            status=$?
+          else
+            status=127
+          fi
+          printf 'exec|%s|%s\\n' "$t" "$status"
+        done
       SH
     end
 
     def parse(stdout)
       lines = Array(stdout).join.to_s.lines.map(&:strip)
-      paths, headers = tool_observations(lines)
+      paths, headers, execution_statuses = tool_observations(lines)
       {
         process_architecture: lines.first.presence,
-        toolchains: commands.map { |command| toolchain_fact(command, paths, headers) }
+        toolchains: commands.map { |command| toolchain_fact(command, paths, headers, execution_statuses) }
       }
     end
 
     def tool_observations(lines)
       paths = {}
       headers = {}
+      execution_statuses = {}
       lines.each do |line|
         if (match = line.match(/\Atool\|([^|]+)\|(.*)\z/))
           paths[match[1]] = match[2].to_s
         elsif (match = line.match(/\Ahdr\|([^|]+)\|([A-Za-z0-9+\/=]+)\z/))
           headers[match[1]] = match[2]
+        elsif (match = line.match(/\Aexec\|([^|]+)\|(\d+)\z/))
+          execution_statuses[match[1]] = match[2].to_i
         end
       end
-      [ paths, headers ]
+      [ paths, headers, execution_statuses ]
     end
 
-    def toolchain_fact(command, paths, headers)
+    def toolchain_fact(command, paths, headers, execution_statuses)
       path = paths[command].presence
       interpreter = path && headers[command] ? ElfInterpreter.for_bytes(Base64.decode64(headers[command])) : nil
       {
         command: command,
         path: path,
         interpreter_path: interpreter,
-        binary_architecture: ArchitectureCompatibility.interpreter_architecture(interpreter)
+        binary_architecture: ArchitectureCompatibility.interpreter_architecture(interpreter),
+        execution_status: execution_statuses[command]
       }
     end
   end
