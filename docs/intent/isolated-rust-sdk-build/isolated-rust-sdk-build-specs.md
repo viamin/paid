@@ -66,7 +66,7 @@
   facts, the receipt SHALL record the backend identifier, engine
   architecture, image identity (reference, digest, platform), process
   architecture, and each resolved toolchain path with its ELF
-  architecture and interpreter — and SHALL contain no credential
+  architecture, interpreter, and execution status — and SHALL contain no credential
   material.
   *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
   *Code:* `SdkBuildEnvironments::Preflight`.
@@ -83,9 +83,10 @@
 
 - [x] **RUST-SDK-BUILD-010** — When the metadata probe fails, reports no
   `cargo` or `rustc` inventory, a required toolchain binary is absent from the
-  environment's default PATH, or its interpreter architecture mismatches
-  the process architecture, the preflight verdict SHALL be a named
-  failure (`unverifiable`, `toolchain_absent`, or
+  environment's default PATH, `cargo --version` or `rustc --version` exits
+  non-zero, or its interpreter architecture mismatches the process
+  architecture, the preflight verdict SHALL be a named failure
+  (`unverifiable`, `toolchain_absent`, `toolchain_unusable`, or
   `loader_architecture_mismatch`) with a
   remediation hint, and SHALL NOT be `compatible`.
   *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.

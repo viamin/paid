@@ -17,7 +17,7 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
     (header + program_header + interpreter.b + "\x00".b)
   end
 
-  def script_output(uname:, tools:)
+  def script_output(uname:, tools:, executions: {})
     lines = [ uname ]
     tools.each do |command, path, header_bytes|
       lines << "tool|#{command}|#{path}"
@@ -25,7 +25,19 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
 
       lines << "hdr|#{command}|#{Base64.strict_encode64(header_bytes)}"
     end
+    executions.each { |command, status| lines << "exec|#{command}|#{status}" }
     lines.join("\n") + "\n"
+  end
+
+  def successful_probe_output
+    script_output(
+      uname: "aarch64",
+      tools: [
+        [ "cargo", "/usr/local/cargo/bin/cargo", elf64_with_interpreter("/lib/ld-linux-aarch64.so.1") ],
+        [ "rustc", "/usr/local/rustup/toolchains/bin/rustc", elf64_with_interpreter("/lib/ld-linux-aarch64.so.1") ]
+      ],
+      executions: { "cargo" => 0, "rustc" => 0 }
+    )
   end
 
   def backend_with(exec_stdout:, exec_failure: nil)
@@ -60,12 +72,9 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
   end
 
   describe ".call" do
-    it "collects engine, image, process, and toolchain facts" do
-      stdout = script_output(uname: "aarch64", tools: [
-        [ "cargo", "/usr/local/cargo/bin/cargo", elf64_with_interpreter("/lib/ld-linux-aarch64.so.1") ],
-        [ "rustc", "/usr/local/rustup/toolchains/bin/rustc", elf64_with_interpreter("/lib/ld-linux-aarch64.so.1") ]
-      ])
-      backend = backend_with(exec_stdout: stdout)
+    # @spec RUST-SDK-BUILD-010
+    it "collects engine, image, process, toolchain, and execution facts" do
+      backend = backend_with(exec_stdout: successful_probe_output)
 
       facts = described_class.call(backend: backend, image: "rust:1.95.0-bookworm")
 
@@ -81,6 +90,8 @@ RSpec.describe SdkBuildEnvironments::MetadataProbe, :no_db do
       expect(cargo[:path]).to eq("/usr/local/cargo/bin/cargo")
       expect(cargo[:interpreter_path]).to eq("/lib/ld-linux-aarch64.so.1")
       expect(cargo[:binary_architecture]).to eq("arm64")
+      expect(cargo[:execution_status]).to eq(0)
+      expect(probe_calls[:exec_command].last).to include("for t in cargo rustc; do", '"$t" --version')
     end
 
     it "records an absent toolchain without a path or interpreter" do

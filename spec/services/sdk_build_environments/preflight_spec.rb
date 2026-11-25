@@ -15,8 +15,8 @@ RSpec.describe SdkBuildEnvironments::Preflight, :no_db do
       },
       process_architecture: "aarch64",
       toolchains: [
-        { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: "/lib/ld-linux-aarch64.so.1" },
-        { command: "rustc", path: "/usr/local/rustup/toolchains/bin/rustc", interpreter_path: "/lib/ld-linux-aarch64.so.1" }
+        { command: "cargo", path: "/usr/local/cargo/bin/cargo", interpreter_path: "/lib/ld-linux-aarch64.so.1", execution_status: 0 },
+        { command: "rustc", path: "/usr/local/rustup/toolchains/bin/rustc", interpreter_path: "/lib/ld-linux-aarch64.so.1", execution_status: 0 }
       ]
     }.merge(overrides)
   end
@@ -47,6 +47,19 @@ RSpec.describe SdkBuildEnvironments::Preflight, :no_db do
       expect(receipt[:verdict]).to be(:compatible)
       expect(receipt[:remediation_hint]).to be_nil
       expect(receipt[:checks]).to all(include(healthy: true))
+    end
+
+    # @spec RUST-SDK-BUILD-010
+    it "fails when a required toolchain command cannot run" do
+      toolchains = facts[:toolchains].map do |toolchain|
+        toolchain.merge(execution_status: toolchain[:command] == "cargo" ? 127 : 0)
+      end
+
+      receipt = described_class.call(facts: facts(toolchains: toolchains))
+
+      expect(receipt[:verdict]).to be(:toolchain_unusable)
+      expect(receipt[:remediation_hint]).to include("cargo")
+      expect(receipt[:checks]).to include(hash_including(name: "toolchain_execution:cargo", healthy: false))
     end
 
     # @spec RUST-SDK-BUILD-009

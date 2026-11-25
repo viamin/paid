@@ -106,10 +106,12 @@ Before any build container is provisioned, the capability captures a
 sanitized receipt (`SdkBuildEnvironments::Preflight`): backend/engine
 identity and architecture, the selected image's id, digest, and platform,
 the actual process architecture observed in the image, resolved
-cargo/rustc paths, and each toolchain binary's ELF architecture and
-interpreter path. The receipt carries a check-based verdict —
+cargo/rustc paths, each toolchain binary's ELF architecture and
+interpreter path, and the exit statuses of `cargo --version` and
+`rustc --version`. The receipt carries a check-based verdict —
 `compatible`, or a named failure (`image_architecture_mismatch`,
-`toolchain_absent`, `loader_architecture_mismatch`, `unverifiable`) with
+`toolchain_absent`, `toolchain_unusable`, `loader_architecture_mismatch`,
+`unverifiable`) with
 a remediation hint — so an unsupported pairing fails loudly before
 Cargo ever runs, instead of surfacing as a loader error inside a build
 log.
