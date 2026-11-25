@@ -51,6 +51,8 @@ module Projects
       @egress_security_events = egress_audit_events.recent.limit(50).load
       @egress_denied_event_count = egress_audit_events.count
       @session_summary = @agent_run.agent_run_session_summary
+      @first_implementation_priority_available = policy(@project).run_agent? &&
+        AgentRuns::PrioritizeFirstImplementation.eligible?(agent_run: @agent_run)
       load_continuation_authority
     end
 
@@ -346,6 +348,24 @@ module Projects
       @project.broadcast_pull_requests_update
 
       redirect_to project_path(@project), notice: "Priority requested for PR ##{pr.github_number}."
+    end
+
+    # @spec QUEUE-TIER-010
+    def prioritize_first_implementation
+      authorize @project, :run_agent?
+
+      unless ActiveModel::Type::Boolean.new.cast(params[:confirmed])
+        redirect_to project_path(@project), alert: "Explicit confirmation is required to request priority."
+        return
+      end
+
+      run = @project.agent_runs.find_by(id: params[:agent_run_id])
+      unless run && AgentRuns::PrioritizeFirstImplementation.call(agent_run: run, actor: current_user)
+        redirect_to project_path(@project), alert: "That first implementation is no longer eligible for priority."
+        return
+      end
+
+      redirect_to project_agent_run_path(@project, run), notice: "Priority requested for this first implementation."
     end
 
     # Deliberate continuation of an issue stalled behind terminal closeout

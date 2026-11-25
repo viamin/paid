@@ -357,6 +357,7 @@ Rails.application.routes.draw do
       post :quick_create, on: :collection
       post :bootstrap_readiness, on: :collection
       post :bump_priority, on: :collection
+      post :prioritize_first_implementation, on: :collection
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
       post :resume_manual_review, on: :collection

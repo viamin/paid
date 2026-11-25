@@ -57,6 +57,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.created" => "run",
     "agent_run.audit_priority_requested" => "run",
     "agent_run.coding_priority_requested" => "run",
+    "agent_run.first_implementation_priority_requested" => "run",
     "agent_run.cancelled" => "run",
     "agent_run.execution_parked" => "run",
     "agent_run.retried" => "run",
