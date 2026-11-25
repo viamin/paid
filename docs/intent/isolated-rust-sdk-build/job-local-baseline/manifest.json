@@ -67,8 +67,8 @@
   "scope": "Verified environment-only job-local Core baseline and reachable handoff inputs; not a Core/Ruby prototype, native artifact/server test, published SDK adoption, worker quiescence or new native allowance.",
   "input_preparation": {
     "file": "prepare-inputs.sh",
-    "sha256": "17729b7c6c284193d27aad6cc1669113d758baa61bdeef2b3616cacf6421e58e",
-    "status": "Exact distributed preparation script executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T11:41:23Z. No compiler or server executed by preparation; baseline phase results are separate.",
+    "sha256": "b5a820276af03b17e916b3a0621040e07ccf39343af98c05ece18656039e0122",
+    "status": "Preparation rejects a non-/workspace or symlinked root, occupied or symlinked reserved path, and a parallel preparation claim before its first recipe-directory write or download. The retained baseline body was executed successfully in the measured agent image as UID1001, public network,512MiB/1CPU/128PID/read-only root/cap-drop,300s envelope; exec0/OOMfalse, both actual containers and owned volume absent2026-11-25T11:41:23Z. No compiler or server executed by preparation; baseline phase results are separate.",
     "verified_at": "2026-11-25T11:41:23Z"
   },
   "same_image_additional_tools": {

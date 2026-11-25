@@ -124,3 +124,13 @@
   *Code:* `SdkBuildEnvironments::MetadataProbe`,
   `Containers::Backends::Base#supports_network_disabled_containers?`,
   `Containers::Backends::Swarm`.
+
+- [x] **RUST-SDK-BUILD-013** — When job-local input preparation starts, it
+  SHALL require the assigned physical `/workspace` root, refuse before any
+  recipe-directory write or download if a reserved path is occupied or
+  symlinked, and atomically claim preparation so a concurrent invocation
+  refuses. Its reserved set SHALL include all preparation and subsequent
+  install/fetch/check paths, so retained source or Cargo state cannot overlay
+  the pinned archives.
+  *Tests:* `spec/integration/file_joblocal_rust_sdk_baseline_preparation_spec.rb`.
+  *Code:* `docs/intent/isolated-rust-sdk-build/job-local-baseline/prepare-inputs.sh`.

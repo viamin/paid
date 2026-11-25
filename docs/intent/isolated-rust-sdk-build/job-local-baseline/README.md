@@ -28,11 +28,15 @@ than treating a successful Core check as proof of Ruby-extension loading.
 
 ## Prepare the public inputs
 
-Reserve the recipe's previously absent paths in the isolated job-owned
-`/workspace`: `downloads`, `ruby`, `tools/protoc`, `toolchain-inputs`,
-`toolchain`, `unpack`, `cargo`, `target`, and `source.before.sha`.
-Do not overwrite an existing checkout, build directory or another run's files.
-Use the normal workspace/artifact lifecycle if these names are already owned.
+Use only the assigned physical `/workspace` directory; do not set `WORK_ROOT`
+to another directory or a symbolic-link path. The preparation script refuses
+before its first download or recipe-directory write unless every reserved path
+is absent and non-symlinked: `downloads`, `ruby`, `tools`, `tools/protoc`,
+`toolchain-inputs`, `toolchain`, `unpack`, `cargo`, `target`, and
+`source.before.sha`. It atomically claims preparation so concurrent attempts
+also refuse. Do not overwrite an existing checkout, build directory or another
+run's files. Use the normal workspace/artifact lifecycle if these names are
+already owned.
 Never run these scripts on the host or stage the generated data into Paid.
 For a job whose Paid checkout is `/workspace`, exclude these reserved build
 paths in that checkout's job-local `.git/info/exclude` before preparation.

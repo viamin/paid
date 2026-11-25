@@ -2,8 +2,33 @@
 # Run only inside the existing isolated job, under an owned fresh workspace.
 # This assembles the pinned public input identities used by the successful baseline.
 set -eu
-: "${WORK_ROOT:?Set WORK_ROOT to an owned fresh job directory; never use the host root}"
-mkdir -p "$WORK_ROOT/downloads" "$WORK_ROOT/ruby" "$WORK_ROOT/tools/protoc" "$WORK_ROOT/toolchain-inputs"
+: "${WORK_ROOT:?Set WORK_ROOT to the assigned physical /workspace job directory; never use the host root}"
+fail() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+test "$WORK_ROOT" = /workspace || fail "WORK_ROOT must be the assigned /workspace job directory"
+if test ! -d "$WORK_ROOT" || test -L "$WORK_ROOT"; then
+  fail "WORK_ROOT must be a physical directory"
+fi
+work_root_physical=$(CDPATH='' cd -P "$WORK_ROOT" && pwd)
+test "$work_root_physical" = "$WORK_ROOT" || fail "WORK_ROOT must not contain symbolic links"
+for reserved_path in downloads ruby tools tools/protoc toolchain-inputs toolchain unpack cargo target source.before.sha; do
+  if test -e "$WORK_ROOT/$reserved_path" || test -L "$WORK_ROOT/$reserved_path"; then
+    fail "refusing occupied reserved path: $WORK_ROOT/$reserved_path"
+  fi
+done
+preparation_lock="$WORK_ROOT/.prepare-inputs.lock"
+if ! mkdir "$preparation_lock"; then
+  fail "preparation is already in progress or was not cleaned up: $preparation_lock"
+fi
+cleanup_preparation_lock() {
+  rmdir "$preparation_lock"
+}
+trap cleanup_preparation_lock EXIT
+trap 'exit 1' HUP INT TERM
+mkdir "$WORK_ROOT/downloads" "$WORK_ROOT/ruby" "$WORK_ROOT/tools" "$WORK_ROOT/toolchain-inputs"
+mkdir "$WORK_ROOT/tools/protoc"
 fetch_checked() {
   curl --fail --location --connect-timeout 10 --max-time 120 --silent --show-error "$1" -o "$2"
   printf '%s  %s\n' "$3" "$2" | sha256sum -c -
