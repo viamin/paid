@@ -3971,6 +3971,37 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "records the late stderr refresh-token diagnostic instead of startup noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "refresh_token_reused" ]).join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        diagnostic = agent_run.reload.runners_attempted
+          .find { |entry| entry["error_type"] == "auth_expired" }
+          .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("refresh_token_reused")
+        expect(diagnostic).not_to include("Codex startup diagnostic")
+      end
+
+      it "records the late multiline stderr refresh diagnostic instead of startup noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "Failed to refresh token:", "invalid_client" ]).join("\n")
+        result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        diagnostic = agent_run.reload.runners_attempted
+          .find { |entry| entry["error_type"] == "auth_expired" }
+          .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
+        expect(diagnostic).to include("Failed to refresh token:")
+        expect(diagnostic).to include("invalid_client")
+        expect(diagnostic).not_to include("Codex startup diagnostic")
+      end
+
       it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
         result = Containers::Provision::Result.success(
           stdout: codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),

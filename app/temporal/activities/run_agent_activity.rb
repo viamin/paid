@@ -2428,13 +2428,15 @@ module Activities
         stderr_result,
         origin: "stderr",
         event_path: "stderr",
-        terminal_diagnostic: sanitized_codex_diagnostic(stderr)
+        terminal_diagnostic: codex_stderr_diagnostic(stderr)
       )
     end
 
     def auth_classification?(classification)
       classification&.fetch(:reason, nil)&.to_sym == :auth_expired
     end
+
+    CODEX_DIAGNOSTIC_MAX_LINES = 256
 
     def codex_stdout_diagnostic(stdout)
       stdout.to_s.each_line do |line|
@@ -2447,6 +2449,52 @@ module Activities
       end
 
       "Codex reported auth_expired on stdout"
+    end
+
+    def codex_stderr_diagnostic(stderr)
+      diagnostic = codex_matching_stderr_span(stderr.to_s.lines.last(CODEX_DIAGNOSTIC_MAX_LINES))
+      return "Codex reported auth_expired on stderr" unless diagnostic
+
+      sanitized_codex_diagnostic(diagnostic)
+    end
+
+    # The harness deliberately exposes classification rather than its internal
+    # pattern details. A classified stream has no higher-priority category, so
+    # prefixes and suffixes can locate the first matching diagnostic span.
+    def codex_matching_stderr_span(lines)
+      finish = earliest_codex_auth_span_end(lines)
+      start = latest_codex_auth_span_start(lines, finish) if finish
+      lines[start..].join if start
+    end
+
+    def latest_codex_auth_span_start(lines, finish)
+      binary_search_codex_span(0, lines.size - 1) do |index|
+        auth_classification?(codex_stderr_classification(lines[index..finish].join))
+      end
+    end
+
+    def earliest_codex_auth_span_end(lines)
+      binary_search_codex_span(0, lines.size - 1, find_last: false) do |index|
+        auth_classification?(codex_stderr_classification(lines[..index].join))
+      end
+    end
+
+    def binary_search_codex_span(low, high, find_last: true, &)
+      match = nil
+      while low <= high
+        middle = (low + high) / 2
+        if yield(middle)
+          match = middle
+          find_last ? low = middle + 1 : high = middle - 1
+        else
+          find_last ? high = middle - 1 : low = middle + 1
+        end
+      end
+      match
+    end
+
+    def codex_stderr_classification(text)
+      AgentHarness::Providers::Codex.classify_output_chunk(text, stream: :stderr)
     end
 
     def sanitized_codex_diagnostic(output)
