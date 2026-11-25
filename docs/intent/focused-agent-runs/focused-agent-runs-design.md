@@ -105,21 +105,33 @@ keep the composite weights, so their scores are unchanged.
 ## Conversation feedback consumption
 
 The scanner's conversation-comment cutoff decides which trusted comments are
-still "new" enough to admit a follow-up run. A `completed` run's
-`completed_at` is the cutoff: comments older than it were shown to that run
-and are consumed. A terminal `no_output`/`no_changes` `create_pr` run is a
+still "new" enough to admit a follow-up run. Only a `completed` `create_pr`
+run whose focus includes the conversation section may contribute its
+`completed_at`: a focused run that excluded conversation feedback cannot
+acknowledge it. A terminal `no_output`/`no_changes` `create_pr` run is a
 valid no-change outcome for the feedback it was shown, but its status hides
 it from the completed-run lookup — so the same trusted comment kept
 re-admitting follow-ups (#5180).
 
-`check_conversation_comments` therefore takes its cutoff from the latest of
-the caller-supplied run (a `completed` run, or the focused run during
-`focus_resolved` attribution) and the newest
-`create_pr`/`no_output`/`no_changes` run whose focus actually includes the
-conversation section — `conversation` itself, plus the unscoped `general`
-and `label_action` focuses that include every applicable section (the same
-rule as `Prompts::BuildForPr#include_section?`). No-change runs with other
-focuses never saw the comments, so they consume nothing. All other cutoff
+`check_conversation_comments` therefore considers completed `create_pr` runs
+and `create_pr`/`no_output`/`no_changes` runs whose focus includes the
+conversation section — `conversation` itself, plus unscoped `general` and
+`label_action` (the same rule as `Prompts::BuildForPr#include_section?`).
+For recorded prompt preparation, the cutoff is immediately before the start
+second of the latest successful preparation, provided it finished before
+terminal completion. Provider comments can have whole-second timestamps while
+phase clocks retain fractions; same-second ordering is therefore ambiguous.
+Retain those comments conservatively rather than claiming they were shown.
+Completion time cannot acknowledge a comment that arrived after the prompt
+was assembled. A failed or late preparation supplies no acknowledgment;
+legacy runs with no preparation record retain a cutoff immediately before
+their completion second. A subsequent preparation in a later second consumes
+already-shown feedback normally; no run timestamp or allowance is changed.
+Take the maximum context cutoff across all eligible run history, rather than
+choosing by completion order, so a late-finishing older prompt does not hide
+a newer context or cause duplicate follow-ups. This is a scalar indexed
+phase lookup in the existing project/PR history query; it neither loads all
+phases nor rewrites run timestamps. Other focuses consume nothing. All other cutoff
 consumers (review threads, changes requested, review-bot status, CI, policy
 and budget gates) keep using completed runs only.
 

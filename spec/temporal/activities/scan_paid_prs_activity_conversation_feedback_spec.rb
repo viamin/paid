@@ -80,6 +80,85 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
   end
 
   describe "conversation feedback consumption after no-change follow-ups" do
+    it "retains comments arriving after prompt preparation but before no-change completion" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "keeps same-second provider timestamps actionable when prompt ordering is ambiguous" do
+      run = create_no_change_run!
+      prepared_at = 25.minutes.ago.change(usec: 500_000)
+      comment.created_at = prepared_at.change(usec: 0)
+      record_prompt_preparation(run, started_at: prepared_at, finished_at: 24.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "does not acknowledge comments through a failed prompt preparation" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 25.minutes.ago, finished_at: 24.minutes.ago, status: "failed")
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "does not acknowledge comments through a preparation recorded after completion" do
+      run = create_no_change_run!
+      record_prompt_preparation(run, started_at: 15.minutes.ago, finished_at: 10.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
+    it "uses the newest prepared context when completion order is reversed" do
+      later_completion = create_no_change_run!(completed_at: 10.minutes.ago)
+      record_prompt_preparation(later_completion, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)
+      earlier_completion = create_no_change_run!(completed_at: 20.minutes.ago)
+      record_prompt_preparation(earlier_completion, started_at: 25.minutes.ago, finished_at: 24.minutes.ago)
+
+      expect(trigger_types(activity.execute(project_id: project.id))).not_to include("conversation_comments")
+    end
+
+    it "keeps comments actionable after a completed review-feedback run excluded them" do
+      expect_conversation_feedback_after_completed_focus("review_feedback")
+    end
+
+    it "keeps comments actionable after a completed CI-fix run excluded them" do
+      expect_conversation_feedback_after_completed_focus("ci_fix")
+    end
+
+    it "keeps comments actionable after a completed merge-conflict run excluded them" do
+      expect_conversation_feedback_after_completed_focus("merge_conflict")
+    end
+
+    it "consumes comments older than a completed conversation-scope run" do
+      create(:agent_run, :completed,
+        project: project, source_pull_request_number: 42,
+        goal: "create_pr", focus: "conversation",
+        completed_at: 10.minutes.ago)
+
+      result = activity.execute(project_id: project.id)
+
+      expect(trigger_types(result)).not_to include("conversation_comments")
+    end
+
+    it "keeps an eligible completed run's cutoff after later focused completions" do
+      %w[review_feedback ci_fix merge_conflict].each do |focus|
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation",
+          completed_at: 20.minutes.ago)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: focus,
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(trigger_types(result)).not_to include("conversation_comments")
+      end
+    end
+
     it "consumes comments older than a terminal conversation-scope no-change run" do
       create_no_change_run!
 
@@ -191,6 +270,22 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
 
       expect(trigger_types(result)).to include("ci_failure")
     end
+  end
+
+  def expect_conversation_feedback_after_completed_focus(focus)
+    create(:agent_run, :completed,
+      project: project, source_pull_request_number: 42,
+      goal: "create_pr", focus: focus,
+      completed_at: 10.minutes.ago)
+
+    result = activity.execute(project_id: project.id)
+
+    expect(trigger_types(result)).to include("conversation_comments")
+  end
+
+  def record_prompt_preparation(run, started_at:, finished_at:, status: "completed")
+    AgentRunPhase.record!(agent_run: run, phase_key: "prepare_pr_prompt", phase_group: "prompt",
+      started_at: started_at, finished_at: finished_at, status: status)
   end
 
   describe "draft-phase conversation feedback consumption" do
