@@ -36,6 +36,11 @@ module Activities
     # @spec AUTO-MERGE-011
     class ComparisonDeadlineExceeded < StandardError; end
 
+    # Raised when the execute-entry PR metadata read exhausts the assessment
+    # budget before scope evidence can be gathered.
+    # @spec AUTO-MERGE-011
+    class PullRequestMetadataDeadlineExceeded < StandardError; end
+
     class << self
       def agent_update_comment?(body)
         normalized = body.to_s
@@ -65,7 +70,7 @@ module Activities
         project = agent_run.project
         client = project.client
 
-        pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        pr = pull_request_metadata(client, project, agent_run)
         enforce_conflict_repair_scope!(client, agent_run, pr)
         record_shipped_verification_result(agent_run)
 
@@ -157,6 +162,35 @@ module Activities
 
     def publication_budget_seconds
       remaining_activity_seconds - STOP_RESERVE_SECONDS
+    end
+
+    # The entry read is part of the scope gate because its base SHA is required
+    # to bind the assessment. Conflict repairs therefore spend from the same
+    # pre-publication budget as comparison evidence and fail closed on expiry.
+    # @spec AUTO-MERGE-011
+    def pull_request_metadata(client, project, agent_run)
+      return client.pull_request(project.full_name, agent_run.source_pull_request_number) unless agent_run.focus == "merge_conflict"
+
+      started = monotonic_now
+      budget = assessment_budget_seconds
+      pr = if budget < MINIMUM_REQUEST_SECONDS
+        nil
+      else
+        Timeout.timeout(budget, PullRequestMetadataDeadlineExceeded) do
+          client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        end
+      end
+      record_pr_metadata_diagnostics(budget:, elapsed_seconds: monotonic_now - started)
+      pr
+    rescue GithubClient::Error, PullRequestMetadataDeadlineExceeded => e
+      logger.warn(
+        message: "agent_execution.conflict_repair_pr_metadata_unavailable",
+        agent_run_id: agent_run.id,
+        repository: project.full_name,
+        error_class: e.class.name
+      )
+      record_pr_metadata_diagnostics(budget:, elapsed_seconds: monotonic_now - started)
+      nil
     end
 
     def result(agent_run)
@@ -314,7 +348,7 @@ module Activities
       return unless agent_run.focus == "merge_conflict"
 
       pre_run_sha = summary_base_sha(agent_run)
-      base_sha = pr.base&.sha
+      base_sha = pr&.base&.sha
       head_sha = agent_run.result_commit_sha
       assessment = assess_conflict_repair_scope(client, agent_run, pre_run_sha:, base_sha:, head_sha:)
       return if assessment["status"] == "approved"
@@ -394,12 +428,12 @@ module Activities
     def publish_conflict_repair_rejection(client, agent_run, pr)
       started = monotonic_now
       budget = publication_budget_seconds
-      skipped = budget < MINIMUM_REQUEST_SECONDS
+      skipped = pr.nil? || budget < MINIMUM_REQUEST_SECONDS
       if skipped
         logger.warn(
           message: "agent_execution.conflict_repair_rejection_publication_skipped",
           agent_run_id: agent_run.id,
-          pr_number: pr.number,
+          pr_number: agent_run.source_pull_request_number,
           publication_budget_seconds: budget.round(2)
         )
       else
@@ -484,6 +518,13 @@ module Activities
         "scope_assessment_status" => status,
         "assessment_budget_seconds" => budget.round(2),
         "assessment_elapsed_ms" => (elapsed_seconds * 1000).round
+      )
+    end
+
+    def record_pr_metadata_diagnostics(budget:, elapsed_seconds:)
+      @phase_metadata.merge!(
+        "pr_metadata_budget_seconds" => budget.round(2),
+        "pr_metadata_elapsed_ms" => (elapsed_seconds * 1000).round
       )
     end
 

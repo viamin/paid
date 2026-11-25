@@ -207,16 +207,16 @@
 - [x] **AUTO-MERGE-011** — When an automatic merge-conflict repair run
   reaches existing-PR completion, the completion activity SHALL bound the
   semantic scope assessment and its required durable bookkeeping within one
-  finite enclosing activity deadline. The comparison reads that gather
-  assessment evidence SHALL be bounded by that same enclosing budget, and
-  their elapsed time SHALL be deducted before the assessment request is
-  admitted; the assessment request SHALL receive
+  finite enclosing activity deadline. The execute-entry PR metadata read and
+  comparison reads that gather assessment evidence SHALL be bounded by that
+  same enclosing budget, and their elapsed time SHALL be deducted before the
+  assessment request is admitted; the assessment request SHALL receive
   only the enclosing budget remaining after a deliberate publication
   reserve, and a retry of that activity SHALL reuse the persisted assessment
   bound to the exact recorded pre-run, integration-base, and pushed head
   SHAs instead of re-assessing, so retries add no LLM spend. When no
-  assessment budget remains after the reserve — or a bounded comparison read
-  exhausts it — the activity SHALL record an
+  assessment budget remains after the reserve — or a bounded PR metadata or
+  comparison read exhausts it — the activity SHALL record an
   unavailable assessment without issuing a request. A malformed, unavailable,
   or rejected assessment SHALL persist the exact pushed head SHA and bound
   scope status before any PR publication and SHALL remain the durable typed

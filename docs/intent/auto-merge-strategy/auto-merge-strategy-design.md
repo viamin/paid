@@ -123,11 +123,11 @@ authority for whether current-head review is required.
 
 The completion envelope around that assessment is bounded (#5310): the
 existing-PR completion activity derives one finite deadline from its Temporal
-start-to-close budget, bounds the comparison reads that gather assessment
-evidence by that same envelope, deducts their elapsed time before admitting
-the harness assessment request, and gives that request only what remains
-after a deliberate publication reserve. It reuses the already-persisted
-assessment — bound to the exact pre-run, integration-base, and pushed head
+start-to-close budget, bounds the execute-entry PR metadata read and comparison
+reads that gather assessment evidence by that same envelope, deducts their
+elapsed time before admitting the harness assessment request, and gives that
+request only what remains after a deliberate publication reserve. It reuses
+the already-persisted assessment — bound to the exact pre-run, integration-base, and pushed head
 SHAs — on any activity retry rather than spending another request. The
 assessment plus its durable persistence always precede PR publication; a
 malformed, unavailable, or rejected decision persists the exact pushed commit
@@ -138,9 +138,9 @@ and is abandoned with a sanitized warning when the reserve is exhausted, so a
 slow or unavailable GitHub publication can neither consume the activity's
 remaining attempts nor replace the actionable typed classification with a
 generic timeout. The activity records sanitized per-component elapsed
-diagnostics on its phase record (assessment and publication timings, bound
-scope status, and whether rejection publication was abandoned) without
-persisting prompts or raw provider output.
+diagnostics on its phase record (bound scope status, PR-metadata, assessment,
+and publication timings, and whether rejection publication was abandoned)
+without persisting prompts or raw provider output.
 
 The assessment input itself is complete-or-explicit, never silently partial
 (#5312). The prompt carries the complete immutable result-path inventory —
