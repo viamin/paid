@@ -321,7 +321,8 @@ RSpec.describe Issue do
       end
 
       it "excludes issues whose deployment-blocked dep points at a merged but undeployed PR" do
-        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+          deployed_at: nil)
         issue = create(:issue, project: project)
         create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
@@ -329,7 +330,8 @@ RSpec.describe Issue do
       end
 
       it "includes issues whose deployment-blocked dep points at a deployed PR" do
-        pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+        pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+          deployed_at: Time.current)
         issue = create(:issue, project: project)
         create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
@@ -1490,7 +1492,8 @@ RSpec.describe Issue do
     end
 
     it "returns false when a deployment-blocked dep points at a merged but undeployed PR" do
-      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+        deployed_at: nil)
       issue = create(:issue, project: project)
       create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
@@ -1498,7 +1501,8 @@ RSpec.describe Issue do
     end
 
     it "returns true when a deployment-blocked dep's target PR has been marked deployed" do
-      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+        deployed_at: Time.current)
       issue = create(:issue, project: project)
       create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
@@ -2325,13 +2329,13 @@ RSpec.describe Issue do
       expect(result[issue.id]).to eq(:eligible)
     end
 
-      it "returns :blocked when an open completed PR is a dependency" do # @spec DEPENDENCY-DECLARATIONS-011
-        issue = create(:issue, project: project, github_state: "open")
-        pr = create(:issue, :pull_request, :completed, project: project, github_state: "open")
-        create(:issue_dependency, issue: issue, depends_on_issue: pr)
+    it "returns :blocked when an open completed PR is a dependency" do # @spec DEPENDENCY-DECLARATIONS-011
+      issue = create(:issue, project: project, github_state: "open")
+      pr = create(:issue, :pull_request, :completed, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: pr)
 
-        expect(described_class.lifecycle_statuses([ issue ])).to include(issue.id => :blocked)
-      end
+      expect(described_class.lifecycle_statuses([ issue ])).to include(issue.id => :blocked)
+    end
 
     it "returns :eligible when local dependency is closed" do
       issue = create(:issue, project: project, github_state: "open")
@@ -2358,7 +2362,8 @@ RSpec.describe Issue do
 
     it "returns :blocked when a deployment-blocked dep points at a merged but undeployed PR" do
       issue = create(:issue, project: project, github_state: "open")
-      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+        deployed_at: nil)
       create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
       result = described_class.lifecycle_statuses([ issue ])
@@ -2368,7 +2373,8 @@ RSpec.describe Issue do
 
     it "returns :eligible when a deployment-blocked dep's target PR has been marked deployed" do
       issue = create(:issue, project: project, github_state: "open")
-      pr = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: Time.current)
+      pr = create(:issue, :pull_request, project: project, github_state: "closed", pr_review_phase: "merged",
+        deployed_at: Time.current)
       create(:issue_dependency, issue: issue, depends_on_issue: pr, requires_deployment: true)
 
       result = described_class.lifecycle_statuses([ issue ])
