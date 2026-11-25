@@ -107,11 +107,11 @@ module Issues
 
     def local_dependency_edge_scope(issue_ids = nil)
       dependency_scope(issue_ids).where(<<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-        (issues.is_pull_request = TRUE AND
-          (issues.github_state IS DISTINCT FROM 'closed' OR
-           issues.pr_review_phase IS DISTINCT FROM 'merged')) OR
-        (issues.is_pull_request = FALSE AND issues.github_state = 'open' AND
-          issues.paid_state NOT IN (?))
+        (depends_on_issue.is_pull_request = TRUE AND
+          (depends_on_issue.github_state IS DISTINCT FROM 'closed' OR
+           depends_on_issue.pr_review_phase IS DISTINCT FROM 'merged')) OR
+        (depends_on_issue.is_pull_request = FALSE AND depends_on_issue.github_state = 'open' AND
+          depends_on_issue.paid_state NOT IN (?))
       SQL
         .or(deployment_dependency_scope(issue_ids))
     end
@@ -130,6 +130,7 @@ module Issues
 
     def dependency_scope(issue_ids = nil)
       scope = IssueDependency.joins(:depends_on_issue, issue: :project).where(projects: { account_id: account.id })
+        .references(:depends_on_issue)
         .excluding_parent_references
       issue_ids ? scope.where(issue_id: issue_ids) : scope
     end
