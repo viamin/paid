@@ -26,16 +26,19 @@ module ConflictRepairs
       return refused("project_or_issue_paused") if paused?
       return refused("source_issue_untrusted") unless issue.trusted?
       return refused("cost_budget_exhausted") unless CostBudgets::Check.call(project, agent_run:)[:allowed]
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
 
       pr = project.client.pull_request(project.full_name, agent_run.source_pull_request_number)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
       return unavailable("Provider head no longer matches the immutable artifact", pr.head.sha) unless pr.head.sha == agent_run.result_commit_sha
 
       existing = ConflictRepairScopeEvidence.current_for(agent_run:, head_sha: pr.head.sha, integration_base_sha: pr.base.sha)
       return Result.new(:accepted, existing, nil) if existing && existing.status != "unavailable"
 
-      evidence = assess(pr)
-      Result.new(:accepted, evidence, nil)
+      assess(pr)
     rescue GithubClient::Error
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       Result.new(:accepted, record("unavailable", "Provider comparison evidence was unavailable", nil, nil, agent_run.result_commit_sha), nil)
     end
 
@@ -50,17 +53,27 @@ module ConflictRepairs
     def pre_run_sha = agent_run.external_metadata["pre_run_head_sha"]
 
     def assess(pr)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       base = project.client.compare_summary(project.full_name, pre_run_sha, pr.base.sha)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       result = project.client.compare_summary(project.full_name, pre_run_sha, pr.head.sha)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       decision = AssessScope.call(agent_run:, base_comparison: base, result_comparison: result)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       # A second provider read closes both range races. Do not publish a
       # decision for a range that is no longer the provider's current base/HEAD.
       current = project.client.pull_request(project.full_name, agent_run.source_pull_request_number)
+      return refused("requesting_actor_not_authorized") unless requesting_actor_authorized?
+
       unless current.head.sha == pr.head.sha && current.base.sha == pr.base.sha
-        return record("unavailable", "Provider base or head changed during scope reassessment", nil, nil, current.head.sha, current.base.sha)
+        return Result.new(:accepted, record("unavailable", "Provider base or head changed during scope reassessment", nil, nil, current.head.sha, current.base.sha), nil)
       end
 
-      record(decision.status, decision.explanation, decision.base_imported_paths, decision.repair_authored_paths, current.head.sha, pr.base.sha)
+      Result.new(:accepted, record(decision.status, decision.explanation, decision.base_imported_paths, decision.repair_authored_paths, current.head.sha, pr.base.sha), nil)
     end
 
     def unavailable(message, provider_head)
