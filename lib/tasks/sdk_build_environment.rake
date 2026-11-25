@@ -9,6 +9,10 @@ namespace :sdk_build_environment do
        "SDK_BUILD_PREFLIGHT_BACKEND selects the backend by identifier (default: the active backend)."
   # @spec RUST-SDK-BUILD-011
   task preflight: :environment do
+    # This independently runnable task is deliberately limited to environment
+    # classification. The SDK/Core build-and-load workflow belongs to #5326,
+    # where its job-scoped workspace, artifact retention, and build receipts
+    # can be owned atomically rather than implied by a metadata preflight.
     image = ENV["SDK_BUILD_PREFLIGHT_IMAGE"].presence || SdkBuildEnvironments::Pins.default_image_reference
     identifier = ENV["SDK_BUILD_PREFLIGHT_BACKEND"].presence
     backend = identifier && Containers.all_backends.find { |candidate| candidate.identifier == identifier }
