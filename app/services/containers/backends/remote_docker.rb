@@ -116,16 +116,16 @@ module Containers
         Docker::Image.get(name, {}, connection)
       end
 
-      def build_image(dockerfile, opts = {}, &block)
-        Docker::Image.build(dockerfile, opts, connection, &block)
+      def build_image(dockerfile, opts = {}, deadline: nil, &block)
+        Docker::Image.build(dockerfile, opts, connection_with_deadline(connection, deadline), &block)
       end
 
       def list_images(opts = {})
         Docker::Image.all(opts, connection)
       end
 
-      def delete_image(name, **opts)
-        Docker::Image.remove(name, opts, connection)
+      def delete_image(name, deadline: nil, **opts)
+        Docker::Image.remove(name, opts, connection_with_deadline(connection, deadline))
       end
 
       def list_volumes
