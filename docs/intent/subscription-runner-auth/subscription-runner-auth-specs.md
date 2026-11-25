@@ -123,6 +123,17 @@
   `Runners::ManagedCredentialLifecycle`, `RunnersController`,
   `test_agent_controller.js`.
 
+- [x] **SUBSCRIPTION-RUNNER-AUTH-009** — When a rotating managed credential is
+  materialized, Paid SHALL persist trusted provenance binding its runner key,
+  canonical credential identity and generation, agent run, and container lifecycle.
+  Execution SHALL resolve its lease and writeback source from that provenance,
+  and harvest SHALL write only to that still-current, unrevoked materialized record.
+  Missing, host-forwarded, replacement-container, changed-selection, or stale
+  provenance SHALL be explicitly skipped and SHALL NOT establish managed readiness
+  or import native auth into a canonical credential.
+  *Tests:* `spec/services/containers/provision_codex_managed_auth_2962_spec.rb`.
+  *Code:* `Containers::Provision`, `RunnerAuthMaterialization`.
+
 - [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu
   (desktop and mobile) SHALL expose a single provider-neutral "Runner
   Logins" entry point to the login-flow picker (`new_runner_login_flow_path`)
