@@ -173,6 +173,7 @@ module Activities
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
+      ensure_execution_admission!(agent_run)
       track_phase(agent_run_id: agent_run_id, phase_key: "run_agent", phase_group: "agent", agent_run: agent_run) do
         prompt = begin
           agent_run.effective_prompt
@@ -918,6 +919,20 @@ module Activities
     ].freeze
 
     private
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    def ensure_execution_admission!(agent_run)
+      agent_run.with_lock do
+        agent_run.reload
+        return unless agent_run.finished?
+
+        raise Temporalio::Error::ApplicationError.new(
+          "Agent run is already terminal",
+          type: "RunAgentAdmissionSuperseded",
+          non_retryable: true
+        )
+      end
+    end
 
     # Synchronizes marketplace-driven MCP server attachments for the current
     # runner attempt. Re-renders the run's marketplace entries for the chosen

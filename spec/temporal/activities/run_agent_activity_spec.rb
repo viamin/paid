@@ -20,10 +20,12 @@ RSpec.describe Activities::RunAgentActivity do
     # Ensure fallback is disabled by default so tests behave like single-runner runs
     user.settings.update!(fallback_enabled: false)
 
-    # Stub github_client so effective_prompt → prompt_for_issue → BuildForIssue
-    # does not make real HTTP calls (blocked by WebMock).
-    github_client = instance_double(GithubClient, issue_comments: [])
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    # The run's admission guard locks and reloads the project, which reloads
+    # its token association too. Stub the external boundary rather than the
+    # discarded cached association.
+    comments_url = %r{\Ahttps://api\.github\.com/repos/.+/issues/\d+/comments(?:\?.*)?\z}
+    stub_request(:get, comments_url)
+      .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
@@ -160,6 +162,22 @@ RSpec.describe Activities::RunAgentActivity do
     reset_at = Time.now.utc.change(hour: 6, min: 10)
     reset_at += 1.day if reset_at <= Time.now.utc
     reset_at
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-019
+  it "rejects a terminal run before starting agent execution" do
+    agent_run.update!(status: "failed", error_message: "newer terminal failure")
+
+    expect(activity).not_to receive(:run_agent_with_runner)
+
+    expect {
+      activity.execute(agent_run_id: agent_run.id)
+    }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+      expect(error.type).to eq("RunAgentAdmissionSuperseded")
+      expect(error.non_retryable).to be(true)
+    }
+
+    expect(agent_run.reload).to have_attributes(status: "failed", error_message: "newer terminal failure")
   end
 
   def trip_runner_circuit_with_preflight_timeouts(activity:, project:, runner:, attempts: 3)
@@ -6753,7 +6771,9 @@ expect(container_service).to receive(:execute).with(
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
-        allow(orphan_token).to receive(:client).and_return(instance_double(GithubClient, issue_comments: []))
+        comments_url = %r{https://api.github.com/repos/#{project_without_creator.full_name}/issues/#{issue_for_orphan.github_number}/comments}
+        stub_request(:get, comments_url)
+          .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
 
         expect {
           activity.execute(agent_run_id: orphan_run.id)
