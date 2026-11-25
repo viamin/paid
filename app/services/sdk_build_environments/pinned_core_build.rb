@@ -33,6 +33,7 @@ module SdkBuildEnvironments
     end
 
     def call
+      @deadline_at = Process.clock_gettime(Process::CLOCK_MONOTONIC) + BUILD_DEADLINE_SECONDS
       preflight = Preflight.call(facts: @probe.call(backend: @backend, image: @image))
       raise IncompatibleEnvironmentError, preflight.fetch(:remediation_hint) unless preflight[:verdict] == :compatible
 
@@ -45,15 +46,15 @@ module SdkBuildEnvironments
     private
 
     def build_image
-      @backend.build_image(dockerfile, t: @image_tag, rm: true)
       @built_image = true
+      @backend.build_image(dockerfile, build_options, deadline: remaining_deadline)
     end
 
     def run_offline_check(preflight)
-      @container = @backend.create_container(container_config, deadline: BUILD_DEADLINE_SECONDS)
-      @backend.start_container(@container, deadline: BUILD_DEADLINE_SECONDS)
+      @container = @backend.create_container(container_config, deadline: remaining_deadline)
+      @backend.start_container(@container, deadline: remaining_deadline)
       stdout, stderr, status = @backend.exec_in_container(@container, check_command,
-        deadline: BUILD_DEADLINE_SECONDS, user: "root", wait: BUILD_DEADLINE_SECONDS)
+        deadline: remaining_deadline, user: "root", wait: remaining_deadline)
       {
         backend: @backend.identifier,
         preflight: preflight,
@@ -82,25 +83,47 @@ module SdkBuildEnvironments
     end
 
     def check_command
-      [ "sh", "-lc", "cd /sdk/ext/sdk-core && cargo check --locked --offline --package temporalio-sdk-core" ]
+      [ "sh", "-lc", "cd /sdk/temporalio && cargo check --locked --offline --package temporalio-sdk-core" ]
     end
 
     def dockerfile
       recipe = Pins.for_architecture("arm64")
+      libclang = recipe.fetch(:libclang)
+      source = recipe.fetch(:source)
       <<~DOCKERFILE
         FROM #{@image}
-        RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git libclang-18-dev pkg-config unzip && rm -rf /var/lib/apt/lists/*
+        RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git pkg-config unzip \
+          #{libclang.fetch(:packages).map { |package| "#{package}=#{libclang.fetch(:package_version)}" }.join(" ")} \
+          && test "$(sha256sum #{libclang.fetch(:library_path)} | awk '{print $1}')" = "#{libclang.fetch(:library_sha256)}" \
+          && rm -rf /var/lib/apt/lists/*
         RUN curl --fail --location --silent --show-error --output /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v#{recipe.dig(:protoc, :version)}/#{recipe.dig(:protoc, :asset)} \
           && echo "#{recipe.dig(:protoc, :sha256)}  /tmp/protoc.zip" | sha256sum --check \
           && unzip -q /tmp/protoc.zip -d /usr/local \
           && rm /tmp/protoc.zip
-        RUN git clone --no-checkout https://github.com/#{recipe.dig(:source, :ruby_sdk, :repository)}.git /sdk \
-          && git -C /sdk checkout --detach #{recipe.dig(:source, :ruby_sdk, :commit)} \
-          && git -C /sdk submodule update --init ext/sdk-core \
-          && git -C /sdk/ext/sdk-core checkout --detach #{recipe.dig(:source, :core, :commit)} \
-          && test "$(sha256sum /sdk/ext/sdk-core/Cargo.lock | awk '{print $1}')" = "#{recipe.dig(:source, :cargo_lock_sha256)}" \
-          && cd /sdk/ext/sdk-core && cargo fetch --locked
+        RUN git clone --no-checkout https://github.com/#{source.dig(:ruby_sdk, :repository)}.git /sdk \
+          && git -C /sdk checkout --detach #{source.dig(:ruby_sdk, :commit)} \
+          && git -C /sdk submodule update --init #{source.dig(:core, :path)} \
+          && git -C /sdk/#{source.dig(:core, :path)} checkout --detach #{source.dig(:core, :commit)} \
+          && test "$(sha256sum /sdk/temporalio/Cargo.lock | awk '{print $1}')" = "#{source.dig(:cargo_lock_sha256)}" \
+          && cd /sdk/temporalio && cargo fetch --locked
       DOCKERFILE
+    end
+
+    def build_options
+      {
+        t: @image_tag,
+        rm: true,
+        forcerm: true,
+        memory: CONTAINER_MEMORY_BYTES,
+        memswap: CONTAINER_MEMORY_BYTES,
+        cpuperiod: 100_000,
+        cpuquota: CONTAINER_NANO_CPUS / 10_000,
+        ulimits: [ { Name: "nproc", Soft: CONTAINER_PID_LIMIT, Hard: CONTAINER_PID_LIMIT } ]
+      }
+    end
+
+    def remaining_deadline
+      [ (@deadline_at - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil, 1 ].max
     end
 
     def bounded_output(value)
@@ -126,14 +149,14 @@ module SdkBuildEnvironments
     def remove_container
       return unless @container
 
-      @backend.delete_container(@container, deadline: BUILD_DEADLINE_SECONDS, force: true)
+      @backend.delete_container(@container, deadline: remaining_deadline, force: true)
       @container = nil
     end
 
     def remove_image
       return unless @built_image
 
-      @backend.delete_image(@image_tag, force: true)
+      @backend.delete_image(@image_tag, deadline: remaining_deadline, force: true)
       @built_image = false
     end
   end

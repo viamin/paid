@@ -71,7 +71,7 @@ module SdkBuildEnvironments
       }.freeze,
       core: {
         repository: "temporalio/sdk-rust",
-        path: "ext/sdk-core gitlink",
+        path: "temporalio/ext/sdk-core",
         commit: "c675c32469af707e1c979a7b808c70b4a0608b82"
       }.freeze,
       cargo_lock_sha256: "47aba453a6f46d71b5deba2d09e1e6b9ef036cc5ba7263562793205e142bc9aa"

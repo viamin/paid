@@ -158,7 +158,15 @@ preflight, builds a temporary image from the immutable SDK/Core source pins,
 then starts a separate capability-dropped, network-disabled container for
 `cargo check --locked --offline --package temporalio-sdk-core`. It returns
 the command, bounded output, exit status, preflight, and cleanup receipt,
-and removes both the container and temporary image in `ensure`.
+and removes both the container and temporary image in `ensure`. A single
+monotonic deadline covers image build, check, and cleanup transport calls;
+the image build receives the same memory, CPU, and process envelope as the
+check and uses force-removal so an interrupted build cannot leave its job tag
+behind.
+The Dockerfile installs the exact recorded libclang package versions, verifies
+the pinned `libclang.so.1` digest, initializes the Ruby SDK's actual
+`temporalio/ext/sdk-core` gitlink, and runs Cargo from `/sdk/temporalio`, whose
+lockfile is the recipe's recorded source identity.
 
 ## Decisions & Alternatives
 
