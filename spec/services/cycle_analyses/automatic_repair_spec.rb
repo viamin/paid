@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe CycleAnalyses::AutomaticRepair do
   # @spec AUTO-PICK-QUEUE-019
-  it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
+  it "removes one uniquely matched section-list declaration for target #999 when legacy provenance is absent" do
     _user, cycle, run = cycle_run(first_github_number: 999, second_github_number: 1000)
     edge = edge_targeting(cycle, 999)
     source = Issue.find(edge.from_id)
@@ -229,7 +229,9 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
     edge = edge_targeting(cycle, 999)
     target = Issue.find(edge.to_id)
     expect(target.github_number).to eq(999)
-    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #998" })
+    different_issue_number = target.github_number - 1
+    expect(different_issue_number).not_to eq(target.github_number)
+    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- ##{different_issue_number}" })
     allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
