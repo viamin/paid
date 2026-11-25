@@ -59,6 +59,11 @@ RSpec.describe SdkBuildEnvironments::Pins, :no_db do
       expect(recipe[:source][:cargo_lock_sha256]).to match(bare_sha256_format)
     end
 
+    # @spec RUST-SDK-BUILD-005
+    it "identifies the Ruby SDK's actual Core gitlink workspace" do
+      expect(recipe[:source][:core][:path]).to eq("temporalio/ext/sdk-core")
+    end
+
     # @spec RUST-SDK-BUILD-007
     it "distinguishes the Core development toolchain pin from the MSRV floor" do
       expect(recipe[:toolchain_image][:rust_version]).to eq("1.95.0")
