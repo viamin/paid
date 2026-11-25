@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.16.0](https://github.com/viamin/paid/compare/v1.15.0...v1.16.0) (2026-11-25)
+
+
+### Features
+
+* **closeout:** collect trusted live worker-adoption evidence ([#5307](https://github.com/viamin/paid/issues/5307)) ([1cbaf94](https://github.com/viamin/paid/commit/1cbaf94d68d4027ab64a0c7648321c0bc64a9269))
+* **inbox:** recover technical manual-review stops automatically within a bounded budget ([#5274](https://github.com/viamin/paid/issues/5274)) ([693083c](https://github.com/viamin/paid/commit/693083cd4d8d722bb244cc0a48c7092bae3828b8))
+* **queue:** prioritize an existing coding retry without resetting execution authority ([#5331](https://github.com/viamin/paid/issues/5331)) ([0af3f63](https://github.com/viamin/paid/commit/0af3f631e08698ceef24128ce5f010c5f19f26d9))
+* RDR-076: Phase 3: change impact, reusable evidence and resumption ([#5303](https://github.com/viamin/paid/issues/5303)) ([d4cb9df](https://github.com/viamin/paid/commit/d4cb9dfc81c448c4e8cd33c73f1189d0202635b0))
+
+
+### Bug Fixes
+
+* **auth:** bind managed harvest to actual container materialization provenance ([#5370](https://github.com/viamin/paid/issues/5370)) ([2434110](https://github.com/viamin/paid/commit/2434110146c30be45774100d0b2afac9967e3c66))
+* **auth:** show Test Runner source and standalone readiness ([#5294](https://github.com/viamin/paid/issues/5294)) ([d174ebc](https://github.com/viamin/paid/commit/d174ebc7f089273638d1a166dcbab7db84c7d1ac))
+* **capacity:** guard new execution admission against actual backing-disk exhaustion ([#5283](https://github.com/viamin/paid/issues/5283)) ([8ffb072](https://github.com/viamin/paid/commit/8ffb07295ede5866a89505d467bd2251f0b2d3f9))
+* **ci:** bound dependency setup and reap its process-group descendants ([#5335](https://github.com/viamin/paid/issues/5335)) ([2d716a7](https://github.com/viamin/paid/commit/2d716a7f3f2d861100c5dbdcf3b368e443435733))
+* **llm:** enforce isolated text deadlines across setup and execution ([#5318](https://github.com/viamin/paid/issues/5318)) ([993b6ef](https://github.com/viamin/paid/commit/993b6efbac5141ddec936ff9c38b356d4c64c5f3))
+* **recovery:** prevent manual issue runs from silently stranding outside auto-pick ([#5372](https://github.com/viamin/paid/issues/5372)) ([3e5bc8a](https://github.com/viamin/paid/commit/3e5bc8a2d58cd26fccfc0c02f456e6729fa734dd))
+* **review:** preserve complete conflict-scope evidence within bounds ([#5315](https://github.com/viamin/paid/issues/5315)) ([0335245](https://github.com/viamin/paid/commit/0335245aa31dd0abdefab5d86bf991e255c1fc98))
+* **review:** retain follow-up findings until evidence-backed resolution ([#5291](https://github.com/viamin/paid/issues/5291)) ([fcec983](https://github.com/viamin/paid/commit/fcec9831b91d4463890ae44ec2be7c940473cf24))
+* **runtime:** bound existing-PR completion deadlines ([#5316](https://github.com/viamin/paid/issues/5316)) ([6f44c06](https://github.com/viamin/paid/commit/6f44c061383c4c7aa025f7603ea29c77a21e556b))
+* **runtime:** recover stalled GoodJob workers ([#5377](https://github.com/viamin/paid/issues/5377)) ([5e5af43](https://github.com/viamin/paid/commit/5e5af43b521a9aab3a28ee164f8ae7ded2d9c0d6))
+
 ## [1.15.0](https://github.com/viamin/paid/compare/v1.14.0...v1.15.0) (2026-11-24)
 
 
