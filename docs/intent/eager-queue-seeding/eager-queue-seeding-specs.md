@@ -110,15 +110,28 @@
   SHALL retain its existing Sidekiq-style delay, retry cap, abandonment-reset
   boundary, project gate, labels, dependencies, trust, budget, provider-cap,
   and queue-admission checks. A run awaiting in-place rate-limit recovery or
-  a run with a PR, pushed revision, or partial-closeout continuation SHALL not
+  a run with a PR, published or retained unpublished revision, or
+  partial-closeout continuation SHALL not
   mint a blind replacement; duplicate callbacks, delayed jobs, and sweeps
   SHALL converge on one active implementation run. Ordinary
   `create_pr` admission (`Issues::EnqueueEligible`, including periodic
   sweeps, delayed re-enqueues, and sync-driven seeding) SHALL honor the same
-  produced-work and rate-limit-recovery refusals the shared policy records
-  for the issue's latest failed auto-picked `create_pr` run: it SHALL NOT
-  mint a fresh implementation attempt while that refusal stands (#4989
-  acceptance bypass). A retryable partial-closeout reconciliation with
+  produced-work (including a retained unpublished revision before execution
+  counters or the published result are recorded) and rate-limit-recovery
+  refusals the shared policy records
+  for a still-current failed `create_pr` producer on the same issue: it SHALL
+  NOT mint a fresh implementation attempt while that refusal stands, whether
+  the producer was manual or automatic (#4989 acceptance bypass). A queued
+  automatic source-issue `create_pr` run without `auto_pick` that races this
+  guard SHALL be cancelled before execution while retaining the producer's
+  immutable result and its actionable recovery or PR-review handoff; the
+  cancellation reason SHALL distinguish in-place rate-limit recovery, whose
+  re-queue the parked producer owns, from preserved produced work. An
+  ordinary existing-PR repair — a run carrying a source
+  `source_pull_request_number`, or attached to an issue row that is itself a
+  pull request — SHALL NOT be treated as replacement coding and SHALL NOT be
+  cancelled by this guard. A retryable
+  partial-closeout reconciliation with
   recorded gaps SHALL defer to normal eligibility, which verifies its current
   assessment before admitting a continuation. Failures created before the authorized operator reset
   window (`runner_retry_failure_window_reset_at`) SHALL NOT hold admission,
@@ -128,7 +141,8 @@
   *Code:* `Issue#enqueue_self_if_became_auto_pick_eligible`,
   `Issue#auto_pick_create_pr_admission_hold`,
   `AgentRuns::AutoPickCreatePrRetryPolicy`,
-  `RetryFailedAutoPickCreatePrJob`, `Issues::EnqueueEligible`.
+  `RetryFailedAutoPickCreatePrJob`, `Issues::EnqueueEligible`,
+  `AgentRuns::RecheckIssueEligibility#produced_work_replacement?`.
   *Test:* `spec/models/issue_spec.rb`,
   `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
   `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`,
@@ -325,6 +339,11 @@
   *Test:* `spec/tasks/issues_rake_spec.rb`.
 
 ## Capacity remains the single gate
+
+- [x] **EAGER-QUEUE-019** — Disabling Auto-Pick SHALL continue to prevent
+  unrelated issue discovery. It SHALL not revoke a prior manual source-issue
+  implementation lineage, which is governed by MANUAL-RUN-RETRY-010 and never
+  enters the eager queue.
 
 - [x] **EAGER-QUEUE-008** — Eager seeding SHALL NOT itself limit concurrency
   or PR attention; `max_concurrent_runs` (with tenant guardrail) SHALL be

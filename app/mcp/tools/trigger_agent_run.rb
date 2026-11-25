@@ -83,6 +83,7 @@ module Tools
       Issues::ActivatePaid.call(project: project, issue: issue)
 
       run = ActiveRecord::Base.transaction do
+        issue.lock! if issue # @spec MANUAL-RUN-RETRY-010
         run = AgentRun.create!(
           project: project,
           issue: issue,

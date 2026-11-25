@@ -105,7 +105,7 @@ module LayeredVerification
         result = {
           obligation:, correspondence_claim: claim_for(obligation, attributes), agent_run:, producer:,
           execution_state: state, obligation_coverage: coverage,
-          input_revision: hash_value(attributes["input_revision"]),
+          input_revision: input_revision(obligation, hash_value(attributes["input_revision"])),
           evidence_ref: text_value(attributes["evidence_ref"]), evidence_summary: evidence_summary(attributes["evidence_summary"]),
           cause_signature: attributes["cause_signature"],
           agent_reported: hash_value(attributes["agent_reported"]).merge("selected_check" => selected_check),
@@ -159,11 +159,19 @@ module LayeredVerification
         {
           obligation:, agent_run:, producer: producer_for(selected_check), execution_state: "not_run",
           obligation_coverage: "unresolved",
-          input_revision: { "target_revision" => audit_metadata["target_revision"],
-            "code" => audit_metadata["target_revision"], "external_revision" => obligation.external_revision },
+          input_revision: input_revision(obligation),
           agent_reported: { "selected_check" => selected_check }, recorder_verified: { "structured_output" => false },
           limitations: MISSING_LIMITATION
         }
+      end
+
+      def input_revision(obligation, reported = nil)
+        scope = ScopeSnapshot.call(obligation)
+        revisions = reported || { "code" => audit_metadata["target_revision"],
+          "external_revision" => obligation.external_revision }
+        revisions.merge("target_revision" => audit_metadata["target_revision"],
+          "scope_paths" => (scope.paths if scope.complete),
+          "dependencies" => audit_metadata.fetch("dependencies", {})).compact
       end
 
       def producer_for(selected_check)

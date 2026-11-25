@@ -81,6 +81,17 @@
             <% end %>
           </dd>
         </div>
+        <div>
+          <dt class="font-medium text-gray-900">Backing-store headroom</dt>
+          <dd class="mt-1 text-gray-600">
+            <% if @capacity_snapshot&.backing_storage_available? %>
+              <%= number_to_human_size(@capacity_snapshot.backing_storage_available_bytes) %> • <%= @capacity_snapshot.backing_storage_scope.humanize %> • <%= @capacity_snapshot.backing_storage_observed_at.to_fs(:db) %>
+            <% else %>
+              <%= @capacity_snapshot&.backing_storage_reason_for&.humanize || "Unavailable" %>
+            <% end %>
+          </dd>
+          <p class="mt-1 text-xs text-gray-500">At or below the 5 GB reserve, new execution is deferred. Reclaim or expand the measured Docker backing store; do not delete volumes or database data automatically.</p>
+        </div>
       </dl>
 
       <% if @docker_host.last_error.present? %>

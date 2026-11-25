@@ -485,6 +485,21 @@ operator-requested fresh acceptance audit as the human continuation. A
 confirmed sync repair restores the same status vocabulary, so a pending body
 repair cannot relabel an unattributed prerequisite as ordinary operator work.
 
+### Specialized closeout evaluation applicability (#5244)
+
+Facet-confidence closeout evaluation is a typed workflow for a source that
+explicitly owns the RDR-070-style blinded-reference requirement; it is not a
+general consequence of Full LID, an agent-authored delivery, or ordinary merge
+review policy. The semantic assessor receives the current source intent and
+supplied policy/evaluation evidence and decides applicability through
+`agent_harness`. A specialized gap must carry both source-intent and
+revision-bound policy/evaluation-target references before deterministic code
+admits it to reconciliation. This structural boundary does not interpret prose,
+waive an explicit team-review requirement, manufacture human evidence, or
+replace an unknown/stale policy with a solo policy. An unsupported specialized
+addition is rejected without changing the approved source intent or treating a
+prior technical verdict as a pass.
+
 ### Visibility: the `partial_closeout` Inbox lane
 
 Derived lane (like `retry_limited`), not persisted state. An open, non-PR

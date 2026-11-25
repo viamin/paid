@@ -161,20 +161,24 @@ module Runners
           execute_container_smoke_test
         end
 
+      result = annotate_authentication_context(result)
       update_runner_state!(result) unless @diagnostic_prompt
       result
     rescue NotContainerExecutableError
-      Result.new(success: false, error_type: :installation,
-        message: "Runner #{runner.runner_key} CLI is not installed in the agent container")
+      annotate_authentication_context(Result.new(success: false, error_type: :installation,
+        message: "Runner #{runner.runner_key} CLI is not installed in the agent container"))
     rescue UnsupportedRunnerError
-      Result.new(success: false, error_type: :unexpected,
-        message: "Runner #{runner.runner_key} is not recognized by the agent harness")
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: "Runner #{runner.runner_key} is not recognized by the agent harness"))
     rescue MissingProjectContextError, InvalidModelError => e
-      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: normalize_output_text(e.message)))
     rescue Containers::Provision::TimeoutError => e
-      Result.new(success: false, error_type: :timeout, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :timeout,
+        message: normalize_output_text(e.message)))
     rescue Containers::Provision::Error => e
-      Result.new(success: false, error_type: :connection, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :connection,
+        message: normalize_output_text(e.message)))
     rescue StandardError => e
       Rails.logger.error(
         message: "runners.test_agent.unexpected_error",
@@ -182,7 +186,8 @@ module Runners
         error_class: e.class.name,
         error_message: normalize_output_text(e.message)
       )
-      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: normalize_output_text(e.message)))
     end
 
     private
@@ -262,6 +267,10 @@ module Runners
       harness_runner_key
     end
 
+    def container_authentication_runner_key
+      runner.runner_key
+    end
+
     def harness_fallback_log_prefix
       "runners.test_agent"
     end
@@ -274,7 +283,7 @@ module Runners
       AgentHarness.check_provider(harness_runner_key, timeout: TIMEOUT)
     end
 
-    def process_harness_result(result)
+    def process_harness_result(result, execution_source: :unknown, authentication_source: :unconfirmed)
       status = result[:status].to_s
       message = normalize_output_text(result[:message]).presence
       output = normalize_output_text(result[:output]).presence
@@ -292,26 +301,30 @@ module Runners
           message: translated_message.presence || failure_message
         )
 
-        Result.new(
+        result_with_context(
           success: false,
           error_type: error_type,
-          message: translated_message.presence || display_message
+          message: translated_message.presence || display_message,
+          execution_source:,
+          authentication_source:
         )
       elsif harness_error_type.present? && ((output.present? && !smoke_test_output_success?(output)) || !smoke_test_output_success?(message))
         translated_message = translate_and_extract_error(failure_message)
 
-        Result.new(
+        result_with_context(
           success: false,
           error_type: resolve_error_type(
             harness_error_type: harness_error_type,
             message: translated_message.presence || failure_message
           ),
-          message: translated_message.presence || display_message
+          message: translated_message.presence || display_message,
+          execution_source:,
+          authentication_source:
         )
       elsif smoke_test_output_success?(output) || smoke_test_output_success?(message)
-        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+        result_with_context(success: true, error_type: nil, message: "Agent is healthy", execution_source:, authentication_source:)
       elsif status == "ok"
-        Result.new(success: true, error_type: nil, message: "Agent is healthy")
+        result_with_context(success: true, error_type: nil, message: "Agent is healthy", execution_source:, authentication_source:)
       else
         translated_message = translate_and_extract_error(failure_message)
         error_type = resolve_error_type(
@@ -319,16 +332,36 @@ module Runners
           message: translated_message.presence || failure_message
         )
 
-        Result.new(
+        result_with_context(
           success: false,
           error_type: error_type,
-          message: translated_message.presence || display_message
+          message: translated_message.presence || display_message,
+          execution_source:,
+          authentication_source:
         )
       end
     end
 
     def smoke_test_output_success?(text)
       text.to_s.strip.match?(/\AOK[.!]?\z/i)
+    end
+
+    # A smoke test only proves its own execution path. The canonical managed
+    # record is assessed independently and never refreshed merely to label UI.
+    # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+    def annotate_authentication_context(result)
+      return result_with_context(success: result.success?, error_type: result.error_type, message: result.message,
+        execution_source: result.execution_source, authentication_source: result.authentication_source) unless runner.subscription?
+
+      result_with_context(success: result.success?, error_type: result.error_type, message: result.message,
+        execution_source: result.execution_source, authentication_source: result.authentication_source,
+        standalone_audit_readiness: Runners::ManagedCredentialLifecycle.standalone_readiness(
+          account: runner.user.account, runner_key: runner.runner_key
+        ))
+    end
+
+    def result_with_context(success:, error_type:, message:, execution_source:, authentication_source:, standalone_audit_readiness: :not_applicable)
+      Result.new(success:, error_type:, message:, execution_source:, authentication_source:, standalone_audit_readiness:)
     end
 
     def preferred_failure_display_message(message, output)
@@ -691,12 +724,16 @@ module Runners
     end
 
     class Result
-      attr_reader :error_type, :message
+      attr_reader :authentication_source, :error_type, :execution_source, :message, :standalone_audit_readiness
 
-      def initialize(success:, error_type: nil, message: nil)
+      def initialize(success:, error_type: nil, message: nil, execution_source: :unknown,
+        authentication_source: :unconfirmed, standalone_audit_readiness: :not_applicable)
         @success = success
         @error_type = error_type
         @message = message
+        @execution_source = execution_source
+        @authentication_source = authentication_source
+        @standalone_audit_readiness = standalone_audit_readiness
       end
 
       def success?

@@ -26,7 +26,9 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         QdrantCollectionCleanupJob
         ReassessConflictRepairScopeJob
         RecomputePartialCloseoutProjectionJob
+        RecoverTechnicalEnhancementStopJob
         RetryFailedAutoPickCreatePrJob
+        RetryFailedManualIssueCreatePrJob
         RetryFailedManualRunJob
         RetryTimedOutIssueGoalJob
         SourceClosureRecoveryJob

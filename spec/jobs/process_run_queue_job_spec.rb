@@ -97,9 +97,12 @@ RSpec.describe ProcessRunQueueJob do
   end
 
   def build_host_registry(fallback_policy: "first_healthy")
-    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
-    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
-    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true)
+    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true,
+      backing_storage_observation: { reason: "backing_storage_probe_unconfigured" })
+    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true,
+      backing_storage_observation: { reason: "backing_storage_unsupported" })
+    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true,
+      backing_storage_observation: { reason: "backing_storage_unsupported" })
     registry = Containers::HostRegistry::Registry.new(
       default_host: "local",
       fallback_policy: fallback_policy,
@@ -254,6 +257,17 @@ RSpec.describe ProcessRunQueueJob do
       available_memory_bytes: 16.gigabytes,
       estimated_memory_per_run_bytes: 4.gigabytes,
       reserved_agent_memory_bytes: 0,
+      rate_limited_until: available_at
+    }
+  end
+
+  def backing_storage_reserve_denied_admission(available_at:)
+    {
+      allowed: false,
+      reason: "backing_storage_reserve_exhausted",
+      mode: "auto",
+      selected_host: "local",
+      available_slots: 0,
       rate_limited_until: available_at
     }
   end
@@ -727,15 +741,13 @@ RSpec.describe ProcessRunQueueJob do
     it "accounts for manual-mode run memory within an auto-mode queue pass" do
       # Scenario: auto-mode user A has two queued runs; manual-mode user B has one.
       # Docker budget is exactly 2 × DEFAULT_ESTIMATED_MEMORY_BYTES (4 GB each = 8 GB).
-      # After A's first run starts (4 GB reserved) and B's manual run starts
-      # (4 GB — now also reserved with fix), A's second run must be blocked.
+      # Once both runs reserve 4 GB each, A's second run must be blocked.
       auto_project = create(:project)
       auto_user = auto_project.created_by
       auto_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
 
       manual_project = create(:project)
-      manual_user = manual_project.created_by
-      manual_user.settings.update!(max_concurrent_runs: 10)
+      manual_project.created_by.settings.update!(max_concurrent_runs: 10)
 
       auto_run1 = create(:agent_run, :queued, project: auto_project, created_at: 5.minutes.ago)
       manual_run  = create(:agent_run, :queued, project: manual_project, created_at: 3.minutes.ago)
@@ -791,6 +803,39 @@ RSpec.describe ProcessRunQueueJob do
       ).and_return(workflow_handle)
 
       job.perform
+    end
+
+    it "dispatches an operator-prioritized coding retry with its Temporal priority" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+        operator_coding_priority_requested_at: Time.current)
+      priority = Temporalio::Priority.new(priority_key: 2, fairness_key: queued_run.project.account_id.to_s)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(priority:)
+      ).and_return(workflow_handle)
+
+      job.perform
+    end
+
+    it "selects an explicit prerequisite before an ordinary PR in the same fair-share cohort" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      prerequisite_issue = create(:issue, project:, github_state: "open")
+      ordinary_issue = create(:issue, project:, github_state: "open")
+      prerequisite = create(:agent_run, :queued, :automatic, project:, issue: prerequisite_issue,
+        goal: "create_pr", auto_pick: true, operator_coding_priority_requested_at: Time.current)
+      ordinary_pr = create(:agent_run, :queued, :automatic, :existing_pr, project:, issue: ordinary_issue,
+        goal: "create_pr", created_at: 1.minute.ago)
+
+      job.perform
+
+      expect(prerequisite.reload).to have_attributes(status: "running")
+      expect(prerequisite.temporal_workflow_id).to be_present
+      expect(ordinary_pr.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
     end
 
     it "keeps the account id as the Temporal fairness key for strict-priority accounts" do
@@ -1602,6 +1647,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      it "does not dispatch an operator-prioritized coding retry while its project is paused" do # @spec QUEUE-TIER-009
+        project = create(:project, auto_pick_enabled: true, paused: true)
+        issue = create(:issue, project:, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+          operator_coding_priority_requested_at: Time.current)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+      end
+
       # Delegated-work boundary recheck at dequeue: a bounded authorization
       # that was revoked after the run was queued must not begin a new
       # action, no matter which path queued the run (retries included).
@@ -1871,6 +1929,7 @@ RSpec.describe ProcessRunQueueJob do
         issue: issue,
         custom_prompt: "Fix the bug",
         source_pull_request_number: 42)
+      stub_policy_decision(remote_backend_decision)
 
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
@@ -2712,6 +2771,33 @@ RSpec.describe ProcessRunQueueJob do
         )
       end
 
+      # @spec CONTAINER-RUNTIME-055
+      it "parks backing-storage-reserve-exhausted runs until the bounded recheck" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(local_auto_decision)
+        allow(Rails.logger).to receive(:info)
+        available_at = Time.utc(2026, 8, 17, 12, 5, 0)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+        allow(Containers::BackendScheduler).to receive(:call).and_return(default_local_host_selection_result)
+        allow(Capacity::RunAdmission).to receive(:preview).and_return(
+          backing_storage_reserve_denied_admission(available_at:)
+        )
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run).to have_attributes(status: "rate_limited", rate_limited_until: available_at)
+        expect(queued_run.external_metadata["capacity_park_reason"]).to eq("backing_storage_reserve_exhausted")
+        expect_execution_rejected_event(
+          queued_run,
+          reason: "backing_storage_reserve_exhausted",
+          rate_limited_until: available_at
+        )
+      end
+
       shared_examples "parks spend-limited admission" do |scope:, blocked_scope: nil|
         # @spec INFRA-SPEND-002
         it "parks #{scope} spend denials until the spend window resets" do
@@ -2945,8 +3031,9 @@ RSpec.describe ProcessRunQueueJob do
     let(:expected_temporal_keys) do
       {
         manual: 1,
-        pr_p1: 2,
-        pr_p2: 2,
+        operator_coding: 2,
+        pr_p1: 3,
+        pr_p2: 3,
         pr_p3: 3,
         pr_continue: 3,
         issue_p1: 4,
@@ -2969,6 +3056,8 @@ RSpec.describe ProcessRunQueueJob do
     def runs_by_tier
       {
         manual: create(:agent_run, :queued, project: project, trigger_type: "manual"),
+        operator_coding: create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+          auto_pick: true, operator_coding_priority_requested_at: Time.current),
         pr_p1: pr_run(github_number: 101, label: "P1"),
         pr_p2: pr_run(github_number: 102, label: "P2"),
         pr_p3: pr_run(github_number: 103, label: "P3"),

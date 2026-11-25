@@ -19,6 +19,25 @@ RSpec.describe Issues::EnqueueEligible do
   end
 
   describe "ordinary admission after a produced-work failure" do
+    it "refuses replacement coding after a manual producer pushes an immutable result" do # @spec EAGER-QUEUE-018
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+        auto_pick: false, branch_name: "paid/5273-preserved-result", result_commit_sha: "a" * 40)
+
+      expect(described_class.call(issue, project:)).to be_nil
+      expect(AgentRun.where(issue:, goal: "create_pr")).to contain_exactly(producer)
+    end
+
+    it "refuses replacement coding when a manual producer retains an unpublished result" do # @spec EAGER-QUEUE-018
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+        auto_pick: false, branch_name: "paid/5372-retained-unpublished-result",
+        unpublished_result_commit_sha: "b" * 40)
+
+      expect(described_class.call(issue, project:)).to be_nil
+      expect(AgentRun.where(issue:, goal: "create_pr")).to contain_exactly(producer)
+    end
+
     it "refuses a fresh implementation attempt after observable main-agent work" do
       issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
       failed_create_pr_run(issue: issue,
@@ -74,6 +93,15 @@ RSpec.describe Issues::EnqueueEligible do
   end
 
   describe "periodic sweep admission" do
+    it "does not seed replacement coding for a manual producer's pushed result" do # @spec EAGER-QUEUE-018
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      producer = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual",
+        auto_pick: false, branch_name: "paid/5273-preserved-result", result_commit_sha: "a" * 40)
+
+      expect { Issues::BulkEnqueueEligible.call(project:) }.not_to change(AgentRun, :count)
+      expect(producer.reload).to have_attributes(status: "failed", result_commit_sha: "a" * 40)
+    end
+
     it "does not seed a run for an issue held by produced work" do
       issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
       failed_create_pr_run(issue: issue,

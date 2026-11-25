@@ -96,20 +96,15 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014
+      # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014 MANUAL-RUN-RETRY-010
       agent_run, duplicate, enhancement_limit_reached, enhancement_held, phase_block_reason = begin
         with_phase_rollout_lock(project, phase_rollout_observed) do
           AgentRun.transaction(requires_new: true) do
           project.lock! if automatic_authorization
-          issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
+          issue.lock! if issue
           if automatic_enhancement_held?(project, issue, goal, trigger_type)
             [ nil, false, false, true, nil ]
           elsif (existing = find_existing_run(project, issue, source_pull_request_number))
-            if existing.goal == goal
-              merge_draft_review_round_tracking!(existing,
-                count_toward_draft_review_round: count_toward_draft_review_round,
-                expected_draft_review_count: expected_draft_review_count)
-            end
             [ existing, true, false, false, nil ]
           elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
             [ nil, false, true, false, nil ]
@@ -163,12 +158,6 @@ module Activities
         # merge_draft_review_round_tracking! prevents double-writes. Both callers
         # originate from the same poll cycle so they pass identical values; the
         # last writer wins harmlessly.
-        if existing.goal == goal
-          merge_draft_review_round_tracking!(existing,
-            count_toward_draft_review_round: count_toward_draft_review_round,
-            expected_draft_review_count: expected_draft_review_count)
-        end
-
         [ existing, true, false, false, nil ]
       end
 
@@ -199,6 +188,12 @@ module Activities
       end
 
       if duplicate
+        if agent_run.goal == goal
+          merge_draft_review_round_tracking!(agent_run,
+            count_toward_draft_review_round: count_toward_draft_review_round,
+            expected_draft_review_count: expected_draft_review_count)
+        end
+
         logger.info(
           message: "concurrency.duplicate_run_skipped",
           agent_run_id: agent_run.id,
@@ -387,7 +382,11 @@ module Activities
     # WorktreeConflict failures whenever the poll cycle fired both at once. The
     # poller will re-evaluate next cycle once the in-flight run finishes.
     def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).lock("FOR UPDATE")
+      scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES)
+      # Issue admission holds the issue row already. Taking an existing run's
+      # lock here would invert terminal bookkeeping's run -> issue ordering.
+      # Reconcile optional draft metadata after releasing admission ownership.
+      scope = scope.lock("FOR UPDATE") unless issue
       if issue
         matches = scope.where(issue: issue)
         matches = matches.or(scope.where(source_pull_request_number: source_pull_request_number)) if source_pull_request_number

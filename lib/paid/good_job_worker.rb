@@ -40,6 +40,134 @@ module Paid
       shutdown_timeout + force_exit_buffer
     end
 
+    # @spec RAILS-CONTROL-PLANE-030
+    # Evaluates the dedicated worker's independent liveness signals. The caller
+    # owns database reads and recovery so this remains deterministic and can run
+    # before Rails has fully booted.
+    class HealthMonitor
+      DEFAULT_HEARTBEAT_TIMEOUT = 90
+      DEFAULT_PROGRESS_TIMEOUT = 90
+      Result = Data.define(:status, :reason, :observed_at, :runnable_jobs) do
+        def healthy?
+          status == :healthy
+        end
+
+        def degraded?
+          !healthy?
+        end
+      end
+
+      def initialize(now: -> { Time.now.utc }, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT,
+        progress_timeout: DEFAULT_PROGRESS_TIMEOUT)
+        @clock = now
+        @heartbeat_timeout = heartbeat_timeout
+        @progress_timeout = progress_timeout
+        @progress_windows = {}
+        @missing_process_since = nil
+      end
+
+      def observe(snapshot, now: clock.call)
+        return observe_missing_process(snapshot, now) unless snapshot[:process]
+
+        @missing_process_since = nil
+        return result(:stale_process_heartbeat, snapshot, now) if heartbeat_stale?(snapshot[:process], now)
+        return result(:scheduler_unavailable, snapshot, now) unless snapshot.fetch(:schedulers_running, true)
+
+        observe_progress(snapshot, now)
+      end
+
+      private
+
+      attr_reader :clock, :heartbeat_timeout, :progress_timeout
+
+      def observe_progress(snapshot, now)
+        waiting = schedulers(snapshot).each_with_index.filter_map do |scheduler, index|
+          next unless waiting_with_available_thread?(scheduler)
+
+          [ [ index, scheduler[:queues] || scheduler["queues"] ], scheduler ]
+        end.to_h
+        @progress_windows.keep_if { |key, _window| waiting.key?(key) }
+        stalled = waiting.map { |key, scheduler| progress_stalled?(key, scheduler, now) }.any?
+        result(stalled ? :stalled_queue_progress : :healthy, snapshot, now)
+      end
+
+      def observe_missing_process(snapshot, now)
+        @missing_process_since ||= now
+        return result(:healthy, snapshot, now) if now - @missing_process_since <= heartbeat_timeout
+
+        result(:missing_process_heartbeat, snapshot, now)
+      end
+
+      def heartbeat_stale?(process, now)
+        updated_at = process[:updated_at] || process["updated_at"]
+        updated_at.nil? || now - updated_at > heartbeat_timeout
+      end
+
+      def waiting_with_available_thread?(scheduler)
+        runnable_jobs = scheduler[:runnable_jobs] || scheduler["runnable_jobs"] || 0
+        runnable_jobs.positive? && available_threads(scheduler).positive?
+      end
+
+      def progress_stalled?(key, scheduler, now)
+        count = scheduler[:total_executions_count] || scheduler["total_executions_count"] || 0
+        window = @progress_windows[key]
+        if window.nil? || window[:count] != count
+          @progress_windows[key] = { count:, observed_at: now }
+          return false
+        end
+
+        now - window[:observed_at] > progress_timeout
+      end
+
+      def schedulers(snapshot)
+        process = snapshot.fetch(:process)
+        process[:schedulers] || process["schedulers"] || []
+      end
+
+      def available_threads(scheduler)
+        scheduler[:available_threads] || scheduler["available_threads"] || 0
+      end
+
+      def result(reason, snapshot, now)
+        Result.new(
+          status: reason == :healthy ? :healthy : :degraded,
+          reason:,
+          observed_at: now,
+          runnable_jobs: snapshot.fetch(:runnable_jobs, 0)
+        )
+      end
+    end
+
+    # @spec RAILS-CONTROL-PLANE-030
+    # Starts one graceful recovery without touching GoodJob job ownership. The
+    # GoodJob shutdown path remains responsible for draining or retaining locks.
+    class RecoveryCoordinator
+      def initialize(readiness:, shutdown:)
+        @readiness = readiness
+        @shutdown = shutdown
+        @mutex = Mutex.new
+        @started = false
+      end
+
+      def recover
+        return false unless claim_recovery
+
+        @readiness.mark_not_ready!
+        @shutdown.call
+        true
+      end
+
+      private
+
+      def claim_recovery
+        @mutex.synchronize do
+          return false if @started
+
+          @started = true
+        end
+      end
+    end
+
     # Coordinates graceful-vs-forced shutdown across repeated INT/TERM signals.
     # The first signal requests a graceful shutdown; any subsequent signal
     # forces an immediate exit. This is the same pattern as

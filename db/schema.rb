@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_24_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -375,6 +375,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
+    t.datetime "operator_coding_priority_requested_at", comment: "Explicit operator scheduling request for an existing coding retry; execution authority remains unchanged."
     t.datetime "operator_priority_requested_at", comment: "Explicit operator scheduling request for an existing audit; original execution authority remains unchanged."
     t.bigint "originating_audit_run_id"
     t.string "parent_workflow_id", limit: 255
@@ -4010,6 +4011,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.integer "pr_approval_escalation_hours", default: 24, null: false, comment: "Hours a ready PR may sit green and blocked only on owner approval before escalating; 0 disables the awaiting_approval escalation."
+    t.datetime "pr_escalation_limits_suspended_until", comment: "Exclusive deadline for suspending automatic PR follow-up and cumulative token limits."
     t.string "pr_target", default: "own_repo", null: false, comment: "PR target for the project: own_repo (default) or upstream."
     t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
@@ -4356,6 +4358,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
     t.index ["result", "attempted_at"], name: "idx_runner_auth_attempts_result_attempted"
     t.index ["runner_credential_id"], name: "index_runner_auth_attempts_on_runner_credential_id"
     t.index ["runner_key", "auth_source", "container_host", "attempted_at"], name: "idx_runner_auth_attempts_provider_source_host_attempted"
+  end
+
+  create_table "runner_auth_materializations", comment: "Trusted per-container provenance for managed rotating runner credential materialization.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.string "auth_source", limit: 32, null: false
+    t.string "container_id", limit: 128, null: false
+    t.datetime "created_at", null: false
+    t.datetime "credential_updated_at"
+    t.datetime "materialized_at", null: false
+    t.bigint "project_id", null: false
+    t.bigint "runner_credential_id"
+    t.string "runner_key", limit: 64, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_runner_auth_materializations_on_account_id"
+    t.index ["agent_run_id", "runner_key", "container_id"], name: "idx_runner_auth_materializations_run_runner_container", unique: true
+    t.index ["agent_run_id"], name: "index_runner_auth_materializations_on_agent_run_id"
+    t.index ["project_id"], name: "index_runner_auth_materializations_on_project_id"
+    t.index ["runner_credential_id"], name: "index_runner_auth_materializations_on_runner_credential_id"
   end
 
   create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
@@ -5247,6 +5268,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
     t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
   end
 
+  create_table "worker_readiness_observations", comment: "Per-role Temporal worker readiness heartbeats; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "deployment_revision", comment: "Complete deployment identity observed when the worker booted."
+    t.string "environment", comment: "Rails environment of the worker process that published this observation."
+    t.datetime "heartbeat_at", null: false, comment: "When the live process last published its readiness identity."
+    t.integer "pid", null: false
+    t.datetime "ready_at", null: false, comment: "When this worker process finished booting."
+    t.string "revision"
+    t.string "role", null: false
+    t.datetime "updated_at", null: false
+    t.index ["environment", "role", "pid", "ready_at"], name: "idx_on_environment_role_pid_ready_at_5fadc857e0", unique: true
+  end
+
   create_table "workflow_states", force: :cascade do |t|
     t.datetime "completed_at"
     t.datetime "created_at", null: false
@@ -5735,6 +5769,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
   add_foreign_key "runner_auth_attempts", "agent_runs", on_delete: :nullify
   add_foreign_key "runner_auth_attempts", "projects", on_delete: :cascade
   add_foreign_key "runner_auth_attempts", "runner_credentials", on_delete: :nullify
+  add_foreign_key "runner_auth_materializations", "accounts"
+  add_foreign_key "runner_auth_materializations", "agent_runs", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_materializations", "runner_credentials", on_delete: :nullify
   add_foreign_key "runner_credentials", "accounts"
   add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
@@ -7088,12 +7126,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -8007,6 +8045,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
   execute <<~SQL
     ALTER TABLE "public"."runner_auth_attempts" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."runner_auth_attempts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."runner_auth_materializations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."runner_auth_materializations" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -10464,6 +10507,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_23_120611) do
       WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
   WHERE ((projects.id = runner_auth_attempts.project_id) AND (projects.account_id = paid_current_account_id()))))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."runner_auth_materializations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = runner_auth_materializations.project_id) AND (projects.account_id = paid_current_account_id()))))));
   SQL
 
   execute <<~SQL
