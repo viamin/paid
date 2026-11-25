@@ -21,10 +21,12 @@ prefix: RUST-SDK-BUILD
 ## Purpose
 
 Give the SDK prototype owner (#5326) an independently runnable,
-reproducible way to execute Rust/SDK builds in Paid's supported execution
-environment — Docker-backed containers with digest-pinned,
+reproducible preflight prerequisite for Rust/SDK builds in Paid's supported
+execution environment — Docker-backed containers with digest-pinned,
 architecture-matched toolchain images — without touching host or
-control-plane SDK pins, operating workers, or the agent image.
+control-plane SDK pins, operating workers, or the agent image. The build and
+native-artifact load capability remains the prototype's job-scoped concern;
+this segment does not represent metadata classification as build evidence.
 
 ## Scope boundaries
 

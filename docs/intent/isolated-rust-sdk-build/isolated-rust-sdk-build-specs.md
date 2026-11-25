@@ -71,18 +71,22 @@
   *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
   *Code:* `SdkBuildEnvironments::Preflight`.
 
-- [x] **RUST-SDK-BUILD-009** — When the engine architecture and the
-  image architecture disagree, or the image architecture is absent, the
+- [x] **RUST-SDK-BUILD-009** — When the engine architecture, image
+  architecture, and observed process architecture disagree, or the image
+  or process architecture is absent, the
   preflight verdict SHALL be a named failure
-  (`image_architecture_mismatch` / `unverifiable_image_architecture`)
+  (`image_architecture_mismatch`, `process_architecture_mismatch`, or an
+  unverifiable architecture verdict)
   with a remediation hint, and SHALL NOT be `compatible`.
   *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
   *Code:* `SdkBuildEnvironments::Preflight`.
 
-- [x] **RUST-SDK-BUILD-010** — When a toolchain binary is absent from the
+- [x] **RUST-SDK-BUILD-010** — When the metadata probe fails, reports no
+  `cargo` or `rustc` inventory, a required toolchain binary is absent from the
   environment's default PATH, or its interpreter architecture mismatches
   the process architecture, the preflight verdict SHALL be a named
-  failure (`toolchain_absent` / `loader_architecture_mismatch`) with a
+  failure (`unverifiable`, `toolchain_absent`, or
+  `loader_architecture_mismatch`) with a
   remediation hint, and SHALL NOT be `compatible`.
   *Tests:* `spec/services/sdk_build_environments/preflight_spec.rb`.
   *Code:* `SdkBuildEnvironments::Preflight`.
