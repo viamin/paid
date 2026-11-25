@@ -11,6 +11,7 @@
   `app/services/issues/closeout_evidence.rb`.
   *Test:* `spec/models/shared_delivery_evidence_association_spec.rb`,
   `spec/mcp/tools/manage_shared_delivery_evidence_spec.rb`,
+  `spec/services/issues/request_acceptance_audit_shared_delivery_evidence_spec.rb`,
   `spec/services/issues/closeout_evidence_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
   `spec/security/tenant_context_spec.rb`.
