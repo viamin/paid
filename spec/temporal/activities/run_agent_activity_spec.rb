@@ -2817,14 +2817,20 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
-  def codex_mcp_tool_output(content:, structured_content: nil, error: nil, status: "completed")
+  def codex_mcp_tool_output(
+    content:,
+    arguments: { query: "authentication_error" },
+    structured_content: nil,
+    error: nil,
+    status: "completed"
+  )
     JSON.generate(
       type: "item.completed",
       item: {
         type: "mcp_tool_call",
         server: "private-fixture",
         tool: "inspect_source",
-        arguments: { query: "authentication_error" },
+        arguments: arguments,
         result: {
           content: [ { type: "text", text: content } ],
           structured_content: structured_content
@@ -4007,6 +4013,23 @@ expect(container_service).to receive(:execute).with(
       it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
         result = Containers::Provision::Result.success(
           stdout: codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),
+          stderr: "",
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, result)
+
+        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
+
+        expect(agent_run.reload).not_to be_auth_expired
+        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
+      end
+
+      it "keeps auth-shaped completed MCP arguments out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
+        result = Containers::Provision::Result.success(
+          stdout: codex_mcp_tool_output(
+            arguments: { query: "authentication_error" },
+            content: "completed without a provider error"
+          ),
           stderr: "",
           exit_code: 0
         )
