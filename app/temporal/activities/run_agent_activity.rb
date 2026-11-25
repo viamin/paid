@@ -2464,7 +2464,18 @@ module Activities
     def codex_matching_stderr_span(lines)
       finish = earliest_codex_auth_span_end(lines)
       start = latest_codex_auth_span_start(lines, finish) if finish
-      lines[start..].join if start
+      finish = extend_codex_auth_span(lines, finish) if start
+      lines[start..finish].join if start
+    end
+
+    # The minimal classified span may end before an adjacent, independently
+    # classified provider code. Retain that evidence without absorbing later
+    # stderr that the harness does not classify as an auth diagnostic.
+    def extend_codex_auth_span(lines, finish)
+      while lines[finish + 1] && auth_classification?(codex_stderr_classification(lines[finish + 1]))
+        finish += 1
+      end
+      finish
     end
 
     def latest_codex_auth_span_start(lines, finish)

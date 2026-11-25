@@ -3971,8 +3971,8 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-      it "records the late stderr refresh-token diagnostic instead of startup noise" do # @spec RUNNER-FALLBACK-015
-        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "refresh_token_reused" ]).join("\n")
+      it "records the late stderr refresh-token diagnostic without startup or trailing noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "refresh_token_reused", "private-terminal-noise" ]).join("\n")
         result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
         allow(container_service).to receive(:execute).and_return(exec_success, result)
 
@@ -3984,10 +3984,11 @@ expect(container_service).to receive(:execute).with(
           .dig("diagnostics", "classification_provenance", "terminal_diagnostic")
         expect(diagnostic).to include("refresh_token_reused")
         expect(diagnostic).not_to include("Codex startup diagnostic")
+        expect(diagnostic).not_to include("private-terminal-noise")
       end
 
-      it "records the late multiline stderr refresh diagnostic instead of startup noise" do # @spec RUNNER-FALLBACK-015
-        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "Failed to refresh token:", "invalid_client" ]).join("\n")
+      it "records the late multiline stderr refresh diagnostic without startup or trailing noise" do # @spec RUNNER-FALLBACK-015
+        stderr = ([ "Codex startup diagnostic" ] * 100 + [ "Failed to refresh token:", "invalid_client", "private-terminal-noise" ]).join("\n")
         result = Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: stderr, exit_code: 1)
         allow(container_service).to receive(:execute).and_return(exec_success, result)
 
@@ -4000,6 +4001,7 @@ expect(container_service).to receive(:execute).with(
         expect(diagnostic).to include("Failed to refresh token:")
         expect(diagnostic).to include("invalid_client")
         expect(diagnostic).not_to include("Codex startup diagnostic")
+        expect(diagnostic).not_to include("private-terminal-noise")
       end
 
       it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
