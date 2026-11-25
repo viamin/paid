@@ -96,6 +96,12 @@ preexisting coding priority request are refused. The service writes the shared
 operator-coding marker plus a first-implementation request timestamp and one
 actor audit event; concurrent/repeated requests preserve the first event.
 
+Unclaimed means the run has no workflow or start timestamp, retained container
+or runner handle, service-container references, worktree path, or associated
+worktree. A queued status cannot hide retained execution ownership. The service
+refuses these records under the same run lock without writing either priority
+timestamp or an audit event; it does not clean up or interrupt their resources.
+
 This marker is intentionally durable. A later revocation or expiry must append
 an audit event and cannot erase request history or change allowance, retry,
 backoff, policy snapshots, runner/model/privacy/billing, admission evidence,
