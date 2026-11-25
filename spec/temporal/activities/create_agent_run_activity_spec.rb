@@ -415,6 +415,21 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     # @spec TEMPORAL-ORCHESTRATION-019
+    it "resumes a queued run after scheduler admission marks it running" do
+      queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
+      queued_run.update!(status: "running", temporal_workflow_id: "queued-#{project.id}-#{queued_run.id}")
+
+      result = activity.execute(agent_run_id: queued_run.id)
+
+      expect(result[:agent_run_id]).to eq(queued_run.id)
+      expect(queued_run.reload).to have_attributes(
+        status: "running",
+        temporal_workflow_id: "queued-#{project.id}-#{queued_run.id}"
+      )
+      expect(queued_run.configuration_bundle).to be_present
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
     it "rejects a late queued-resume attempt without changing a terminal run" do
       queued_run = create(:agent_run, :queued, :automatic, project: project, issue: issue)
       queued_run.update!(status: "failed", error_message: "newer terminal failure")

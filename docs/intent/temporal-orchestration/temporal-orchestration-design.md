@@ -211,14 +211,16 @@ and elapsed milliseconds; prompts, credentials, provider payloads, and
 exception text are excluded.
 
 Each stage rechecks the run's persisted resume-attempt ownership and terminal
-state. A later Temporal attempt supersedes an earlier one, and a terminal run
-supersedes both. A superseded attempt raises a typed non-retryable setup error
-instead of returning a successful activity result, so it cannot advance the
-workflow to `RunAgent` or overwrite the newer terminal result. Setup remains
-idempotent on retry: runner synchronization, marketplace attachment, model
-selection, policy persistence, configuration assignment, and strategy logging
-reuse their existing persisted records. This is an observability and
-late-attempt fencing change; it neither moves work to a control pool nor
+state. The scheduler's pre-agent `running` state remains eligible alongside
+`queued`, because queue admission marks the row active before this activity
+performs setup. A later Temporal attempt supersedes an earlier one, and a
+terminal run supersedes both. A superseded attempt raises a typed non-retryable
+setup error instead of returning a successful activity result, so it cannot
+advance the workflow to `RunAgent` or overwrite the newer terminal result.
+Setup remains idempotent on retry: runner synchronization, marketplace
+attachment, model selection, policy persistence, configuration assignment, and
+strategy logging reuse their existing persisted records. This is an
+observability and late-attempt fencing change; it neither moves work to a control pool nor
 widens execution, retry, model, or authority budgets (#5356).
 
 ## Worker Capacity Model
