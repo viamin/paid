@@ -20,10 +20,9 @@ RSpec.describe Activities::RunAgentActivity do
     # Ensure fallback is disabled by default so tests behave like single-runner runs
     user.settings.update!(fallback_enabled: false)
 
-    # Stub github_client so effective_prompt → prompt_for_issue → BuildForIssue
-    # does not make real HTTP calls (blocked by WebMock).
-    github_client = instance_double(GithubClient, issue_comments: [])
-    allow(project.github_token).to receive(:client).and_return(github_client)
+    # A row-lock reload replaces the cached project/token associations. Stub
+    # the HTTP boundary so a fresh token client keeps the same empty comments.
+    stub_empty_issue_comments(project)
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
@@ -64,6 +63,12 @@ RSpec.describe Activities::RunAgentActivity do
     # Stub LID coherence check so tests that don't explicitly test it
     # aren't affected by the extra container-service call.
     allow(activity).to receive(:run_lid_coherence_check)
+  end
+
+  def stub_empty_issue_comments(project)
+    repo = Regexp.escape(project.full_name)
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/#{repo}/issues/\d+/comments(?:\?.*)?\z})
+      .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
   end
 
   def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
@@ -6769,7 +6774,7 @@ expect(container_service).to receive(:execute).with(
         orphan_run = create(:agent_run, :with_git_context, project: project_without_creator,
           issue: issue_for_orphan, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(orphan_run.id).and_return(orphan_run)
-        allow(orphan_token).to receive(:client).and_return(instance_double(GithubClient, issue_comments: []))
+        stub_empty_issue_comments(project_without_creator)
 
         expect {
           activity.execute(agent_run_id: orphan_run.id)
