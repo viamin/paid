@@ -48,7 +48,37 @@ the full-suite coverage floor because absolute temporary paths are not
 classified as focused. The corrected focused invocation and final fourteen-case
 run both pass with coverage enabled; the whole-suite 80% gate is unchanged.
 
-Broader callback/tenant acceptance, a representative factory-heavy comparison
-and full CI on the final revision remain required. Raw source hashes, archived
+Full CI `45845384634` on `8358c9cc26d69ebb6fe67cced216cf789392bceb`
+passes 31,308 examples, zero failures, five existing pending cases and 95%
+combined coverage. All six artifact digests match; system acceptance also passes.
+Security CI flags SQL interpolation in the new predicate. The follow-up keeps
+the bound open-state predicate in the existing SQL builder and passes it to
+`where` directly, without a scanner suppression. The follow-up passes all 13 focused behavior/tenant examples, zero failures
+or pending cases, with coverage enabled and seed 24680. Brakeman completes with zero warnings and zero errors on the same application
+source; changed-file lint and coherence pass (existing repository warnings
+remain). Full CI on the follow-up revision remains pending. Raw source hashes, archived
 implementation, regressions, controls and logs are retained under
 `/tmp/paid-testprof-audit/closeout-plans/` in the devcontainer.
+
+## Representative control
+
+Seven factory-heavy files retain the same 599 examples, execution order and
+1,632 factory calls in original/candidate/original runs. Coverage, FactoryProf,
+RSpecDissect, TestProf GC profiling, INFO logging, seed 24680, restricted
+application roles and the unavailable localhost Temporal endpoint remain fixed.
+Every leg uses a fresh database restored only after a positive empty-table check.
+
+| Phase | Process wall | User CPU | Example execution | Major page faults |
+| --- | ---: | ---: | ---: | ---: |
+| Original 1 | 417.05s | 225.45s | 381.61s | 17,796 |
+| Candidate | 466.34s | 255.05s | 418.93s | 26,458 |
+| Original 2 | 629.86s | 286.03s | 551.47s | 41,289 |
+
+All three runs pass with zero failures or pending cases. Each covers 47,981
+application lines; raw line positions differ only at two moved lines in this
+SQL builder. GC takes 18.82 / 22.34 / 22.75 seconds, so it is not the dominant
+cost in this sample. Live Paid jobs/workers remain active, and the host swaps.
+No other audit test or linter runs during these legs. The candidate falls between
+the controls: **repeatable workload improvement is unproven**, despite the
+isolated query's measured gain. Do not extrapolate that microbenchmark to a
+whole-suite percentage. Evidence: `/tmp/paid-testprof-audit/closeout-macro/`.

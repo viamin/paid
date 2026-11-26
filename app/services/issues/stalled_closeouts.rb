@@ -72,12 +72,12 @@ module Issues
         .where(runner_retry_abandoned_at: nil)
         .where.not(id: blocking_issue_ids)
         .where.not(id: IssueContinuationRequest.open.where(project: project).select(:issue_id))
-        .where("(#{closeout_evidence_sql}) AND issues.github_state = ?", "open")
+        .where(closeout_candidate_sql, "open")
     end
 
-    def self.closeout_evidence_sql
+    def self.closeout_candidate_sql
       <<~SQL.squish
-        issues.no_code_required_at IS NOT NULL
+        (issues.no_code_required_at IS NOT NULL
         OR EXISTS (
           SELECT 1 FROM issues merged_prs
           WHERE merged_prs.project_id = issues.project_id
@@ -87,7 +87,8 @@ module Issues
         )
         OR EXISTS (
           #{Issue::AUTO_PICK_MERGED_PR_CORRELATED_SUBQUERY}
-        )
+        ))
+        AND issues.github_state = ?
       SQL
     end
   end

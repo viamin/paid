@@ -137,7 +137,7 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
     end
   end
 
-  describe ".closeout_evidence_sql" do
+  describe ".candidates_for" do
     it "matches a parent-linked merged PR via the parent_issue_id prefilter" do
       create(
         :issue,
