@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::Execute do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
   let(:agent_run) { create(:agent_run, project: project, agent_type: "claude_code", container_id: "isolated-test-container") }
   let(:prompt) { "Fix the authentication bug" }
 
@@ -36,39 +37,22 @@ RSpec.describe AgentRuns::Execute do
         allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
-      it "returns a successful result" do
+      it "returns the response and persists completion and token accounting", :aggregate_failures do
         result = described_class.call(agent_run: agent_run, prompt: prompt)
 
         expect(result).to be_success
         expect(result.response).to eq(response)
-      end
-
-      it "marks the agent run as completed" do
-        described_class.call(agent_run: agent_run, prompt: prompt)
 
         agent_run.reload
         expect(agent_run.status).to eq("completed")
         expect(agent_run.completed_at).to be_present
         expect(agent_run.duration_seconds).to eq(45)
-      end
-
-      it "tracks token usage on the agent run" do
-        described_class.call(agent_run: agent_run, prompt: prompt)
-
-        agent_run.reload
         expect(agent_run.tokens_input).to eq(1500)
         expect(agent_run.tokens_output).to eq(800)
-      end
-
-      it "records run_summary without aggregates, then persists delta as run_delta when no proxy records exist" do
-        described_class.call(agent_run: agent_run, prompt: prompt)
-
         expect(agent_run.token_usages.order(:request_type).pluck(:request_type, :input_tokens, :output_tokens)).to eq([
           [ "run_delta", 1500, 800 ],
           [ "run_summary", 1500, 800 ]
         ])
-        expect(agent_run.reload.tokens_input).to eq(1500)
-        expect(agent_run.tokens_output).to eq(800)
       end
 
       it "skips delta record when proxy records fully cover tracking" do

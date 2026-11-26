@@ -4,7 +4,8 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe PartialCloseouts::Reconcile do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
   let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
   let(:run) { create(:agent_run, :completed, project: project, issue: parent, pull_request_number: 99) }
   let(:client) { instance_double(GithubClient) }
