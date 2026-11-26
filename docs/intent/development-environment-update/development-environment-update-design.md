@@ -130,7 +130,13 @@ target boot verification. Every original PID/start-time instance must be proved
 gone before reopening; unknown visibility is not absence. Interrupted
 acknowledged updates keep persistent requests closed and expose an explicit
 recovery action for unchanged, known mixed, stopped or verified target phases.
-Mixed or unknown cohorts never silently reopen.
+Mixed or unknown cohorts never silently reopen. Migration-sensitive updates
+fetch and pin the exact target before draining; the later fast-forward pull
+cannot silently select a newer main. The Bash client retains its original
+CLOEXEC coprocess descriptors, reads durable completion before closing them,
+and reaps only a verified controller instance through a pidfd. A reused PID or
+unknown process identity never authorizes a signal. Once a stop may have begun,
+a failed setup does not automatically restart or reopen the fenced cohort.
 
 Missing readiness metadata is not itself evidence that no worker is running: a
 worker can fail before it marks ready, or its flag can be removed, while the

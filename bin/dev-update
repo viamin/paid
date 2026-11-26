@@ -25,6 +25,9 @@ cd "$APP_ROOT" || exit
 
 # shellcheck source=bin/lib/dev_supervisor.sh
 source "${APP_ROOT}/bin/lib/dev_supervisor.sh"
+# shellcheck source=bin/lib/dev_worker_admission.sh
+source "${APP_ROOT}/bin/lib/dev_worker_admission.sh"
+trap worker_admission_cleanup EXIT
 
 MODE="${1:---lightweight}"
 LOG_PREFIX="[dev-update]"
@@ -383,7 +386,11 @@ pull_latest() {
   pre_head="$(git rev-parse HEAD)"
 
   log "Pulling latest changes from main..."
-  if ! git pull --ff-only origin main; then
+  local pull_ref="main"
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    pull_ref="$WORKER_ADMISSION_TARGET"
+  fi
+  if ! git pull --ff-only origin "$pull_ref"; then
     record_failure "git-pull"
     unstash_dirty_tree
     log "ERROR: git pull --ff-only failed. Check for diverged history or upstream issues."
@@ -392,6 +399,10 @@ pull_latest() {
 
   local post_head
   post_head="$(git rev-parse HEAD)"
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ] && [ "$post_head" != "$WORKER_ADMISSION_TARGET" ]; then
+    log "Pinned update target disagrees with checkout; admission remains closed for recovery."
+    return 1
+  fi
 
   clear_failure_lock
   unstash_dirty_tree
@@ -419,7 +430,7 @@ restart_required_from_pull() {
   return 1
 }
 
-stop_overmind() {
+stop_overmind_services() {
   if overmind_available && [ -e "$OVERMIND_SOCKET" ]; then
     if ! overmind_running; then
       log "Detected stale Overmind socket."
@@ -476,6 +487,21 @@ stop_overmind() {
   fi
 }
 
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+stop_overmind() {
+  local deadline
+  [ "$STOPPED_OVERMIND" -eq 0 ] || return 0
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    worker_admission_before_stop || fail "Worker cohort changed before stop; adoption deferred."
+    deadline="$(python3 -c 'import sys,time; print(time.monotonic()+float(sys.argv[1])*float(sys.argv[2]))' "$OVERMIND_STOP_POLL_COUNT" "$OVERMIND_POLL_INTERVAL")" || return 1
+  fi
+  stop_overmind_services
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    worker_admission_wait_originals "$deadline" || fail "Original worker exit could not be verified; no setup or admission resume is authorized."
+    worker_admission_checkpoint stopped || fail "Stopped phase was not recorded; recover the owned generation."
+  fi
+}
+
 # Drop databases left behind by removed git worktrees. bin/setup creates a
 # worktree's databases via bin/ensure-worktree-databases but nothing reaps them
 # when the worktree goes away, so they accumulate and exhaust Postgres
@@ -493,6 +519,9 @@ prune_worktree_databases() {
 }
 
 run_setup() {
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    worker_admission_checkpoint setup || return 1
+  fi
   local setup_args=(--skip-server)
   if migrations_changed; then
     setup_args+=(--skip-database)
@@ -678,30 +707,32 @@ verified_no_temporal_worker() {
   return 0
 }
 
-# The SDK reports an activity body only after accepting a task. It cannot
-# acknowledge an atomic close of task admission that includes long-poll
-# reservations or eager activity admission. Treat a ready legacy worker as an
-# unsupported rollout boundary rather than inferring safety from body counts.
-# @spec TEMPORAL-ORCHESTRATION-019
+# @spec TEMPORAL-ORCHESTRATION-021, DEVELOPMENT-ENVIRONMENT-UPDATE-006
 wait_for_workers_to_drain() {
-  local poll_readiness
-  local agent_readiness
-  poll_readiness="$(worker_readiness_file poll)"
-  agent_readiness="$(worker_readiness_file agent)"
-  if [ ! -f "$poll_readiness" ] && [ ! -f "$agent_readiness" ]; then
+  local target
+  [ "$WORKER_ADMISSION_ACTIVE" -eq 0 ] || return 0
+  if [ ! -f "$(worker_readiness_file poll)" ] && [ ! -f "$(worker_readiness_file agent)" ] && [ ! -f "$(worker_readiness_file both)" ]; then
     if verified_no_temporal_worker; then
       log "No Temporal worker readiness metadata found and no Temporal worker is running; no Temporal worker quiescence is required."
       return 0
     fi
-
     log "ERROR: Temporal worker readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind."
-    log "A worker that failed before marking ready can still own or have reserved work, and an orphaned Overmind tmux session the stop path would kill can still host Temporal workers. Resolve the dev environment state, including any orphaned Overmind tmux session or failed status inspection, or install an SDK release implementing TEMPORAL-ORCHESTRATION-019 before rerunning bin/dev-update --full."
+    log "Inspect the configured Overmind socket and any orphaned Overmind tmux session; a failed inspection is unknown, not proof of absence."
     return 1
   fi
-
-  log "ERROR: Installed Temporal Ruby SDK does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind."
-  log "Install an SDK release implementing TEMPORAL-ORCHESTRATION-019 before restarting a ready Temporal worker."
-  return 1
+  if [ "${1:-}" = "before-pull" ]; then
+    # Fetch does not change loaded code. Pin this exact target before a
+    # migration-sensitive stop; a moving main cannot retarget the generation.
+    git fetch --no-tags origin main || return 1
+    target="$(git rev-parse --verify FETCH_HEAD)" || return 1
+  else
+    target="$(git rev-parse HEAD)" || return 1
+  fi
+  if ! worker_admission_begin "$target"; then
+    log "ERROR: Worker does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind. Complete capability and supervisor identity must both be verified."
+    log "Legacy workers require the separately authorized maintenance path in TEMPORAL-ORCHESTRATION-021; readiness or activity counts are not acknowledgement."
+    return 1
+  fi
 }
 
 # Effective worker adoption verification: Overmind health alone cannot
@@ -716,6 +747,10 @@ wait_for_workers_to_drain() {
 # workflow/activity owners or resets failed runs.
 # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
 verify_worker_adoption() {
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    worker_admission_resume "$WORKER_ADMISSION_TARGET"
+    return
+  fi
   local expected_revision
   expected_revision="$(git rev-parse HEAD 2>/dev/null || true)"
   if [ -z "$expected_revision" ]; then
@@ -750,6 +785,13 @@ verify_worker_adoption() {
 }
 
 start_dev() {
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ]; then
+    worker_admission_checkpoint starting || return 1
+    if overmind_running; then
+      log "Unexpected running supervisor after a verified stop; admission remains closed."
+      return 1
+    fi
+  fi
   mkdir -p "$(dirname "$START_DEV_LOG")"
   remove_stale_overmind_socket
   dev_supervisor_cleanup_stale_tmux_sockets
@@ -787,6 +829,10 @@ start_dev() {
 }
 
 recover_dev_if_needed() {
+  if [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ] && [ "$WORKER_ADMISSION_STOPPING" -eq 1 ]; then
+    log "Acknowledged update requires phase-aware recovery; no automatic restart after failed setup."
+    return 0
+  fi
   if [ "$STOPPED_OVERMIND" -eq 1 ] && ! overmind_healthy; then
     log "Attempting recovery start because Overmind was stopped during this update."
     if start_dev; then
@@ -801,7 +847,7 @@ run_full_restart() {
   log "Starting full restart update..."
   if migrations_changed_in_trigger_context; then
     log "Migration files are in the trigger context; stopping Overmind before pulling to avoid Rails pending-migration errors."
-    wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
+    wait_for_workers_to_drain before-pull || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
     stop_overmind
   fi
 
