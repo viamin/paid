@@ -15,7 +15,10 @@
   a separate, throttled durable attempt heartbeat without becoming a
   transcript checkpoint; before entering the agent loop, the system SHALL
   atomically claim the turn's initial `pending` state so only one overlapping
-  delivery can execute it.
+  delivery can execute it. When an attempt finishes before its heartbeat
+  thread begins waiting, the thread SHALL observe the stop state before
+  waiting and SHALL terminate without delaying completion by a heartbeat
+  interval.
   *Code:* `ChatTurn.start!`, `ChatTurn#claim_initial_attempt!`,
   `ChatTurn#record_activity!`, `ChatTurn#heartbeat!`,
   `ChatSessions::SendMessage#on_message_persisted`,
