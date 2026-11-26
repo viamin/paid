@@ -117,7 +117,7 @@ class Drain:
     """One serialized, persistent generation for every affected worker role."""
 
     def __init__(self, workspace, roles, target_revision, expected_processes, *, identity_reader=process_identity,
-                 original_process_reader=process_start_ticks):
+                 original_process_reader=process_start_ticks, stopped=False):
         self.workspace = str(Path(workspace).resolve(strict=True))
         if sorted(roles) != ["agent", "poll"]:
             raise AdmissionError("both worker roles are required")
@@ -128,7 +128,13 @@ class Drain:
         if not re.fullmatch(r"[0-9a-f]{40}", target_revision):
             raise AdmissionError("target revision is unknown")
         self.target_revision = target_revision
-        self.expected_processes = self.validate_processes(expected_processes)
+        if stopped and expected_processes != {}:
+            raise AdmissionError("stopped recovery requires an explicitly empty cohort")
+        self.expected_processes = {} if stopped else self.validate_processes(expected_processes)
+        self.stopped = stopped
+        self.completed = False
+        self.target_snapshots = {}
+        self.update_phase = "draining"
         self.identity_reader = identity_reader
         self.original_process_reader = original_process_reader
         self.directory = Path(self.workspace) / "tmp"
@@ -185,7 +191,8 @@ class Drain:
             "protocol": 1, "generation": self.generation, "phase": phase,
             "workspace": self.workspace, "roles": {key: str(value) for key, value in self.roles.items()},
             "snapshots": self.snapshots, "target_revision": self.target_revision,
-            "expected_processes": self.expected_processes,
+            "expected_processes": self.expected_processes, "update_phase": self.update_phase,
+            "target_snapshots": self.target_snapshots,
         })
 
     def serialize(self):
@@ -236,6 +243,8 @@ class Drain:
                     time.sleep(min(0.05, max(0, deadline - time.monotonic())))
 
     def acquire(self, timeout):
+        if self.stopped:
+            raise AdmissionError("an empty cohort is only valid for explicit recovery")
         if not 0 < timeout <= 120:
             raise AdmissionError("invalid existing drain budget")
         deadline = time.monotonic() + timeout
@@ -267,13 +276,27 @@ class Drain:
             expected_roles = {key: str(value) for key, value in self.roles.items()}
             if previous.get("workspace") != self.workspace or previous.get("roles") != expected_roles or previous.get("target_revision") != self.target_revision:
                 raise AdmissionError("recovery workspace, cohort or target disagrees")
-            if previous.get("phase") not in ("requested", "acknowledged"):
+            if previous.get("phase") not in ("requested", "acknowledged", "resumed"):
                 raise AdmissionError("generation does not require recovery")
             uuid.UUID(previous["generation"])
             self.generation = previous["generation"]
             self.snapshots = previous["snapshots"]
+            if not isinstance(self.snapshots, dict) or set(self.snapshots) != set(self.roles):
+                raise AdmissionError("recovery snapshots are incomplete")
+            self.update_phase = previous.get("update_phase", "draining")
+            self.target_snapshots = previous.get("target_snapshots", {})
             self.preserve_requests = True
-            current = {role: self.snapshot(role) for role in self.roles}
+            if previous["phase"] == "resumed":
+                self.completed = True
+                self.verify_completed()
+                self.check_deadline(deadline)
+                return {"generation": self.generation, "roles": sorted(self.roles), "completed": True,
+                        "cohort": "target", "next_action": "already-complete", "update_phase": "complete"}
+            if self.stopped:
+                if previous["phase"] != "acknowledged":
+                    raise AdmissionError("stopped recovery requires a previously complete acknowledgement")
+                self.verify_original_instances_gone(self.roles)
+            current = {} if self.stopped else {role: self.snapshot(role) for role in self.roles}
             unchanged = current == self.snapshots
             target_roles = {
                 role for role, value in current.items()
@@ -281,7 +304,7 @@ class Drain:
                 and (value["pid"], value["process_start_ticks"]) != (self.snapshots[role]["pid"], self.snapshots[role]["process_start_ticks"])
             }
             known = all(value == self.snapshots[role] or role in target_roles for role, value in current.items())
-            if not unchanged and not (previous["phase"] == "acknowledged" and known):
+            if not self.stopped and not unchanged and not (previous["phase"] == "acknowledged" and known):
                 raise AdmissionError("mixed or unknown worker boots require investigation before stop")
             self.verify_original_instances_gone(target_roles)
             for path in sorted({Path(str(value) + ".admission.request") for value in self.roles.values()}):
@@ -296,14 +319,19 @@ class Drain:
                 self.requests.append(path)
             self.publish_requests()
             self.acquire_locks(deadline)
-            if any(self.snapshot(role) != current[role] for role in self.roles):
+            if self.stopped:
+                self.verify_original_instances_gone(self.roles)
+            elif any(self.snapshot(role) != current[role] for role in self.roles):
                 raise AdmissionError("worker changed during recovery")
             self.check_deadline(deadline)
             self.record("acknowledged")
             self.check_deadline(deadline)
             self.acknowledged = True
+            cohort = "stopped" if self.stopped else "unchanged" if unchanged else "target" if len(target_roles) == len(self.roles) else "mixed"
+            actions = {"stopped": "setup-and-start-target", "unchanged": "stop-original-cohort",
+                       "mixed": "finish-target-replacement", "target": "verify-and-resume-target"}
             return {"generation": self.generation, "roles": sorted(self.roles), "acknowledged": True,
-                    "cohort": "unchanged" if unchanged else "target" if len(target_roles) == len(self.roles) else "mixed"}
+                    "cohort": cohort, "next_action": actions[cohort], "update_phase": self.update_phase}
         except BaseException:
             self.close()
             raise
@@ -315,8 +343,31 @@ class Drain:
             raise AdmissionError("complete acknowledgement exceeded the existing drain budget")
 
     def verify_old_cohort(self):
+        if self.stopped or self.completed:
+            raise AdmissionError("there is no unchanged live cohort to abort")
         if any(self.snapshot(role) != self.snapshots[role] for role in self.roles):
             raise AdmissionError("worker identity changed while draining")
+
+    def checkpoint(self, phase):
+        phases = ("draining", "stopping", "stopped", "setup", "starting")
+        if not self.acknowledged or phase not in phases or self.update_phase not in phases:
+            raise AdmissionError("invalid acknowledged update checkpoint")
+        if phases.index(phase) < phases.index(self.update_phase):
+            raise AdmissionError("update checkpoint cannot move backwards")
+        if phase in ("stopped", "setup", "starting"):
+            self.verify_original_instances_gone(self.roles)
+        self.update_phase = phase
+        self.record("acknowledged")
+
+    def verify_completed(self):
+        if self.stopped or set(self.target_snapshots) != set(self.roles):
+            raise AdmissionError("completed target cohort is unknown")
+        current = {role: self.snapshot(role) for role in self.roles}
+        if current != self.target_snapshots:
+            raise AdmissionError("completed target boot changed")
+        self.verify_original_instances_gone(self.roles)
+        if any(os.path.lexists(str(value) + ".admission.request") for value in self.roles.values()):
+            raise AdmissionError("another admission request requires investigation")
 
     def remove_requests(self):
         for path in self.requests:
@@ -356,17 +407,37 @@ class Drain:
                 raise AdmissionError("original worker process instance remains alive")
 
     def resume(self, revision, expected_processes):
+        if self.completed:
+            expected_processes = self.validate_processes(expected_processes)
+            if revision != self.target_revision or expected_processes != self.expected_processes:
+                raise AdmissionError("completed target cohort disagrees")
+            if self.controller is None:
+                self.serialize()
+            try:
+                previous = read_json(self.journal)
+                if previous.get("generation") != self.generation or previous.get("phase") != "resumed":
+                    raise AdmissionError("completed generation changed")
+                self.verify_completed()
+            finally:
+                self.close()
+            return
         if not self.acknowledged or revision != self.target_revision:
             raise AdmissionError("no complete acknowledgement")
         expected_processes = self.validate_processes(expected_processes)
+        target = {}
         for role in self.roles:
             current = self.snapshot(role, expected_processes)
+            target[role] = current
             old = self.snapshots[role]
             if current["revision"] != revision or current["boot_id"] == old["boot_id"] or (current["pid"], current["process_start_ticks"]) == (old["pid"], old["process_start_ticks"]):
                 raise AdmissionError("target worker boot is not verified")
         self.verify_original_instances_gone(self.roles)
+        self.expected_processes = expected_processes
+        self.target_snapshots = target
+        self.update_phase = "complete"
         self.remove_requests()
         self.record("resumed")
+        self.completed = True
         self.acknowledged = False
         self.preserve_requests = False
         self.close()
@@ -375,7 +446,7 @@ class Drain:
         if self.controller is None:
             return
         try:
-            if not self.acknowledged and not self.preserve_requests:
+            if not self.acknowledged and not self.preserve_requests and not self.completed:
                 # A link syscall can finish before its caller observes success.
                 # Discover our complete generation while still serialized; never
                 # infer ownership merely from a request path's existence.
@@ -435,16 +506,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--role", action="append", required=True, help="agent=PATH or poll=PATH")
-    parser.add_argument("--process", action="append", required=True, help="supervisor-discovered agent=PID:START_TICKS or poll=PID:START_TICKS")
+    parser.add_argument("--process", action="append", default=[], help="supervisor-discovered agent=PID:START_TICKS or poll=PID:START_TICKS")
     parser.add_argument("--target-revision", required=True)
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--mode", choices=("drain", "recover"), default="drain")
+    parser.add_argument("--stopped", action="store_true", help="recover a cohort whose original instances are proved gone")
     parser.add_argument("--finish-handshake", action="store_true",
                         help="wait at most five seconds for caller close after final status")
     arguments = parser.parse_args()
     drain = None
     recovery = [sys.executable, str(Path(__file__).resolve()), "--workspace", arguments.workspace,
                 "--target-revision", arguments.target_revision, "--timeout", str(arguments.timeout), "--mode", "recover"]
+    if arguments.stopped:
+        recovery.append("--stopped")
     for role in arguments.role:
         recovery.extend(["--role", role])
     for process in arguments.process:
@@ -471,10 +545,17 @@ def main():
                 raise AdmissionError("duplicate or invalid supervisor process argument")
             pid, start_ticks = identity.split(":")
             processes[role] = {"pid": int(pid), "start_ticks": int(start_ticks)}
-        drain = Drain(arguments.workspace, roles, arguments.target_revision, processes)
+        drain = Drain(arguments.workspace, roles, arguments.target_revision, processes, stopped=arguments.stopped)
         acknowledgement = drain.recover(arguments.timeout) if arguments.mode == "recover" else drain.acquire(arguments.timeout)
         print(json.dumps({"status": "acknowledged", **acknowledgement}), flush=True)
         command = read_command(drain.parent_pid)
+        while command != "abort\n":
+            value = json.loads(command)
+            if not isinstance(value, dict) or value.get("action") != "checkpoint":
+                break
+            drain.checkpoint(value.get("phase"))
+            print(json.dumps({"status": "checkpoint", "phase": drain.update_phase}), flush=True)
+            command = read_command(drain.parent_pid)
         if command == "abort\n":
             drain.abort()
             print(json.dumps({"status": "aborted"}), flush=True)

@@ -93,8 +93,13 @@ parent outcome after acknowledgement leaves a persistent closed generation
 and a bounded diagnostic containing its exact recovery command. A recovery
 invocation must acquire the controller lock, validate supported role identity
 and reacquire all exclusive locks before continuing the existing restart.
-It must classify unchanged, known mixed old/target, and fully verified target
-cohorts. A known mixed cohort remains fenced for completion of replacement;
+It must classify unchanged, known mixed old/target, explicitly stopped, and
+fully verified target cohorts. Stopped recovery requires typed absence of all
+original PID/start-time instances and reacquires every persistent request lock;
+it authorizes setup and target start, never reopening. Monotonic checkpoints
+record stopping, stopped, setup and starting without granting new authority.
+A completed generation verifies its recorded target boots and original-instance
+absence without republishing requests or restarting services. A known mixed cohort remains fenced for completion of replacement;
 only a fully verified target cohort can reopen, with the original instances
 proved gone. Unknown boots or process visibility defer with the persistent
 generation intact. It must not silently resume a mixed or unverifiable worker set. Ordinary
