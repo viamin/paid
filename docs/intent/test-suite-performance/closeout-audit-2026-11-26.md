@@ -60,9 +60,34 @@ original record/final-state assertions. There is no application change.
 - All **six assignment examples pass** with seeds 24680 and 97531, coverage enabled.
   Both formerly omitted lines are covered in each run.
 
-The 15.82-minute benchmark precedes this deterministic fixture correction. A
-final combined rerun including it remains pending; do not represent the earlier
-measurement as testing a later revision.
+The 15.82-minute benchmark precedes this deterministic fixture correction.
+
+## Final corrected validation
+
+Frozen revision `e088ca5f87e5e84dc3fe3b30826b4be816d22b0a` includes all four
+checkpoints. It passes the full local workload from **22:23:27 to 22:39:29 UTC**:
+**961.73 seconds (16.03 minutes)** through coverage, 882.16 seconds for the
+concurrent test phase, and 967.73 seconds including shutdown.
+
+All **31,343 normal examples**, **179 system examples** and **five performance
+examples** pass with zero failures or errors. The five normal and one system
+pending cases are unchanged. All normal example IDs are unique and identical
+to the earlier combined run; all 2,227 normal files occur exactly once.
+
+Coverage is **122,871 / 129,314 lines (reported 95.01%)**, with both assignment
+update/return lines hit. The covered-line set matches the earlier pre-fixture
+passing candidate exactly: no lost or gained covered application lines.
+
+All six source checkouts remain clean at the frozen revision. Worker boot
+metadata verifies the intended non-superuser/non-bypass roles, prepared statements
+and INFO logging. All 12 owned services are confirmed stopped, with data retained.
+This session ran no overlapping local tests, linters or commit hooks during timing;
+other Paid workloads continued. Sampled load ranged from 2.77 to 10.67.
+
+This meets the operational half-time threshold against the original 96.09-minute
+reference. The 23.21-minute original-source control and differing resource/load
+conditions still prevent claiming a code-attributable 50% reduction. Scope and
+attribution remain as described above.
 
 ## Evidence
 
@@ -73,6 +98,15 @@ Raw reports, boot metadata, coverage inputs, preparation logs and resource sampl
 The original-source control is in `original-matched-control/`; assignment normal,
 negative-control and coverage reports are in `assignment-coverage/` under the same
 audit root. All benchmark data and stopped services are retained.
+
+Final corrected artifacts are in `/tmp/paid-testprof-audit/final-complete-full/`.
+Its 18-file SHA-256 evidence manifest has digest
+`e8b7154e0698119ab80ec17e4a461eece7856b1530a390b335c49ff6253ba1a2`.
+All four code checkpoints also have passing hosted CI, system, security and
+mutation workflows; each CI run's five normal reports and combined coverage
+archive were downloaded and their six SHA-256 digests verified. The final audit
+update changes documentation only; application and test source stay identical
+to their validated checkpoint trees.
 
 This devcontainer is the available system acceptance environment. There is no
 production deployment. Simplicity review retains one explicit initial variant
