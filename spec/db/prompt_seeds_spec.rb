@@ -199,27 +199,26 @@ RSpec.describe Prompt, type: :model do
         .to include("will be automatically dismissed")
     end
 
-    it "seeded template tells reviewers to install bundled gems before Ruby validation" do
+    it "seeded template bounds locked dependency preparation before Ruby validation" do
       template = described_class.global.find_by(slug: "goal.review_pull_request").current_version.template
-      expect(template).to include(
-        "bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3"
-      )
+      expect(template).to include("run `bundle check`")
+      expect(template).to include("timeout 120s env BUNDLE_FROZEN=true bundle install --jobs 4 --retry 0")
+      expect(template).to include("Do not make a second dependency-preparation attempt")
       expect(template).to include("Before running Ruby/Rails commands")
-      expect(template).to match(/bundled gems it needs without\s+changing the lockfile/)
-      expect(template).to include("missing network access")
+      expect(template).to include("External CI receipts and source acceptance")
     end
 
-    it "FALLBACK_REVIEW_GOAL_PROMPT tells reviewers to install bundled gems before Ruby validation" do
+    it "FALLBACK_REVIEW_GOAL_PROMPT bounds locked dependency preparation before Ruby validation" do
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
-        .to include(
-          "bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3"
-        )
+        .to include("run `bundle check`")
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("timeout 120s env BUNDLE_FROZEN=true bundle install --jobs 4 --retry 0")
+      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
+        .to include("Do not make a second dependency-preparation attempt")
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
         .to include("Before running Ruby/Rails commands")
       expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
-        .to match(/bundled gems it needs without\s+changing the lockfile/)
-      expect(Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT)
-        .to include("missing network access")
+        .to include("External CI receipts and source acceptance")
     end
 
     # Regression for #839: review JSON posted with inline `-d '...'` breaks

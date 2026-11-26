@@ -136,3 +136,30 @@ agent's output to the rest of the review loop:
   `-d '...'` payloads break shell quoting on multiline markdown and
   apostrophes and produce malformed JSON that Rails rejects before
   the request reaches GitHub (regression for #839).
+
+## Dependency capability and limited review
+
+Review containers start from a locked checkout but do not imply that its
+locked dependencies are available. Before a Ruby/Rails validation command,
+the reviewer checks that capability with `bundle check`. A passing check is
+the only local evidence that the selected review environment can run the
+locked bundle; it does not attest to source acceptance or external CI.
+
+When the check fails, one dependency-preparation attempt is permitted inside
+the isolated review container. That attempt uses the locked bundle, has a
+short hard deadline below the review idle deadline, has zero Bundler retries,
+and leaves Bundler output visible. It must not be piped through a command
+that hides progress. The reviewer does not repeat preparation, extend an
+idle/retry/spend allowance, or run installation on the host. A command that
+is still running is not proof of meaningful progress; only its bounded
+terminal outcome can establish capability.
+
+If the available budget cannot accommodate the attempt, if the bounded
+attempt times out, or if it fails (including an unavailable git dependency),
+the reviewer continues only with the existing static/diff review path. Its
+one submitted GitHub review states the bounded reason, that local tests did
+not run, and that the review is limited; it must not include the clean-review
+marker or claim merge authorization. If the diff itself cannot be obtained,
+the reviewer records an actionable unavailable stop rather than inventing a
+clean or complete review. Review bodies retain only the concise failure
+category and terminal outcome, never raw dependency output or credentials.

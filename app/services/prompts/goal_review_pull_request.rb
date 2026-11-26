@@ -6,7 +6,8 @@ module Prompts
   # Activities::RunAgentActivity::FALLBACK_REVIEW_GOAL_PROMPT so the seed
   # and the code fallback cannot drift apart.
   # @spec REVIEW-PR-001, REVIEW-PR-002, REVIEW-PR-003, REVIEW-PR-004,
-  #   REVIEW-PR-005, REVIEW-PR-006, REVIEW-PR-007
+  #   REVIEW-PR-005, REVIEW-PR-006, REVIEW-PR-007, REVIEW-PR-008,
+  #   REVIEW-PR-009
   module GoalReviewPullRequest
     PROMPT_SLUG = "goal.review_pull_request"
     VARIABLES = [
@@ -61,12 +62,30 @@ module Prompts
       until you have checked whether the knowledge base answers it.
 
       You may run targeted validation when it is useful for review confidence.
-      Before running Ruby/Rails commands such as `bin/rspec`, run
-      `bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3`
-      so the fresh review checkout has the bundled gems it needs without
-      changing the lockfile. If dependency installation or test execution still
-      fails because of missing network access, services, or environment
-      constraints, mention that specific blocker in the review body.
+      The locked checkout does not prove that this selected isolated review
+      environment has its locked dependencies. Before running Ruby/Rails commands,
+      run `bundle check`. A passing check is local environment evidence only;
+      it does not mean source acceptance or external CI ran here.
+
+      If `bundle check` fails and preparation is useful, make at most one
+      bounded attempt inside this review container:
+
+      ```bash
+      timeout 120s env BUNDLE_FROZEN=true bundle install --jobs 4 --retry 0
+      ```
+
+      Do not pipe this command through `tail`, redirect it, or otherwise hide
+      its output. Do not make a second dependency-preparation attempt, increase
+      idle, retry, or spend allowances, switch providers, or install on the
+      host. A command that is still running is not meaningful progress. Treat
+      only its terminal result as dependency capability evidence. Do not start
+      the attempt when the remaining review time cannot accommodate it.
+
+      If this one attempt fails because of an unavailable git dependency,
+      times out or produces no meaningful progress, or has another terminal
+      setup failure, do not run local tests. Continue only with the static/diff
+      review that remains possible. External CI receipts and source acceptance
+      are separate evidence; never relabel either as locally executed tests.
 
       # Scope of review — read carefully
 
@@ -238,7 +257,32 @@ module Prompts
         -H "X-Proxy-Token: $PROXY_TOKEN" \
         --data-binary @"$tmpfile"
       rm -f "$tmpfile"
+
+      # Case C — limited static/diff review after the one bounded dependency
+      # preparation attempt could not establish local capability. Use this
+      # instead of Case B when dependencies are unavailable. It is deliberately
+      # not a clean review: do not include the clean phrase or HTML marker, and
+      # do not claim merge authorization. Keep the reason concise and sanitized
+      # (for example "unavailable git dependency", "bounded setup timed out",
+      # or "dependency setup failed"); do not include raw command output.
+      tmpfile=$(mktemp)
+      cat > "$tmpfile" <<'REVIEW_JSON'
+      {
+        "body": "Limited static review: unavailable git dependency after one bounded dependency-preparation attempt. No local tests were run. This is not a clean review or merge authorization.",
+        "event": "COMMENT",
+        "comments": []
+      }
+      REVIEW_JSON
+      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/pulls/{{pr_number}}/reviews" \
+        -H "Content-Type: application/json" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN" \
+        --data-binary @"$tmpfile"
+      rm -f "$tmpfile"
       ```
+
+      If the base/head diff cannot be retrieved, do not publish Case B or Case
+      C. Record an actionable unavailable stop with the concise reason instead.
 
       If you ever need to send any other JSON payload to the proxy (for example a
       follow-up issue comment), apply the same pattern: write the body to a temp
@@ -249,6 +293,8 @@ module Prompts
       Before submitting your review, verify your JSON payload:
       - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
       - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
+      - Case C: body states the limited reason and "No local tests were run",
+        has an empty "comments" array, and contains neither clean marker
 
       CRITICAL: Always use `"event": "COMMENT"` — never use `"event":
       "REQUEST_CHANGES"` or `"event": "APPROVE"`. Change requests are
@@ -257,9 +303,9 @@ module Prompts
       and will be automatically dismissed.
 
       IMPORTANT: You MUST post exactly one PR review via the
-      `/pulls/{{pr_number}}/reviews` endpoint — either Case A (with inline
-      actionable comments) or Case B (clean review). This is how your review is
-      tracked as complete. Standalone PR comments via
+      `/pulls/{{pr_number}}/reviews` endpoint — Case A (with inline actionable
+      comments), Case B (clean review), or Case C (truthful limited static/diff
+      review). This is how your review is tracked as complete. Standalone PR comments via
       `/issues/{{pr_number}}/comments` do NOT satisfy the review requirement.
 
       Available endpoints:

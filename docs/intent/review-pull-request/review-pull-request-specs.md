@@ -91,3 +91,29 @@
   — renders without leaving unresolved {{variables}}, declares every
   {{placeholder}} that appears in its template), `spec/services/prompts/goal_review_pull_request_spec.rb`
   ("renders all declared placeholders").
+
+## Dependency capability and truthful limited review (#5398)
+
+- [x] **REVIEW-PR-008** — Before Ruby/Rails validation, the review-goal
+  prompt SHALL require `bundle check` to establish the selected isolated
+  review environment's locked-bundle capability. When unavailable, it SHALL
+  permit at most one visible, frozen dependency-preparation command with a
+  finite deadline below the review idle bound and no Bundler retries. The
+  command SHALL NOT hide output, and the prompt SHALL forbid host execution,
+  allowance increases, and repeated installation attempts.
+  *Code:* `app/services/prompts/goal_review_pull_request.rb` (`TEMPLATE`).
+  *Tests:* `spec/services/prompts/goal_review_pull_request_spec.rb`
+  ("dependency preparation").
+
+- [x] **REVIEW-PR-009** — When locked dependencies cannot be prepared within
+  that one bounded attempt, including an unavailable git dependency, a
+  silent/stalled command, or another terminal setup failure, the review-goal
+  prompt SHALL permit only a limited static/diff review. Its required body
+  SHALL name the bounded limitation, state that no local tests ran, and state
+  that it is not clean-review or merge authorization. It SHALL submit one
+  `COMMENT` review without the clean marker; if the diff is unavailable, it
+  SHALL instead expose an actionable unavailable stop. External CI and source
+  acceptance remain distinct evidence.
+  *Code:* `app/services/prompts/goal_review_pull_request.rb` (`TEMPLATE`).
+  *Tests:* `spec/services/prompts/goal_review_pull_request_spec.rb`
+  ("limited review publication").
