@@ -79,7 +79,10 @@
   the updater SHALL not drain it but SHALL leave the stop path to fail before
   setup with the session identity rather than force-killing it. The
   capability SHALL cover both poll and agent roles and every enabled eager path
-  (#5326).
+  (#5326). A separately authorized legacy cancellation SHALL first verify the
+  workflow's first-execution identity read-only, then address only the exact
+  recorded `run_id` while omitting `first_execution_run_id`; RPC success SHALL
+  NOT substitute for verified terminal execution.
   *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
   running Overmind that still reports Temporal workers whose readiness metadata
   is missing, and for a socket-less or stale-socket same-workspace orphaned
