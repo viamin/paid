@@ -116,12 +116,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
+    allow(github_client).to receive_messages(
+      rate_limit_remaining!: 100,
+      check_run_log: "",
+      workflow_runs_for_sha: [],
+      issue_events: []
+    )
     allow(github_client).to receive(:remove_label_from_issue)
     # Default: no label history. Escalation dismissal is driven by a trusted
     # user's removal *event* (PR-ESCALATION-009/019), so any escalated PR whose
     # label is locally absent consults this. Specific tests override it.
-    allow(github_client).to receive(:issue_events).and_return([])
     # Escalated PRs reconcile a missing paid-escalated label back onto GitHub
     # (PR-ESCALATION-021), so the scan may add labels on any escalated fixture.
     allow(github_client).to receive(:add_labels_to_issue)
@@ -600,6 +604,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             ]
           )
         )
+      end
+
+      # @spec AUTO-MERGE-014
+      it "does not queue a CI-fix follow-up for an approval-waiting workflow" do
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          workflow_runs: [ { id: 11, name: "CI", status: "completed", conclusion: "action_required" } ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+        expect(decision_types(result)).not_to include("queue_create_pr_run")
       end
 
       it "persists failed and not-evaluated auto-merge blockers with last_pr_scan_at" do
@@ -1965,6 +1982,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
         expect(pr_issue.reload.ci_retry_requested_at).to be_present
+      end
+
+      # @spec AUTO-MERGE-014
+      it "retries transient job failures when the workflow rollup also reports failure" do
+        stub_github_for_pr(
+          checks: [
+            { id: 1, name: "rspec", conclusion: "failure",
+              output_text: "connect ETIMEDOUT 104.16.23.35:443",
+              details_url: "https://github.com/owner/repo/actions/runs/12345/job/67890" }
+          ],
+          workflow_runs: [
+            { id: 12345, name: "CI", status: "completed", conclusion: "failure",
+              html_url: "https://github.com/owner/repo/actions/runs/12345" }
+          ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+        expect(github_client).to have_received(:rerun_workflow_run_failed_jobs)
+          .with(project.full_name, "12345")
       end
 
       it "calls rerun_workflow_run_failed_jobs with the correct run_id" do
@@ -12887,6 +12925,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     base_branch: "main",
     head_repo_fork: false,
     checks: [ { name: "ci", conclusion: "success" } ],
+    workflow_runs: [],
     review_threads: [],
     issue_comments: [],
     recent_issue_comments: nil,
@@ -12922,6 +12961,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:check_runs_for_ref)
       .with(project.full_name, head_sha)
       .and_return(checks)
+    allow(github_client).to receive(:workflow_runs_for_sha)
+      .with(project.full_name, head_sha)
+      .and_return(workflow_runs)
     allow(github_client).to receive(:review_threads)
       .with(project.full_name, pr_number)
       .and_return(review_threads)

@@ -314,3 +314,20 @@
   *Code:* `app/services/pull_requests/technical_merge_blockers.rb`.
   *Test:* `spec/services/pull_requests/technical_merge_blockers_spec.rb`,
   `spec/mcp/tools/update_technical_merge_blocker_spec.rb`.
+
+- [x] **AUTO-MERGE-014** — When Paid evaluates an automatic merge path, it
+  SHALL inventory workflow runs for the exact pull-request HEAD
+  alongside check runs. A green check-run list SHALL NOT be treated as complete
+  CI when a current-head workflow run is `action_required`, failed, pending, or
+  unavailable. An available empty workflow inventory SHALL preserve successful
+  third-party-only check runs. An `action_required` run SHALL remain
+  distinguishable as an approval wait rather than a failed test or a transient
+  rerun candidate. Paid
+  SHALL retain the existing head-bound trust checks for any separately
+  authorized provider approval operation and SHALL NOT infer the provider
+  policy cause or widen Actions trust, permissions, secrets, spending, or
+  required checks.
+  *Code:* `app/jobs/concerns/ci_status_verification.rb`,
+  `app/services/automation/signals/pull_request_collector.rb`.
+  *Test:* `spec/jobs/auto_release_evaluation_job_spec.rb`,
+  `spec/services/automation/signals/pull_request_collector_spec.rb`.

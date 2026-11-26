@@ -2521,7 +2521,9 @@ module Activities
     # Cooldown period after requesting a CI retry. Prevents triggering another
     # retry or agent run while the rerun is still in progress.
     CI_RETRY_COOLDOWN = 30.minutes
+    CI_FAILURE_CONCLUSIONS = %w[failure cancelled timed_out stale].freeze
 
+    # @spec AUTO-MERGE-014
     def ci_failure_triggers(checks)
       failed = failed_checks_from(checks)
       return [] if failed.empty?
@@ -2533,6 +2535,7 @@ module Activities
     # When all failed checks appear transient and no retry has been attempted
     # recently, reruns the failed GitHub Actions jobs and suppresses the
     # ci_failure trigger so no agent run is started.
+    # @spec AUTO-MERGE-014
     def ci_failure_triggers_with_retry(checks, client:, project:, issue:)
       failed_checks = failed_checks_from(checks)
       return [] if failed_checks.empty?
@@ -2540,9 +2543,10 @@ module Activities
       triggers = [ { type: "ci_failure", details: failed_checks.map { |c| c[:name] } } ]
 
       return triggers if ci_retry_cooling_down?(issue)
-      return triggers unless transient_failures?(failed_checks, client, project)
+      job_failures = failed_checks.reject { |check| check[:workflow_run] }
+      return triggers unless transient_failures?(job_failures, client, project)
 
-      attempt_ci_rerun(failed_checks, client, project, issue) ? [] : triggers
+      attempt_ci_rerun(job_failures, client, project, issue) ? [] : triggers
     end
 
     def ci_retry_cooling_down?(issue)
@@ -2554,7 +2558,7 @@ module Activities
       return [] if checks.nil?
 
       completed = checks.select { |c| c[:conclusion].present? }
-      completed.select { |c| %w[failure cancelled timed_out action_required stale].include?(c[:conclusion]) }
+      completed.select { |c| CI_FAILURE_CONCLUSIONS.include?(c[:conclusion]) }
     end
 
     def transient_failures?(failed_checks, client, project)
