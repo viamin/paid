@@ -128,6 +128,38 @@ worker_admission_before_stop
         self.finish(script, expected=1)
         self.assertFalse(self.requests())
 
+    def test_original_exit_wait_refuses_live_instances_then_accepts_actual_absence(self):
+        script = self.script("worker_admission_begin " + "b" * 40 + '''
+deadline=$(python3 -c 'import time; print(time.monotonic()+.05)')
+if worker_admission_wait_originals "$deadline"; then exit 9; fi
+touch ready
+for i in $(seq 1 250); do [ ! -f go ] || break; sleep .02; done
+deadline=$(python3 -c 'import time; print(time.monotonic()+2)')
+worker_admission_wait_originals "$deadline"
+WORKER_ADMISSION_STOPPING=1
+''')
+        self.wait_ready()
+        for worker in self.workers:
+            worker.terminate()
+            worker.wait(timeout=2)
+        (self.root / "go").touch()
+        self.finish(script)
+        self.assertEqual(len(self.requests()), 2)
+
+    def test_reaper_refuses_reused_or_foreign_identity_without_signalling_bystander(self):
+        worker = self.workers[0]
+        stat = Path("/proc", str(worker.pid), "stat").read_text().split(") ", 1)[1].split()
+        identity = {"pid": worker.pid, "start_ticks": int(stat[19]), "parent": int(stat[1])}
+        for field in ("start_ticks", "parent"):
+            wrong = dict(identity)
+            wrong[field] += 1
+            result = subprocess.run(["python3", str(self.root / "bin/lib/worker_admission_cohort.py"),
+                                     "--workspace", str(self.root), "--reap-controller", json.dumps(wrong)],
+                                    capture_output=True, text=True, timeout=2)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(json.loads(result.stdout)["original_absent"])
+            self.assertIsNone(worker.poll())
+
     def test_replacement_keeps_fence_through_setup_and_resumes_only_target_boots(self):
         old = list(self.workers)
         script = self.script("worker_admission_begin " + "b" * 40 + '''

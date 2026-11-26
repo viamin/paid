@@ -8,6 +8,7 @@ WORKER_ADMISSION_STOPPING=0
 WORKER_ADMISSION_COMPLETE=0
 WORKER_ADMISSION_ALREADY_COMPLETE=0
 WORKER_ADMISSION_CHILD_PID=""
+WORKER_ADMISSION_CHILD_IDENTITY=""
 WORKER_ADMISSION_READ_FD=""
 WORKER_ADMISSION_WRITE_FD=""
 WORKER_ADMISSION_COHORT=""
@@ -67,6 +68,7 @@ worker_admission_begin() {
   WORKER_ADMISSION_CHILD_PID="$WORKER_ADMISSION_PID"
   WORKER_ADMISSION_READ_FD="${WORKER_ADMISSION[0]}"
   WORKER_ADMISSION_WRITE_FD="${WORKER_ADMISSION[1]}"
+  WORKER_ADMISSION_CHILD_IDENTITY="$(python3 "$APP_ROOT/bin/lib/worker_admission_cohort.py" --workspace "$APP_ROOT" --controller-identity "$WORKER_ADMISSION_CHILD_PID" --caller-pid "$$")" || return 1
   if ! IFS= read -r -t "$budget" response <&"$WORKER_ADMISSION_READ_FD"; then
     log "Worker admission acknowledgement was not observed within the original budget."
     return 1
@@ -101,6 +103,18 @@ worker_admission_before_stop() {
   WORKER_ADMISSION_STOPPING=1
 }
 
+worker_admission_wait_originals() {
+  local deadline="$1"
+  while python3 -c 'import sys,time; sys.exit(0 if time.monotonic()<float(sys.argv[1]) else 1)' "$deadline"; do
+    if printf '%s\n' "$WORKER_ADMISSION_COHORT" | python3 "$APP_ROOT/bin/lib/worker_admission_cohort.py" --workspace "$APP_ROOT" --originals-gone >/dev/null; then
+      return 0
+    fi
+    sleep "${OVERMIND_POLL_INTERVAL:-1}"
+  done
+  log "Original worker exit was not verified within the existing stop budget; admission remains closed."
+  return 1
+}
+
 worker_admission_resume() {
   local target="$1" current="" i
   [ "$WORKER_ADMISSION_ACTIVE" -eq 1 ] || return 0
@@ -120,7 +134,7 @@ worker_admission_resume() {
 }
 
 worker_admission_cleanup() {
-  local result=$? i
+  local result=$?
   if [ -z "$WORKER_ADMISSION_CHILD_PID" ]; then
     return "$result"
   fi
@@ -136,19 +150,16 @@ worker_admission_cleanup() {
     exec {WORKER_ADMISSION_READ_FD}<&- || true
     WORKER_ADMISSION_READ_FD=""
   fi
-  for ((i = 0; i < 50; i += 1)); do
-    kill -0 "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null || break
-    sleep .1
-  done
-  # Only this unreaped child can hold this PID. Signals target the controller,
-  # never a service/worker; persistent requests survive a lost caller.
-  if kill -0 "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null; then
-    kill -TERM "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null || true
-    sleep .1
-    kill -KILL "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null || true
+  local reaped
+  if [ -n "$WORKER_ADMISSION_CHILD_IDENTITY" ] && reaped="$(python3 "$APP_ROOT/bin/lib/worker_admission_cohort.py" --workspace "$APP_ROOT" --reap-controller "$WORKER_ADMISSION_CHILD_IDENTITY")"; then
+    if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("wait_safe") else 1)' "$reaped"; then
+      wait "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null || true
+    fi
+  else
+    log "Controller identity or exit is unknown; no numeric-PID signal was sent. Admission requires recovery."
   fi
-  wait "$WORKER_ADMISSION_CHILD_PID" 2>/dev/null || true
   WORKER_ADMISSION_CHILD_PID=""
+  WORKER_ADMISSION_CHILD_IDENTITY=""
   WORKER_ADMISSION_ACTIVE=0
   if [ "$WORKER_ADMISSION_STOPPING" -eq 1 ] && [ "$WORKER_ADMISSION_COMPLETE" -eq 0 ]; then
     log "Worker admission remains closed; recover this workspace and pinned target with bin/dev-update --recover."
