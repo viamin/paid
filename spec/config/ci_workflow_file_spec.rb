@@ -72,12 +72,29 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
-    expect(job.fetch("needs")).to eq([ "test-shards", "shard-status", "shard-recovery" ])
+    expect(job.fetch("needs")).to eq([ "mcp-write-tool-inventory", "test-shards", "shard-status", "shard-recovery" ])
     expect(job.fetch("if")).to include("always()")
     gate = job.fetch("steps").first.fetch("run")
     %w[success failure cancelled skipped].each do |result|
-      _stdout, _stderr, status = Open3.capture3({ "SHARD_RESULT" => result }, "sh", "-c", gate)
+      _stdout, _stderr, status = Open3.capture3(
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => result },
+        "sh", "-c", gate
+      )
       expect(status.success?).to eq(result == "success")
+    end
+  end
+
+  # @spec TEST-SUITE-025
+  it "fails the stable test check when a trusted preflight fails" do
+    job = workflow.fetch("jobs").fetch("test")
+    gate = job.fetch("steps").first.fetch("run")
+
+    [ "failure", "cancelled" ].each do |result|
+      _stdout, _stderr, status = Open3.capture3(
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => result, "SHARD_RESULT" => "skipped" },
+        "sh", "-c", gate
+      )
+      expect(status).not_to be_success
     end
   end
 
@@ -96,7 +113,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     ]
 
     expectations.each do |shards, classification, recovery, failing, expected|
-      env = { "SHARD_RESULT" => shards }
+      env = { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => shards }
       env["SHARD_STATUS_RESULT"] = classification if classification
       env["RECOVERY_RESULT"] = recovery if recovery
       env["FAILING_SHARDS"] = failing unless failing.nil?
