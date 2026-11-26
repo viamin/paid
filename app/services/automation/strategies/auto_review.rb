@@ -133,6 +133,9 @@ module Automation
           return decisions
         end
 
+        # @spec REVIEW-PR-009
+        return decisions if trigger_types.include?("review_environment_unavailable")
+
         if trigger_types.include?("review_goal_retry")
           return review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
         end

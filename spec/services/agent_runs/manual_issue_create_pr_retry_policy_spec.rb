@@ -9,6 +9,41 @@ RSpec.describe AgentRuns::ManualIssueCreatePrRetryPolicy do
   let(:project) { create(:project, auto_pick_enabled: false, retry_failed_manual_runs: true) }
   let(:issue) { create(:issue, project:, paid_state: "failed", github_state: "open") }
 
+  describe "enqueue outcome" do
+    let(:run) { create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false) }
+    let(:retry_attempt) { RetryableAttempts::RetryAttempt.new(policy:, decision_point: "enqueue_outcome") }
+    let!(:configured_job) { RetryFailedManualIssueCreatePrJob.set(wait: 5.seconds) }
+
+    before do
+      allow(RetryFailedManualIssueCreatePrJob).to receive(:set).with(wait: 5.seconds).and_return(configured_job)
+    end
+
+    [ false, nil ].each do |enqueue_result|
+      it "records refusal when Active Job returns #{enqueue_result.inspect}" do
+        allow(configured_job).to receive(:perform_later).with(run.id, 1).and_return(enqueue_result)
+
+        result = retry_attempt.schedule(attempt: run, job_class: RetryFailedManualIssueCreatePrJob, delay: ->(_) { 5.seconds })
+
+        expect(result).to have_attributes(outcome: :skipped, reason: :enqueue_declined)
+        decision = OrchestrationDecision.where(agent_run: run, decision_type: "manual_issue_create_pr_failed_run_retry").sole
+        expect(decision.context).to include("decision_status" => "noop")
+        expect(run.reload).to have_attributes(status: "failed", manual_retry_attempt: 0)
+      end
+    end
+
+    it "records scheduling after a confirmed enqueue without claiming a successor" do
+      result = nil
+      expect {
+        result = retry_attempt.schedule(attempt: run, job_class: RetryFailedManualIssueCreatePrJob, delay: ->(_) { 5.seconds })
+      }.to have_enqueued_job(RetryFailedManualIssueCreatePrJob).with(run.id, 1)
+
+      expect(result).to be_scheduled
+      decision = OrchestrationDecision.where(agent_run: run, decision_type: "manual_issue_create_pr_failed_run_retry").sole
+      expect(decision.context).to include("decision_status" => "scheduled")
+      expect(run.reload).to have_attributes(status: "failed", manual_retry_attempt: 0)
+    end
+  end
+
   it "admits a no-work manual issue run without enabling auto-pick discovery" do
     run = create(:agent_run, :failed, project:, issue:, goal: "create_pr", trigger_type: "manual", auto_pick: false)
 

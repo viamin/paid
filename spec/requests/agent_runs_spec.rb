@@ -2592,6 +2592,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Priority requested")
       end
 
+      it "does not prioritize a retained queued retry" do # @spec QUEUE-TIER-008
+        run = create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR", container_id: "retained-container")
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(run.reload).to have_attributes(container_id: "retained-container", operator_coding_priority_requested_at: nil)
+        expect(account.account_activity_events.where(action: "agent_run.coding_priority_requested", subject: run)).not_to exist
+        expect(response).to redirect_to(project_path(project))
+      end
+
       it "enqueues ProcessRunQueueJob" do
         create(:agent_run, :queued, :automatic, project: project,
           source_pull_request_number: 77, custom_prompt: "Fix PR")

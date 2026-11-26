@@ -30,8 +30,8 @@ path:
 ## Scope Boundary
 
 This segment is intentionally limited to the shipped API-mode behavior from
-RDR-028. Workspace/container mutation mode is **not** covered here as shipped
-behavior.
+RDR-028. Workspace/container mutation mode and proposed native workspace-agent
+turn execution are **not** covered here as shipped behavior.
 
 - Background workspace provisioning, capability upgrades, reopen flows, clone
   manifests, and container-only mutation tools belong to
@@ -40,6 +40,10 @@ behavior.
   `docs/intent/chat-session-reopen/` under RDR-037.
 - Per-tool execution guards that require `confirmed: true` for specific
   mutating tools belong to `docs/intent/chat-tool-confirmation/`.
+- Proposed runner-CLI turns in a persistent workspace, including their mode,
+  credential, fallback, and native-tool authority, belong to
+  `docs/intent/workspace-agent-chat/` under RDR-064. They are not a fallback
+  for this API-mode segment.
 - The normalized transport, optional supporting persistence, request
   attempts, and evidence-based loop-delegation boundary belong to
   `docs/intent/api-conversation-delegation/` under RDR-072. Its shipped
