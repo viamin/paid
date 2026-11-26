@@ -2768,6 +2768,12 @@ module Activities
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
 
+      # A limited Case C review is terminal and must not be masked by a newer
+      # body-only clean comment, which would otherwise allow auto-merge.
+      if paid_agent_limited_review?(latest)
+        return [ { type: "review_environment_unavailable", details: "Review environment unavailable" } ]
+      end
+
       # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
       # which is invisible to pull_request_reviews. When such a comment is
@@ -2788,10 +2794,6 @@ module Activities
       case status
       when :clean
         clean_review_thread_triggers(unresolved_threads, allowed_bot_logins: allowed)
-      when :environment_unavailable
-        # A limited Case C review is a terminal environment outcome, not
-        # feedback for another coding or review round.
-        [ { type: "review_environment_unavailable", details: "Review environment unavailable" } ]
       when :no_review
         # Only emit a pending trigger when a requestable review bot is
         # configured. When login is nil — reviews globally disabled, or
