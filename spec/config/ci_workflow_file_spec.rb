@@ -48,10 +48,14 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec TEST-SUITE-026
   it "runs the complete MCP write-tool inventory contract before expensive shards" do
     preflight = workflow.fetch("jobs").fetch("mcp-write-tool-inventory")
+    normalize_key_step = preflight.fetch("steps").find { |step| step["name"] == "Normalize test master key" }
     contract_step = preflight.fetch("steps").find { |step| step["name"] == "Check MCP write-tool inventory" }
 
     expect(preflight.fetch("timeout-minutes")).to be_between(1, 60)
     expect(preflight.fetch("steps").first.fetch("uses")).to eq("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+    expect(normalize_key_step).to include("if" => "env.RAILS_TEST_KEY == ''")
+    expect(normalize_key_step.fetch("env")).to include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
+    expect(normalize_key_step.fetch("run")).to include('printf \'%s\\n\' "$RAILS_MASTER_KEY_FALLBACK"')
     expect(contract_step.fetch("run")).to include("bin/rspec spec/mcp/tools/registry_spec.rb")
     expect(contract_step.fetch("run")).to include("elapsed_seconds")
     shards = workflow.fetch("jobs").fetch("test-shards")
