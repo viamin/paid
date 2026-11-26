@@ -3293,6 +3293,7 @@ module Activities
       cutoff = conversation_feedback_cutoff(project, issue, last_run)
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
+      revision = fetch_pr_data(client, project, issue)&.head&.sha
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -3302,7 +3303,7 @@ module Activities
         next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
-        next false if recorded_operator_acceptance_report?(client, project, issue, c)
+        next false if recorded_operator_acceptance_report?(project, issue, c, revision)
 
         true
       end
@@ -3316,15 +3317,14 @@ module Activities
     # Ruby never guesses it from comment prose. A changed body or head invalidates
     # that receipt, leaving the comment eligible for normal feedback admission.
     # @spec FOCUSED-RUN-015
-    def recorded_operator_acceptance_report?(client, project, issue, comment)
-      identity = operator_report_identity(client, project, issue, comment)
+    def recorded_operator_acceptance_report?(project, issue, comment, revision)
+      identity = operator_report_identity(issue, comment, revision)
       project.account.account_activity_events.where(
         action: PullRequests::RecordOperatorAcceptanceReport::ACTION, subject: issue
       ).where("metadata ->> 'report_identity' = ?", identity).exists?
     end
 
-    def operator_report_identity(client, project, issue, comment)
-      revision = fetch_pr_data(client, project, issue)&.head&.sha
+    def operator_report_identity(issue, comment, revision)
       return "" if revision.blank?
 
       [ issue.id, comment.id, Digest::SHA256.hexdigest(comment.body.to_s), revision ].join(":")

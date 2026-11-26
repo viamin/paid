@@ -6,6 +6,7 @@ module Tools
 
     def self.tool_name = "record_operator_acceptance_report"
     def self.write_operation? = true
+    def self.mcp_available? = true
     def self.description
       "Record one trusted PR comment as an evidence-only operator acceptance report at the current revision. " \
         "It never queues coding work or changes repair allowances. Requires explicit confirmation."

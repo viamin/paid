@@ -111,6 +111,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
     end
 
+    it "fetches the current revision once while checking multiple comments" do # @spec FOCUSED-RUN-015
+      later_comment = OpenStruct.new(id: 7157569293, user: OpenStruct.new(login: "viamin"),
+        body: "Please correct the remaining regression", created_at: 5.minutes.ago)
+      stub_pr_signals(comments: [ comment, later_comment ])
+
+      activity.execute(project_id: project.id)
+
+      expect(github_client).to have_received(:pull_request).with(project.full_name, 42).exactly(4).times
+    end
+
     it "retains comments arriving after prompt preparation but before no-change completion" do
       run = create_no_change_run!
       record_prompt_preparation(run, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)
