@@ -79,6 +79,12 @@
   setup with the session identity rather than force-killing it. The
   capability SHALL cover both poll and agent roles and every enabled eager path
   (#5326).
+  A separately authorized legacy idle-control cancellation SHALL verify the
+  recorded first-execution identity through read-only metadata and target the
+  exact recorded `run_id` without sending `first_execution_run_id`. It SHALL
+  NOT follow a continued successor or treat RPC success as proof of the
+  recorded run's cancellation. The updater SHALL NOT initiate this maintenance
+  cancellation.
   *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
   running Overmind that still reports Temporal workers whose readiness metadata
   is missing, and for a socket-less same-workspace orphaned supervisor session
