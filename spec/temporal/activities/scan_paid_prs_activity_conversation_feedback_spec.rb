@@ -111,14 +111,32 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
     end
 
-    it "fetches the current revision once while checking multiple comments" do # @spec FOCUSED-RUN-015
+    it "reuses the scanner revision while checking multiple comments" do # @spec FOCUSED-RUN-015
       later_comment = OpenStruct.new(id: 7157569293, user: OpenStruct.new(login: "viamin"),
         body: "Please correct the remaining regression", created_at: 5.minutes.ago)
       stub_pr_signals(comments: [ comment, later_comment ])
 
       activity.execute(project_id: project.id)
 
-      expect(github_client).to have_received(:pull_request).with(project.full_name, 42).exactly(4).times
+      expect(github_client).to have_received(:pull_request).with(project.full_name, 42).exactly(2).times
+    end
+
+    it "does not admit a recorded report when the current revision cannot be verified" do # @spec FOCUSED-RUN-015
+      pull_request = project.issues.find_by!(github_number: 42)
+      stub_pr_signals
+      PullRequests::RecordOperatorAcceptanceReport.call(
+        pull_request:, actor: operator, comment_id: comment.id,
+        environment: "devcontainer", results: "63/0 source acceptance"
+      )
+      allow(github_client).to receive(:pull_request).with(project.full_name, 42).and_return(nil)
+      allow(github_client).to receive(:commit).with(project.full_name, "").and_return(nil)
+      allow(github_client).to receive(:check_runs_for_ref).with(project.full_name, "").and_return([])
+      allow(github_client).to receive(:workflow_runs_for_sha).with(project.full_name, "").and_return([])
+
+      result = activity.execute(project_id: project.id)
+
+      expect(result.fetch(:prs_to_trigger)).to eq([])
+      expect(AgentRun.where(project:, source_pull_request_number: 42, status: "queued")).to be_empty
     end
 
     it "retains comments arriving after prompt preparation but before no-change completion" do

@@ -813,7 +813,7 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
+        all_triggers.concat(check_conversation_comments(client, project, issue, last_run, pr_data:))
 
         # Only check changes_requested if still no triggers.
         if all_triggers.empty?
@@ -1704,7 +1704,7 @@ module Activities
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
-      triggers.concat(check_conversation_comments(client, project, issue, last_run))
+      triggers.concat(check_conversation_comments(client, project, issue, last_run, pr_data:))
       triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -2441,7 +2441,7 @@ module Activities
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
-      triggers.concat(check_conversation_comments(client, project, issue, focused_run))
+      triggers.concat(check_conversation_comments(client, project, issue, focused_run, pr_data:))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
 
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
@@ -2455,7 +2455,10 @@ module Activities
     end
 
     def conversation_resolution_scores(project, client, issue, focused_run)
-      triggers = check_conversation_comments(client, project, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
+      triggers = check_conversation_comments(client, project, issue, focused_run, pr_data:)
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
@@ -2477,7 +2480,7 @@ module Activities
         human_review_thread_triggers(project, unresolved_threads).empty? &&
         standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
-        check_conversation_comments(client, project, issue, focused_run).empty? &&
+        check_conversation_comments(client, project, issue, focused_run, pr_data:).empty? &&
         check_actionable_labels(project, issue).empty? &&
         check_merge_conflicts(project, issue, pr_data).empty?
 
@@ -3289,11 +3292,13 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
-    def check_conversation_comments(client, project, issue, last_run) # @spec FOCUSED-RUN-010
+    def check_conversation_comments(client, project, issue, last_run, pr_data:) # @spec FOCUSED-RUN-010
+      revision = pr_data&.head&.sha
+      return [] if revision.blank?
+
       cutoff = conversation_feedback_cutoff(project, issue, last_run)
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
-      revision = fetch_pr_data(client, project, issue)&.head&.sha
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -3466,7 +3471,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
-      return false if check_conversation_comments(client, project, issue, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run, pr_data:).any?
       effective_checks = checks || []
       if checks.nil?
         logger.debug(
