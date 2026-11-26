@@ -264,11 +264,15 @@
   terminal run before it starts agent work. Retried setup SHALL retain the original run and
   workflow identity, tolerate already-persisted idempotent side effects, and
   remain bounded by the existing activity deadline and retry policy (#5356).
+  Post-start provisioning bookkeeping SHALL preserve resume ownership and
+  terminal evidence persisted after the scheduler loaded the run.
   *Tests:* `spec/temporal/activities/create_agent_run_activity_spec.rb`,
+  `spec/jobs/process_run_queue_job_spec.rb`,
   `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
   *Code:* `Activities::CreateAgentRunActivity#resume_queued_run`,
-  `Activities::RunAgentActivity#execute`, `Workflows::AgentExecutionWorkflow#execute`.
+  `Activities::RunAgentActivity#execute`, `Workflows::AgentExecutionWorkflow#execute`,
+  `ProcessRunQueueJob#record_provisioning_start!`.
 
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
