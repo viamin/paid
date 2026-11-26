@@ -11,7 +11,7 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
       { "PYTHONPATH" => File.join(root, "bin/lib"), "PYTHONDONTWRITEBYTECODE" => "1" },
       "python3", File.join(root, "spec/support/worker_admission_controller_cases.py")
     )
-    expect(output).to include("Ran 36 tests")
+    expect(output).to include("Ran 37 tests")
     expect(status.success?).to be(true), output
   end
 end

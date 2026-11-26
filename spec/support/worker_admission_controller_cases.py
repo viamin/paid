@@ -364,6 +364,21 @@ class ControllerTest(unittest.TestCase):
         with self.assertRaises(AdmissionError):
             recovery.abort()
 
+    def test_stopped_recovery_can_resume_target_and_repeat_completion(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        self.processes.clear()
+        recovery = self.stopped_drain()
+        recovery.recover(1)
+        for role, pid in (("agent", 21), ("poll", 22)):
+            self.processes[pid] = {"start_ticks": pid + 200, "workspace": str(self.root)}
+            self.expected_processes[role] = {"pid": pid, "start_ticks": pid + 200}
+            self.marker(role, pid, revision="b" * 40)
+        recovery.resume("b" * 40, self.expected_processes)
+        recovery.resume("b" * 40, self.expected_processes)
+        self.assertFalse(any(path.exists() for path in self.requests()))
+
     def test_stopped_recovery_refuses_unknown_original_visibility(self):
         original = self.drain()
         original.acquire(1)

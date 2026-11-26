@@ -438,6 +438,7 @@ class Drain:
         self.remove_requests()
         self.record("resumed")
         self.completed = True
+        self.stopped = False
         self.acknowledged = False
         self.preserve_requests = False
         self.close()
