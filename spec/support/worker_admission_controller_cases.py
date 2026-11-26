@@ -343,6 +343,82 @@ class ControllerTest(unittest.TestCase):
         recovery.abort()
         self.assertFalse(any(path.exists() for path in self.requests()))
 
+    def stopped_drain(self):
+        drain = Drain(self.root, self.paths, "b" * 40, {}, stopped=True,
+                      identity_reader=lambda pid: self.processes[pid], original_process_reader=self.start_ticks)
+        self.drains.append(drain)
+        return drain
+
+    def test_stopped_recovery_requires_all_original_instances_gone_and_keeps_requests(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        with self.assertRaises(AdmissionError):
+            self.stopped_drain().recover(1)
+        self.processes.clear()
+        recovery = self.stopped_drain()
+        acknowledgement = recovery.recover(1)
+        self.assertEqual(acknowledgement["cohort"], "stopped")
+        self.assertEqual(acknowledgement["next_action"], "setup-and-start-target")
+        self.assertTrue(all(path.exists() for path in self.requests()))
+        with self.assertRaises(AdmissionError):
+            recovery.abort()
+
+    def test_stopped_recovery_refuses_unknown_original_visibility(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        recovery = self.stopped_drain()
+        with patch.object(recovery, "original_process_reader", side_effect=PermissionError):
+            with self.assertRaises(AdmissionError):
+                recovery.recover(1)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_phase_checkpoints_are_monotonic_and_stopped_requires_actual_exit(self):
+        drain = self.drain()
+        drain.acquire(1)
+        drain.checkpoint("stopping")
+        with self.assertRaises(AdmissionError):
+            drain.checkpoint("stopped")
+        self.processes.clear()
+        drain.checkpoint("stopped")
+        drain.checkpoint("setup")
+        with self.assertRaises(AdmissionError):
+            drain.checkpoint("stopping")
+        self.assertEqual(read_json(drain.journal)["update_phase"], "setup")
+        drain.close()
+        recovery = self.stopped_drain()
+        self.assertEqual(recovery.recover(1)["update_phase"], "setup")
+
+    def test_completed_recovery_and_resume_do_not_republish_requests_or_restart(self):
+        original = self.drain()
+        original.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        original.resume("b" * 40, self.expected_processes)
+        original.resume("b" * 40, self.expected_processes)
+        recovery = self.drain()
+        acknowledgement = recovery.recover(1)
+        self.assertTrue(acknowledgement["completed"])
+        self.assertEqual(acknowledgement["next_action"], "already-complete")
+        recovery.resume("b" * 40, self.expected_processes)
+        self.assertFalse(any(path.exists() for path in self.requests()))
+        self.assertEqual(read_json(recovery.journal)["phase"], "resumed")
+
+    def test_completed_recovery_refuses_new_generation_request_or_changed_target_boot(self):
+        original = self.drain()
+        original.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        original.resume("b" * 40, self.expected_processes)
+        write_json(self.requests()[0], {"generation": str(uuid.uuid4()), "workspace": str(self.root)})
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+        self.requests()[0].unlink()
+        self.marker("agent", 21, revision="b" * 40)
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+
     def test_real_controller_eof_preserves_generation_and_explicit_recovery_can_abort(self):
         # These processes exercise only kernel process identity and pipe
         # ownership. They are not Temporal workers or SDK acceptance evidence.
