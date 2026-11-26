@@ -635,6 +635,8 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         expect {
           activity.execute(agent_run_id: agent_run.id, error: "Runner unavailable")
         }.to have_enqueued_job(RetryFailedManualIssueCreatePrJob).with(agent_run.id, 1)
+
+        expect(OrchestrationDecision.last.context).to include("decision_status" => "scheduled")
       end
     end
 

@@ -204,5 +204,6 @@ allowance. Pushed/unpublished work, a PR, or main-agent output is a hard blind-
 replacement refusal and reuses artifact/continuation recovery when available.
 Guardrail, time, token, and cost exhaustion never reset a budget, deadline, or
 counter; when no allowance remains, a new operator decision is required.
-Failure classification remains a pending recommendation: only scheduling and a
-locked claim record execution, completion, or refusal in `OrchestrationDecision`.
+Failure classification remains a pending recommendation. Scheduling records a
+`scheduled` retry decision only; a locked claim records the replacement, and a
+refusal records its reason. A classifier cannot report an execution as applied.
