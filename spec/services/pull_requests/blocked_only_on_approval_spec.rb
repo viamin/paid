@@ -66,6 +66,9 @@ RSpec.describe PullRequests::BlockedOnlyOnApproval do
     allow(client).to receive(:check_runs_for_ref)
       .with(project.full_name, sha)
       .and_return(checks)
+    allow(client).to receive(:workflow_runs_for_sha)
+      .with(project.full_name, sha)
+      .and_return([])
   end
 
   def stub_reviews(reviews)
