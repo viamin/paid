@@ -5,6 +5,9 @@ require "ostruct"
 
 # @spec LID-RUNS-003
 RSpec.describe Activities::CreatePullRequestActivity do
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   before { configure_llm_routing(project: project)
 allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -24,7 +27,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
    }
 
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
   let(:issue) { create(:issue, project:) }
   let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project:, issue:) }
   let(:github_client) { instance_double(GithubClient) }
@@ -99,7 +101,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       <!-- feature-decisions-end -->
     TEXT
   end
-
 
   describe "#execute" do
     # @spec PARTIAL-CLOSEOUT-045
@@ -425,9 +426,29 @@ allow(GithubClient).to receive(:new).and_return(github_client)
     end
 
     # @spec SESSION-SUMMARY-001
-    it "enqueues session-summary capture once the pull request is created" do
+    it "completes and syncs a new PR with labels and session-summary capture", :aggregate_failures do
+      expect(github_client).to receive(:add_labels_to_issue).with(
+        project.full_name, 42, [ "paid-generated", "paid-automation" ]
+      )
+
       expect { activity.execute(agent_run_id: agent_run.id) }
         .to have_enqueued_job(CaptureAgentRunSessionSummaryJob).with(agent_run.id)
+        .and(change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1))
+
+      expect(github_client).to have_received(:pull_requests).with(
+        project.full_name,
+        head: "#{project.owner}:#{agent_run.branch_name}",
+        state: "open"
+      )
+      agent_run.reload
+      expect(agent_run).to have_attributes(
+        status: "completed",
+        pull_request_url: "https://github.com/#{project.full_name}/pull/42",
+        pull_request_number: 42
+      )
+      pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
+      expect(pull_request.github_issue_id).to eq(4242)
+      expect(pull_request.labels).to include("paid-generated", "paid-automation")
     end
 
     it "preserves conventional commit issue titles in the PR title" do
@@ -507,16 +528,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       expect(github_client).to have_received(:create_pull_request).with(
         anything,
         hash_including(title: "feat: Update release notes")
-      )
-    end
-
-    it "checks for an existing PR before creating a new one" do
-      activity.execute(agent_run_id: agent_run.id)
-
-      expect(github_client).to have_received(:pull_requests).with(
-        project.full_name,
-        head: "#{project.owner}:#{agent_run.branch_name}",
-        state: "open"
       )
     end
 
@@ -611,15 +622,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
-    it "marks the agent run as completed with PR details" do
-      activity.execute(agent_run_id: agent_run.id)
-
-      agent_run.reload
-      expect(agent_run.status).to eq("completed")
-      expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/42")
-      expect(agent_run.pull_request_number).to eq(42)
-    end
-
     it "does not create a pull request for cancelled runs" do
       agent_run = create(:agent_run, :cancelled, :with_git_context, project: project, issue: issue)
 
@@ -654,16 +656,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       expect(captured_body).to include("Coherence soft-block: missing @spec annotations.")
     end
 
-    it "syncs a local pull request row immediately after PR creation" do
-      expect {
-        activity.execute(agent_run_id: agent_run.id)
-      }.to change { project.issues.pull_requests_only.where(github_number: 42).count }.by(1)
-
-      pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
-      expect(pull_request.github_issue_id).to eq(4242)
-      expect(pull_request.labels).to include("paid-generated", "paid-automation")
-    end
-
     it "reconciles a created pull request when cancellation wins the completion lock" do
       allow(github_client).to receive(:create_pull_request) do
         agent_run.cancel!
@@ -684,14 +676,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, 42, [ "paid-generated", "paid-automation" ]
       )
-    end
-
-    it "adds the generated and automation labels to the PR" do
-      expect(github_client).to receive(:add_labels_to_issue).with(
-        project.full_name, 42, [ "paid-generated", "paid-automation" ]
-      )
-
-      activity.execute(agent_run_id: agent_run.id)
     end
 
     it "logs the PR creation to agent run" do
