@@ -36,3 +36,5 @@ prefix: TEST-SUITE
 - [x] **TEST-SUITE-028** — When tests boot without an explicit log level, the logger SHALL retain application info, warnings, and errors while omitting SQL debug output; when `RAILS_LOG_LEVEL=debug` is set, the logger SHALL emit SQL debug output while executing the same queries and preserving callbacks, tenant checks, and coverage.
 
 - [x] **TEST-SUITE-029** — When the runner startup-budget regression asserts an exact remaining run budget, it SHALL freeze the scenario's wall clock and restore it afterward, preserving exact execution and startup timeout expectations and the application budget calculation.
+
+- [x] **TEST-SUITE-030** — When an assignment-update spec checks a later explicit variant override, it SHALL start with a different explicit variant, verify both persisted states, and retain the existing assignment record so the update path is exercised independently of randomized selection.
