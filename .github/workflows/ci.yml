@@ -1034,10 +1034,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018
+  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018 @spec TEST-SUITE-025
   test:
-    needs: [ test-shards, shard-status, shard-recovery ]
-    if: ${{ always() && needs.test-shards.result != 'skipped' }}
+    needs: [ mcp-write-tool-inventory, test-shards, shard-status, shard-recovery ]
+    if: ${{ always() && needs.mcp-write-tool-inventory.result != 'skipped' }}
     runs-on: ubuntu-24.04
     env:
       BUNDLE_FROZEN: "true"
@@ -1050,11 +1050,16 @@ jobs:
         # coverage step below still requires every distinct shard report.
         # @spec TEST-SUITE-006 @spec TEST-SUITE-018
         env:
+          MCP_WRITE_TOOL_INVENTORY_RESULT: ${{ needs.mcp-write-tool-inventory.result }}
           SHARD_RESULT: ${{ needs.test-shards.result }}
           SHARD_STATUS_RESULT: ${{ needs.shard-status.result }}
           RECOVERY_RESULT: ${{ needs.shard-recovery.result }}
           FAILING_SHARDS: ${{ needs.shard-status.outputs.failing }}
         run: |
+          if [ "$MCP_WRITE_TOOL_INVENTORY_RESULT" != "success" ]; then
+            echo "::error::MCP write-tool inventory preflight did not succeed (result: ${MCP_WRITE_TOOL_INVENTORY_RESULT:-missing})"
+            exit 1
+          fi
           if [ "$SHARD_RESULT" = "success" ]; then
             exit 0
           fi

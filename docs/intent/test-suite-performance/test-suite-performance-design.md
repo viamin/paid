@@ -63,7 +63,9 @@ reviewed write-tool inventory and the read-only-definition exclusion check;
 it is not generated from production write flags. It records elapsed time in
 the job summary. Expensive shards depend on that job, so a failed contract
 leaves them skipped rather than consuming their database, service, dependency,
-and test budgets. Tool authors update the reviewed inventory whenever they
+and test budgets. The stable final test check reports a failed trusted
+preflight as a failure, while remaining skipped when the preflight is
+intentionally skipped for an untrusted pull request. Tool authors update the reviewed inventory whenever they
 add, remove, rename, or change the write classification of an MCP tool.
 
 The same shard paths install the pinned ast-grep binary before running specs.
