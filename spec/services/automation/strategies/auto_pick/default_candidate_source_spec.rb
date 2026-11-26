@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
-  let(:project) { create(:project, auto_pick_enabled: true) }
+  # @spec TEST-SUITE-017
+  include_context "with stable auto-pick project"
 
   # @spec OPERATOR-INBOX-016
   it "limits closeout eligibility checks to supplied candidates without bypassing guards" do

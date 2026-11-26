@@ -3,8 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::Stats do
-  let(:account) { create(:account) }
-  let(:project) { create(:project, account: account) }
+  # @spec TEST-SUITE-017
+  include_context "with stable dashboard project"
 
   around do |example|
     original_store = Rails.cache
@@ -27,7 +27,9 @@ RSpec.describe Dashboard::Stats do
   end
 
   describe ".call" do
-    subject(:stats) { described_class.call(account: account) }
+    subject(:stats) { described_class.call(account: account, only: sections) }
+
+    let(:sections) { nil }
 
     context "with no agent runs" do
       it "returns zero counts and failure rate", :aggregate_failures do
@@ -226,6 +228,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with performance_by_outcome" do
+      let(:sections) { %i[performance_by_outcome] }
+
       before do
         create(:agent_run, :completed, project: project, cost_cents: 100,
           tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
@@ -252,6 +256,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with performance_by_goal" do
+      let(:sections) { %i[performance_by_goal] }
+
       before do
         create(:agent_run, :completed, project: project, goal: "create_pr",
           cost_cents: 200, tokens_input: 2000, tokens_output: 1000, duration_seconds: 120)
@@ -424,6 +430,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with many completed runs for phase breakdown" do
+      let(:sections) { %i[phase_breakdown] }
+
       it "limits phase breakdown to recent completed runs" do
         travel_to Time.zone.parse("2026-03-20 12:00:00 UTC") do
           stub_const("Dashboard::Stats::PHASE_BREAKDOWN_RUN_LIMIT", 2)
@@ -448,6 +456,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with multiple agent types" do
+      let(:sections) { %i[runs_by_agent_type] }
+
       before do
         create(:agent_run, :completed, project: project)
         create(:agent_run, :completed, :cursor, project: project)
@@ -462,6 +472,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with provider fallbacks" do
+      let(:sections) { %i[runner_fallback_stats runs_by_agent_type runs_by_runner] }
+
       before do
         # Run requested claude_code, completed by claude_code (no fallback)
         create(:agent_run, :completed, project: project, agent_type: "claude_code")
@@ -509,6 +521,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with routed provider entries" do
+      let(:sections) { %i[runner_fallback_stats runs_by_runner] }
+
       let(:owner) { project.effective_owner }
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:provider_entry) do
@@ -534,6 +548,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with deleted routed provider entries" do
+      let(:sections) { %i[runs_by_runner] }
+
       let(:owner) { project.effective_owner }
       let(:api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:deleted_provider_routing_key) do
@@ -567,6 +583,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with multiple provider entries sharing a display name" do
+      let(:sections) { %i[runs_by_runner] }
+
       let(:owner) { project.effective_owner }
       let(:first_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
       let(:second_api_key) { create(:provider_api_key, user: owner, api_service_type: "openrouter") }
@@ -595,6 +613,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with provider fallback via skipped primary (no runner_switches)" do
+      let(:sections) { %i[runner_fallback_stats runs_by_runner] }
+
       before do
         # Primary provider was skipped as unavailable; fallback used directly.
         # final_runner differs from agent_type but runner_switches remains 0.
@@ -619,6 +639,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with claude_code run completed by claude provider (no fallback)" do
+      let(:sections) { %i[runner_fallback_stats runs_by_runner] }
+
       before do
         # final_runner is the normalized provider key "claude" for agent_type "claude_code".
         # This should NOT be counted as a fallback.
@@ -640,6 +662,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with legacy final_runner matching agent_type (no fallback)" do
+      let(:sections) { %i[runner_fallback_stats] }
+
       before do
         # final_runner contains the legacy agent-type identifier "claude_code"
         # rather than the normalized provider key "claude". Both should normalize
@@ -656,6 +680,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with multiple projects" do
+      let(:sections) { %i[cost_by_project runs_by_project] }
+
       let(:project2) { create(:project, account: account, name: "Active Project") }
 
       before do
@@ -734,6 +760,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with merged PRs" do
+      let(:sections) { %i[issue_completion] }
+
       let(:merged_issue) do
         create(:issue, :pull_request, :closed, project: project,
           pr_review_phase: "merged",
@@ -788,6 +816,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with multiple merged PRs" do
+      let(:sections) { %i[issue_completion] }
+
       let(:issue_a) do
         create(:issue, :pull_request, :closed, project: project,
           pr_review_phase: "merged",
@@ -834,6 +864,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with merged PRs from another account" do
+      let(:sections) { %i[issue_completion] }
+
       let(:other_account) { create(:account) }
       let(:other_project) { create(:project, account: other_account) }
 
@@ -852,6 +884,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     context "with non-merged PRs" do
+      let(:sections) { %i[issue_completion] }
+
       before do
         open_pr = create(:issue, :pull_request, project: project,
           pr_review_phase: "draft",
@@ -867,6 +901,8 @@ RSpec.describe Dashboard::Stats do
     end
 
     describe "#daily_outcome_chart" do
+      let(:sections) { %i[daily_outcome_chart] }
+
       around do |example|
         travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
       end
