@@ -89,6 +89,27 @@ RSpec.describe AutoReleaseEvaluationJob do
     end
 
     # @spec AUTO-MERGE-014
+    it "does not merge when empty check runs conceal an approval-waiting workflow" do
+      allow(client).to receive(:check_runs_for_ref).and_return([])
+      allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123").and_return([
+        { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "action_required", head_sha: "abc123" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    # @spec AUTO-MERGE-014
+    it "merges when successful third-party checks have no Actions workflow runs" do
+      allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123").and_return([])
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:merge_pull_request)
+    end
+
+    # @spec AUTO-MERGE-014
     it "does not merge when the Actions inventory is unavailable" do
       allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123")
         .and_raise(GithubClient::Error, "Actions inventory unavailable")

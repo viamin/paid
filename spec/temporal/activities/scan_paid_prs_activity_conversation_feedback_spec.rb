@@ -52,6 +52,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
 
     allow(github_client).to receive(:pull_request).with(project.full_name, 42).and_return(pr_data)
     allow(github_client).to receive(:check_runs_for_ref).with(project.full_name, "abc123").and_return(checks)
+    allow(github_client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123").and_return([])
     allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return([])
     allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 42).and_return(recent)
     allow(github_client).to receive(:issue_comments).with(project.full_name, 42).and_return(comments)

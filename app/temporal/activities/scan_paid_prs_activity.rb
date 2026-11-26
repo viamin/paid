@@ -2540,9 +2540,10 @@ module Activities
       triggers = [ { type: "ci_failure", details: failed_checks.map { |c| c[:name] } } ]
 
       return triggers if ci_retry_cooling_down?(issue)
-      return triggers unless transient_failures?(failed_checks, client, project)
+      job_failures = failed_checks.reject { |check| check[:workflow_run] }
+      return triggers unless transient_failures?(job_failures, client, project)
 
-      attempt_ci_rerun(failed_checks, client, project, issue) ? [] : triggers
+      attempt_ci_rerun(job_failures, client, project, issue) ? [] : triggers
     end
 
     def ci_retry_cooling_down?(issue)

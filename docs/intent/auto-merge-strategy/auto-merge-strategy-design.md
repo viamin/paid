@@ -83,9 +83,11 @@ token, or absent for the observed head while the check list remains green.
 Before Paid reports CI as green for an Actions-backed automatic merge path, it
 therefore reads the current-head workflow-run inventory as well as check runs.
 An `action_required` workflow conclusion is an approval wait, not a test
-failure or a rerunnable transient failure. Unavailable workflow inventory and
-an empty inventory where the path requires Actions both fail closed, preserving
-the exact observed head as the boundary for a later operator reconciliation.
+failure or a rerunnable transient failure. Unavailable workflow inventory
+fails closed, preserving the exact observed head as the boundary for a later
+operator reconciliation. An available empty Actions inventory preserves
+successful third-party-only check runs; it is not evidence that an Actions
+workflow was expected.
 Paid does not infer why GitHub requires approval or alter repository Actions
 policy, contributor trust, secrets, permissions, or required checks. The
 provider's supported approval operation remains an authorized operator action,
