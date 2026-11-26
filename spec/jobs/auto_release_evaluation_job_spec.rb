@@ -34,6 +34,7 @@ RSpec.describe AutoReleaseEvaluationJob do
       pull_request: pr_data,
       contents: manifest_content,
       check_runs_for_ref: green_checks,
+      workflow_runs_for_sha: [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success", head_sha: "abc123" } ],
       combined_status: { state: "success", total_count: 1 }
     )
     allow(client).to receive(:merge_pull_request)
@@ -70,6 +71,42 @@ RSpec.describe AutoReleaseEvaluationJob do
         status: "merged",
         credential_mode: "pat"
       )
+    end
+
+    # @spec AUTO-MERGE-014
+    it "does not merge when green check runs conceal approval-waiting workflows" do
+      allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123").and_return([
+        { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "action_required", head_sha: "abc123" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).to have_received(:workflow_runs_for_sha).with(project.full_name, "abc123")
+      expect(client).not_to have_received(:merge_pull_request)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "skipped", reason_code: AutoMergeAttempt::REASON_CHECKS_NOT_GREEN
+      )
+    end
+
+    # @spec AUTO-MERGE-014
+    it "does not merge when the Actions inventory is unavailable" do
+      allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123")
+        .and_raise(GithubClient::Error, "Actions inventory unavailable")
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    # @spec AUTO-MERGE-014
+    it "does not merge when a workflow run failed despite green check runs" do
+      allow(client).to receive(:workflow_runs_for_sha).with(project.full_name, "abc123").and_return([
+        { id: 12, workflow_id: 1, name: "Security", status: "completed", conclusion: "failure", head_sha: "abc123" }
+      ])
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
     end
 
     # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-016

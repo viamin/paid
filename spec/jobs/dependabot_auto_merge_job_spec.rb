@@ -32,6 +32,7 @@ RSpec.describe DependabotAutoMergeJob do
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
       check_runs_for_ref: green_checks,
+      workflow_runs_for_sha: [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success", head_sha: "def456" } ],
       combined_status: { state: "success", total_count: 1 },
       recent_issue_comments: []
     )
@@ -530,6 +531,7 @@ RSpec.describe DependabotAutoMergeJob do
           pull_requests: [ dependabot_pr ],
           pull_request: dependabot_pr,
           check_runs_for_ref: green_checks,
+          workflow_runs_for_sha: [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success", head_sha: "def456" } ],
           combined_status: { state: "success", total_count: 1 },
           recent_issue_comments: []
         )

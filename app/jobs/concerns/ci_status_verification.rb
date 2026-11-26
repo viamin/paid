@@ -85,7 +85,9 @@ module CiStatusVerification
 
     return combined_status_ok_internal(client, project, sha, strict: false, raise_on_github_error:) if checks.nil? || checks.empty?
 
-    conclusions_green?(checks)
+    return false unless conclusions_green?(checks)
+
+    workflow_runs_green_internal(client, project, sha, raise_on_github_error:)
   rescue GithubClient::ApiError => e
     raise unless e.status == 403
 
@@ -113,6 +115,27 @@ module CiStatusVerification
       error: e.message
     )
     combined_status_ok_internal(client, project, sha, strict: true, raise_on_github_error:)
+  rescue GithubClient::Error => e
+    handle_github_error(e, project, "#{ci_log_component}.workflow_runs_failed", raise_on_github_error:)
+  end
+
+  # Check-run rollups are not an authoritative inventory of Actions workflow
+  # runs. GitHub can retain successful check runs while a workflow run waits
+  # for approval, so pair a normal Checks response with exact-HEAD Actions
+  # inventory before treating CI as green.
+  # @spec AUTO-MERGE-014
+  def workflow_runs_green_internal(client, project, sha, raise_on_github_error:)
+    runs = client.workflow_runs_for_sha(project.full_name, sha)
+    runs.present? && conclusions_green?(runs)
+  rescue GithubClient::ApiError => e
+    raise unless e.status == 403
+
+    Rails.logger.info(
+      message: "#{ci_log_component}.workflow_runs_forbidden",
+      project_id: project.id,
+      error: e.message
+    )
+    false
   rescue GithubClient::Error => e
     handle_github_error(e, project, "#{ci_log_component}.workflow_runs_failed", raise_on_github_error:)
   end
