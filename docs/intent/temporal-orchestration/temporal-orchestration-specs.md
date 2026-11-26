@@ -23,6 +23,13 @@
   *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_client`,
   `Paid.temporal_worker_client`.
 
+- [x] **TEMPORAL-ORCHESTRATION-018** — The `json/plain` converter SHALL pass
+  JSON options as keywords and SHALL leave object additions disabled, so a
+  JSON 3-compatible published SDK can load the normal client/converter path
+  without materializing payload-directed objects.
+  *Tests:* `spec/lib/paid/temporal_data_converter_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`.
+
 ## Worker Resource Sizing
 
 - [x] **TEMPORAL-ORCHESTRATION-013** — When a Temporal worker receives a first

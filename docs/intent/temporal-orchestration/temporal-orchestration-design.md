@@ -31,6 +31,12 @@ keyword options and does not enable object additions, matching the JSON 3 API
 and preserving safe, deterministic serialization for clients, workers, and
 checked-in workflow replay histories.
 
+A future published SDK must retain the converter API that Paid constructs and
+must itself be dependency-compatible with the application JSON contract. The
+converter's load and round-trip checks establish only that local client and
+payload conversion can load; they do not establish worker quiescence, replay
+acceptance beyond the existing fixtures, or SDK/server compatibility.
+
 Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.

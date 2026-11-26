@@ -60,6 +60,38 @@ so it can be filed against `agent-harness` rather than patched locally.
 deliberate migration with build, gem, and CI consequences that no automated
 rewrite should decide.
 
+## Temporal SDK dependency qualification
+
+The `temporalio` SDK is an application dependency, not a Paid-owned toolchain
+pin. A newer SDK may be selected only after its *published* gem metadata and
+normal Bundler resolution are compatible with Paid's existing `json ~> 3.1`
+and `multi_json >= 1.21.2` contract. Qualification uses a derived private
+Gemfile that changes only the selected SDK version; it never edits the
+canonical Gemfile or lockfile, lowers JSON, changes installed gem metadata,
+or substitutes a private bridge.
+
+The published `temporalio` 1.12.0 `aarch64-linux` artifact is rejected. Its
+SHA-256 is
+`9ec9b8be1310b755ba62146ddee2a8e6415310fecf582faba700c6f7b8184d08`, and
+its runtime metadata declares `json < 3`, which excludes Paid's JSON 3
+contract. The isolated resolver receipt at
+`/tmp/paid-sdk112-f3-dependency-preflight/` is retained as the failed history;
+it ran no workflow or server cases. A native extension load receipt is not a
+dependency-resolution, whole-application, or server-acceptance result.
+
+No containing published fix existed when this decision was recorded. The
+reviewable upstream contribution is to make the SDK's `JSONPlain` converter
+pass parse and generate option hashes as keyword arguments and publish platform
+gems whose runtime metadata admits JSON 3 (for example, `>= 2.8, < 4`). Paid
+continues to select no object additions through its own converter. Before Paid
+selects that release, qualification must record the source/release identity,
+every platform-gem checksum and runtime dependency, the derived Gemfile and
+lock, Bundler/Ruby/platform environment, cleanup, isolated resolver result,
+and normal `temporalio/client` plus Paid converter load. The #5326 SDK/server
+matrix is a separate later acceptance step; dependency or load checks do not
+establish quiescence behavior. Coordinate that matrix with #5326 and the build
+environment with #5358 without changing their authority.
+
 ## Consistency Groups
 
 A single logical pin is usually written into several files with different
@@ -197,3 +229,10 @@ and checksum together. The devcontainer's supported `3.4` base image is
 checked at build time against `.tool-versions`; rebuilding an agent or
 devcontainer image is therefore the actionable remediation for a stale
 already-built runtime.
+
+## Decisions & Alternatives
+
+| Decision | Rationale | Alternatives rejected |
+| --- | --- | --- |
+| Gate Temporal SDK upgrades on published dependency metadata and isolated resolution | A native extension load cannot make Bundler accept an incompatible shipped runtime dependency. | Lowering Paid's JSON contract, modifying an installed gemspec, or relying on a private bridge. |
+| Keep SDK/server acceptance separate from dependency qualification | Resolver and client/converter loading evidence does not establish worker quiescence or server behavior. | Treating a successful load as a containing quiescence release. |
