@@ -292,6 +292,8 @@ class Drain:
             # Malformed recovery metadata must never reopen a closed generation.
             self.preserve_requests = True
             previous = read_json(self.journal)
+            if type(previous.get("protocol")) is not int or previous["protocol"] != 1:
+                raise AdmissionError("recorded admission protocol is unsupported")
             if previous.get("workspace") != self.workspace or previous.get("target_revision") != self.target_revision:
                 raise AdmissionError("recovery workspace, cohort or target disagrees")
             original_roles = self.normalize_roles(previous.get("roles"))
@@ -299,7 +301,7 @@ class Drain:
             if previous_gates != set(self.gate_paths) or not set(original_roles.values()).issubset(previous_gates):
                 raise AdmissionError("recorded launch-path gate coverage disagrees")
             self.original_roles = original_roles
-            if previous.get("phase") not in ("requested", "acknowledged", "resumed"):
+            if previous.get("phase") not in ("requested", "acknowledged", "resuming", "resumed"):
                 raise AdmissionError("generation does not require recovery")
             uuid.UUID(previous["generation"])
             self.generation = previous["generation"]
@@ -307,7 +309,7 @@ class Drain:
             if not isinstance(self.snapshots, dict) or set(self.snapshots) != set(self.roles):
                 raise AdmissionError("recovery snapshots are incomplete")
             self.update_phase = previous.get("update_phase", "draining")
-            if self.update_phase not in ("draining", "stopping", "stopped", "setup", "starting", "complete"):
+            if self.update_phase not in ("draining", "stopping", "stopped", "setup", "starting", "resuming", "complete"):
                 raise AdmissionError("recorded update phase is unknown")
             self.target_snapshots = previous.get("target_snapshots", {})
             if previous["phase"] == "resumed":
@@ -319,6 +321,11 @@ class Drain:
                 self.check_deadline(deadline)
                 return {"generation": self.generation, "roles": sorted(self.roles), "completed": True,
                         "cohort": "target", "next_action": "already-complete", "update_phase": "complete"}
+            opening = previous["phase"] == "resuming" or self.update_phase == "resuming"
+            if opening:
+                self.target_paths = self.normalize_roles(previous.get("target_roles"))
+                if self.stopped or self.roles != self.target_paths:
+                    raise AdmissionError("pending resume requires the recorded target cohort")
             if self.stopped:
                 if previous["phase"] != "acknowledged":
                     raise AdmissionError("stopped recovery requires a previously complete acknowledgement")
@@ -331,8 +338,12 @@ class Drain:
                 and (value["pid"], value["process_start_ticks"]) != (self.snapshots[role]["pid"], self.snapshots[role]["process_start_ticks"])
             }
             known = all(value == self.snapshots[role] or role in target_roles for role, value in current.items())
-            if not self.stopped and not unchanged and not (previous["phase"] == "acknowledged" and known):
+            if not self.stopped and not unchanged and not (previous["phase"] in ("acknowledged", "resuming") and known):
                 raise AdmissionError("mixed or unknown worker boots require investigation before stop")
+            if opening and current != self.target_snapshots:
+                raise AdmissionError("pending resume target boots changed")
+            if opening and len(target_roles) != len(self.roles):
+                raise AdmissionError("pending resume target revision or identity disagrees")
             self.verify_original_instances_gone(target_roles)
             if self.update_phase in ("stopped", "setup", "starting"):
                 self.verify_original_instances_gone(self.roles)
@@ -342,7 +353,7 @@ class Drain:
                 try:
                     value = read_json(path)
                 except FileNotFoundError:
-                    if previous["phase"] == "requested" and unchanged:
+                    if (previous["phase"] == "requested" and unchanged) or opening:
                         continue
                     raise AdmissionError("acknowledged request is missing; investigate before stop")
                 if value.get("generation") != self.generation or value.get("workspace") != self.workspace:
@@ -395,7 +406,7 @@ class Drain:
         if self.stopped or set(self.target_snapshots) != set(self.roles):
             raise AdmissionError("completed target cohort is unknown")
         current = {role: self.snapshot(role) for role in self.roles}
-        if current != self.target_snapshots:
+        if current != self.target_snapshots or any(value["revision"] != self.target_revision for value in current.values()):
             raise AdmissionError("completed target boot changed")
         self.verify_original_instances_gone(self.roles)
         if any(os.path.lexists(path) for path in self.request_paths()):
@@ -473,8 +484,10 @@ class Drain:
         self.roles = dict(target_paths)
         self.target_paths = dict(target_paths)
         self.target_snapshots = target
-        self.update_phase = "complete"
+        self.update_phase = "resuming"
+        self.record("resuming")
         self.remove_requests()
+        self.update_phase = "complete"
         self.record("resumed")
         self.completed = True
         self.stopped = False
