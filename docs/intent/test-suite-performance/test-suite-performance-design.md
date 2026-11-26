@@ -90,6 +90,16 @@ final check treats recovery as satisfying only the missing legs: a real shard
 failure, a failed re-run, an incomplete classification, or a still-missing
 report still fails the check. Recovery never re-runs legs that executed.
 
+The recovery job's `always()` dependency inspection is paired with
+`!cancelled()` so a cancelled or superseded pull-request workflow cannot start
+recovery after GitHub re-evaluates job conditions. A recovery already in
+progress receives normal workflow cancellation; its existing bounded
+process-group cleanup stops dependency attempts before another attempt or test
+leg can begin. Per-leg artifact uploads retain their `always()` guards so
+completed recovery work is reported truthfully, but they do not make recovery
+itself eligible after cancellation. A cancelled recovery is not a successful
+recovery and cannot satisfy the final coverage gate.
+
 ## System-suite infrastructure recovery
 
 The GitHub-hosted PostgreSQL service can rarely return an empty protocol result

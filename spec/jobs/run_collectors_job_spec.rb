@@ -158,6 +158,20 @@ RSpec.describe RunCollectorsJob do
 
         described_class.new.perform(project.id, commit_sha)
       end
+
+      # @spec KNOWLEDGE-017
+      it "retries a collector container provisioning failure without notifying" do
+        allow(Knowledge::ContainerizedRunner).to receive(:call)
+          .and_raise(Knowledge::ContainerizedRunner::ProvisionError, "read timeout reached")
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ContainerizedRunner::ProvisionError]" => 0 }
+
+        expect { job.perform_now }.not_to raise_error
+        expect(project.reload.knowledge_status).to eq("collecting")
+        expect(ExceptionHandler::IssueFiler).not_to have_received(:call)
+      end
     end
   end
 
@@ -264,6 +278,33 @@ RSpec.describe RunCollectorsJob do
         expect(bypass_during_lookup).to eq("true")
         expect(current_bypass_setting).to eq(bypass_before)
         expect(project.reload.knowledge_status).to eq("failed")
+      end
+    end
+
+    context "when collector container provisioning exhausts retries" do
+      let(:notifier) { instance_double(Paid::ExceptionNotifier) }
+
+      before do
+        allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(true)
+        allow(Knowledge::ContainerizedRunner).to receive(:call)
+          .and_raise(Knowledge::ContainerizedRunner::ProvisionError, "read timeout reached")
+        allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+        allow(notifier).to receive(:call)
+      end
+
+      # @spec KNOWLEDGE-017 EXCEPTION-NOTIFY-003
+      it "marks the collection failed, notifies, and re-raises" do
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[Knowledge::ContainerizedRunner::ProvisionError]" => 4 }
+
+        expect { job.perform_now }
+          .to raise_error(Knowledge::ContainerizedRunner::ProvisionError, "read timeout reached")
+
+        expect(project.reload.knowledge_status).to eq("failed")
+        expect(notifier).to have_received(:call).with(
+          an_instance_of(Knowledge::ContainerizedRunner::ProvisionError),
+          data: hash_including(subsystem: "knowledge", project_id: project.id)
+        )
       end
     end
 

@@ -2439,14 +2439,23 @@ module Activities
     CODEX_DIAGNOSTIC_MAX_LINES = 256
 
     def codex_stdout_diagnostic(stdout)
+      stdout_buffer = +""
       stdout.to_s.each_line do |line|
         classification = AgentHarness::Providers::Codex.classify_output_chunk(
-          "#{line.chomp}\n",
+          line,
           stream: :stdout,
-          stdout_buffer: +""
+          stdout_buffer: stdout_buffer
         )
         return sanitized_codex_diagnostic(line) if auth_classification?(classification)
       end
+
+      terminal_fragment = stdout_buffer.dup
+      classification = AgentHarness::Providers::Codex.classify_output_chunk(
+        "#{terminal_fragment}\n",
+        stream: :stdout,
+        stdout_buffer: +""
+      )
+      return sanitized_codex_diagnostic(terminal_fragment) if auth_classification?(classification)
 
       "Codex reported auth_expired on stdout"
     end

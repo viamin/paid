@@ -171,6 +171,19 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       expect(result[:results].first[:status]).to eq("completed")
     end
 
+    # @spec KNOWLEDGE-017
+    it "classifies Docker provisioning timeouts as provisioning failures" do
+      allow(Docker::Container).to receive(:create)
+        .and_raise(Docker::Error::ServerError.new("read timeout reached"))
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(
+        Knowledge::ContainerizedRunner::ProvisionError,
+        "Failed to provision collector container: read timeout reached"
+      )
+    end
+
     it "streams repo tar into the container via Docker API" do
       described_class.new(project: project, commit_sha: commit_sha).run
 

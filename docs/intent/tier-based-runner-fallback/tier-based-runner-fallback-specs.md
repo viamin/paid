@@ -174,6 +174,7 @@
   failures even when tool data is mixed into the transcript. A classified
   authentication failure SHALL retain bounded, secret-free provenance naming
   the stream, category, event path, and terminal diagnostic instead of a
-  startup transcript prefix.
+  startup transcript prefix, including when the final provider envelope has
+  no trailing newline.
   *Code:* `Activities::RunAgentActivity`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.

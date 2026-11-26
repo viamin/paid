@@ -240,7 +240,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     expect(postgres.fetch("options")).to include("--shm-size=512m")
   end
 
-  # @spec TEST-SUITE-025
+  # @spec TEST-SUITE-026
   it "fails the stable test check when the trusted MCP write-tool preflight fails" do
     jobs = workflow_config(".github/workflows/ci.yml").fetch("jobs")
     aggregate_test = jobs.fetch("test")

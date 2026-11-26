@@ -45,7 +45,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
-  # @spec TEST-SUITE-025
+  # @spec TEST-SUITE-026
   it "runs the complete MCP write-tool inventory contract before expensive shards" do
     preflight = workflow.fetch("jobs").fetch("mcp-write-tool-inventory")
     contract_step = preflight.fetch("steps").find { |step| step["name"] == "Check MCP write-tool inventory" }
@@ -84,7 +84,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
-  # @spec TEST-SUITE-025
+  # @spec TEST-SUITE-026
   it "fails the stable test check when a trusted preflight fails" do
     job = workflow.fetch("jobs").fetch("test")
     gate = job.fetch("steps").first.fetch("run")
@@ -167,6 +167,18 @@ RSpec.describe CiWorkflowFile, :no_db do
       "RECOVERABLE" => "${{ needs.shard-status.outputs.recoverable }}",
       "RSPEC_SHARD_COUNT" => workflow.fetch("jobs").fetch("test-shards").fetch("env").fetch("RSPEC_SHARD_COUNT")
     )
+  end
+
+  # @spec TEST-SUITE-025
+  it "does not start dropped-shard recovery after workflow cancellation while retaining artifact bookkeeping" do
+    job = workflow.fetch("jobs").fetch("shard-recovery")
+    recovery_condition = job.fetch("if")
+    artifact_steps = job.fetch("steps").select { |step| step.fetch("name", "").start_with?("Upload recovered shard") }
+
+    expect(recovery_condition).to include("always()")
+    expect(recovery_condition).to include("!cancelled()")
+    expect(artifact_steps).not_to be_empty
+    expect(artifact_steps).to all(include("if" => a_string_including("always()")))
   end
 
   # @spec TEST-SUITE-018 @spec POSTGRESQL-PERSISTENCE-002

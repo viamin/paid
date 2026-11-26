@@ -165,7 +165,9 @@ Codex stdout is a mixed JSONL transcript: completed MCP calls and their
 arguments, content, and structured content are task data, not provider
 diagnostics. `Activities::RunAgentActivity` delegates Codex stdout and stderr
 classification to the public `AgentHarness::Providers::Codex.classify_output_chunk`
-contract. Terminal handling retains the matched stdout error envelope, while
+contract. Terminal handling submits an unterminated final stdout record with
+a newline to a fresh classifier buffer, rather than sending a whitespace-only
+flush that the public classifier ignores. It retains the matched stdout error envelope, while
 stderr remains a distinct provider diagnostic stream and retains its bounded
 diagnostic context. A nil classification is only the absence of a recognized
 provider signal; normal exit and outcome checks remain authoritative.
