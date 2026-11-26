@@ -7,10 +7,13 @@ import argparse
 import json
 from pathlib import Path
 import re
+import os
+import select
+import signal
 import sys
 import time
 
-from worker_admission import AdmissionError, Drain, supervisor_cohort
+from worker_admission import AdmissionError, Drain, process_start_ticks, supervisor_cohort
 
 
 def bounded_bytes(path, limit=131072):
@@ -120,14 +123,90 @@ def discover_cohort(workspace, status, *, proc_root=Path("/proc")):
     return expected
 
 
+def controller_identity(pid, parent, workspace):
+    directory = Path("/proc") / str(pid)
+    contents = bounded_bytes(directory / "stat", 4096).decode()
+    fields = contents[contents.rindex(")") + 2:].split()
+    identity = {"pid": pid, "parent": int(fields[1]), "start_ticks": int(fields[19])}
+    if identity["parent"] != parent or str((directory / "cwd").resolve(strict=True)) != workspace:
+        raise AdmissionError("controller child identity disagrees")
+    return identity
+
+
+def reap_controller(identity, workspace):
+    if not isinstance(identity, dict) or set(identity) != {"pid", "parent", "start_ticks"}:
+        raise AdmissionError("controller identity is incomplete")
+    if any(type(value) is not int or value <= 0 for value in identity.values()):
+        raise AdmissionError("controller identity is invalid")
+    try:
+        descriptor = os.pidfd_open(identity["pid"])
+    except ProcessLookupError:
+        return {"original_absent": True, "wait_safe": True}
+    try:
+        try:
+            current = controller_identity(identity["pid"], identity["parent"], workspace)
+        except (FileNotFoundError, ProcessLookupError):
+            return {"original_absent": True, "wait_safe": True}
+        except AdmissionError:
+            return {"original_absent": True, "wait_safe": False}
+        if current != identity:
+            return {"original_absent": True, "wait_safe": False}
+        # Every signal addresses this exact kernel process handle, even if its
+        # numeric PID exits and is reused after the identity check.
+        for timeout, stop_signal in ((5, signal.SIGTERM), (0.1, signal.SIGKILL), (1, None)):
+            if select.select([descriptor], [], [], timeout)[0]:
+                return {"original_absent": True, "wait_safe": True}
+            if stop_signal is not None:
+                try:
+                    signal.pidfd_send_signal(descriptor, stop_signal)
+                except ProcessLookupError:
+                    return {"original_absent": True, "wait_safe": True}
+        raise AdmissionError("controller exit remains unknown; admission requires recovery")
+    finally:
+        os.close(descriptor)
+
+
+def original_cohort_gone(cohort):
+    if not isinstance(cohort, dict) or set(cohort) != {"poll", "agent"}:
+        raise AdmissionError("original process cohort is incomplete")
+    for identity in cohort.values():
+        if not isinstance(identity, dict) or set(identity) != {"pid", "start_ticks"}:
+            raise AdmissionError("original process identity is incomplete")
+        if any(type(value) is not int or value <= 0 for value in identity.values()):
+            raise AdmissionError("original process identity is invalid")
+        try:
+            ticks = process_start_ticks(identity["pid"])
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        if ticks == identity["start_ticks"]:
+            raise AdmissionError("original worker process instance remains alive")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
+    parser.add_argument("--controller-identity", type=int)
+    parser.add_argument("--caller-pid", type=int)
+    parser.add_argument("--reap-controller")
+    parser.add_argument("--originals-gone", action="store_true")
     parser.add_argument("--ready-target")
     parser.add_argument("--readiness-directory")
     arguments = parser.parse_args()
     try:
+        workspace = str(Path(arguments.workspace).resolve(strict=True))
+        if arguments.controller_identity:
+            if not arguments.caller_pid:
+                raise AdmissionError("controller caller identity is required")
+            print(json.dumps(controller_identity(arguments.controller_identity, arguments.caller_pid, workspace)))
+            return 0
+        if arguments.reap_controller:
+            print(json.dumps(reap_controller(json.loads(arguments.reap_controller), workspace)))
+            return 0
         status = sys.stdin.read(65537)
+        if arguments.originals_gone:
+            original_cohort_gone(json.loads(status))
+            print(json.dumps({"gone": True}))
+            return 0
         cohort = discover_cohort(arguments.workspace, status)
         if arguments.ready_target:
             if not arguments.readiness_directory:
