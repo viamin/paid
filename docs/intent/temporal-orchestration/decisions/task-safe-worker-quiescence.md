@@ -149,15 +149,12 @@ A supported maintenance acceptance case must establish exclusive control of
 the complete producer cohort and retain all finite business owners until they
 finish under their original budgets. A genuine operator may explicitly request
 normal cancellation of an **idle** continuous control workflow. Bind that
-request to its exact workflow run. Record and verify the first-execution
-identity through read-only metadata, then cancel through a public SDK handle
-that carries the exact `run_id` and omits `first_execution_run_id`.
-[Temporal 1.29.7 clears the requested run ID when the first-execution field is
-supplied](https://github.com/temporalio/temporal/blob/v1.29.7/service/history/api/requestcancelworkflow/api.go#L29-L35),
-so sending both fields can target a continued successor instead of the recorded
-run. Never retarget after continue-as-new or treat a successful cancellation
-RPC as proof that the recorded run was cancelled. Await the actual server terminal
-result with following runs disabled, and inspect the history delta. Any owned
+request by first verifying its first-execution identity read-only, then send
+cancellation to the exact recorded `run_id` while omitting
+`first_execution_run_id`. Temporal 1.29.7 clears a supplied run ID when the
+first-execution field is present, which can retarget cancellation to a
+continued successor. Await the actual server terminal result with following
+runs disabled, and inspect the history delta. Any owned
 activity cancellation, timeout, unexpected business dispatch, a new continued
 run, an unexcluded client or an unknown RPC outcome invalidates the bootstrap
 proof. One empty pending-activity or task-backlog snapshot is insufficient.
