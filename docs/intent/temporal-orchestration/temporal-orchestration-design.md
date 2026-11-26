@@ -213,7 +213,10 @@ exception text are excluded.
 Each stage rechecks the run's persisted resume-attempt ownership and terminal
 state. The scheduler's pre-agent `running` state remains eligible alongside
 `queued`, because queue admission marks the row active before this activity
-performs setup. A later Temporal attempt supersedes an earlier one, and a
+performs setup. After Temporal accepts the workflow, provisioning bookkeeping
+locks and reloads the run before merging metadata, preserving resume ownership
+or terminal evidence written by an activity that has already started.
+A later Temporal attempt supersedes an earlier one, and a
 terminal run supersedes both. A superseded attempt raises a typed non-retryable
 setup error instead of returning a successful activity result, so it cannot
 advance the workflow to `RunAgent` or overwrite the newer terminal result. The

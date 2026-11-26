@@ -1370,22 +1370,25 @@ class ProcessRunQueueJob < ApplicationJob
   # @spec OBSERVABILITY-002 — record provisioning_started_at and
   # requested_resources only after Temporal accepted the workflow start so
   # failed dispatch attempts do not create phantom infrastructure spend.
+  # @spec TEMPORAL-ORCHESTRATION-019
   def record_provisioning_start!(agent_run, planned_container_host)
     started_at = Time.current
-    metadata = agent_run.external_metadata.merge(
-      "provisioning_started_at" => started_at.iso8601,
-      "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
-      "infrastructure_spend" => {
-        "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
-        "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
-      }
-    )
+    agent_run.with_lock do
+      metadata = agent_run.external_metadata.merge(
+        "provisioning_started_at" => started_at.iso8601,
+        "requested_resources" => Capacity::RequestedResources.persistable_for(agent_run),
+        "infrastructure_spend" => {
+          "rate_cents_per_hour" => Capacity::InfrastructureLimits.rate_cents_per_hour(host: planned_container_host),
+          "projection_seconds" => Capacity::InfrastructureLimits.current(host: planned_container_host)[:infra_spend_projection_seconds]
+        }
+      )
 
-    agent_run.update_columns(
-      provisioning_started_at: started_at,
-      external_metadata: metadata,
-      updated_at: Time.current
-    )
+      agent_run.update_columns(
+        provisioning_started_at: started_at,
+        external_metadata: metadata,
+        updated_at: Time.current
+      )
+    end
   end
 
   def start_workflow!(agent_run, workflow_input:, workflow_id:)
