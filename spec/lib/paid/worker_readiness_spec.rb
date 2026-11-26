@@ -76,6 +76,22 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path)).fetch("revision")).to eq("a" * 40)
     end
 
+    it "preserves boot identity and the self-observed clock against heartbeat metadata" do # @spec TEMPORAL-ORCHESTRATION-021
+      fields = %w[activity_slots activity_task_polls local_activity_slots workflow_slots workflow_task_polls]
+      identity = Paid::WorkerAdmission.boot_identity(
+        workspace: tmpdir, revision: "a" * 40, profiles: { "agent" => fields.to_h { |field| [ field, 4 ] } }
+      )
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready_with_admission!(identity, env)
+
+      described_class.heartbeat!(env, health: "healthy", pid: 0,
+        revision: "b" * 40, admission: { "protocol" => 0 }, heartbeat_at: "caller-clock")
+
+      heartbeat = JSON.parse(File.read(file_path))
+      expect(heartbeat).to include("pid" => identity.fetch("pid"), "revision" => identity.fetch("revision"), "admission" => identity)
+      expect(heartbeat.fetch("heartbeat_at")).not_to eq("caller-clock")
+    end
+
     it "does not advertise a Temporal capability for another readiness path" do # @spec TEMPORAL-ORCHESTRATION-021
       described_class.mark_ready!("WORKER_READINESS_FILE" => file_path)
       expect(JSON.parse(File.read(file_path))).not_to have_key("admission")
