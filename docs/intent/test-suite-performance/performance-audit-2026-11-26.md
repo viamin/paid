@@ -4,6 +4,9 @@
 
 Audit base: `045bed8556c787f921ec539a51a5e617733051b7`.
 Worktree: `.worktrees/test-prof-audit`, branch `perf/test-prof-audit`.
+The shared-configuration follow-ups use branch
+`perf/test-prof-shared-configuration`, on base
+`6fcdc856f753c12dee5cc9933a32a1f8c9118e7b` for the activity comparison below.
 Acceptance environment: Paid devcontainer, Ruby 3.4.13, ARM64. Focused tests use
 the newly created, isolated `paid_test_prof_audit` database. No production
 environment or deployment is involved.
@@ -51,6 +54,27 @@ to the hosted reports. The benchmark reported eight non-system example failures
 across three shards; those are not evidence of a passing full suite. Its owning
 session retains responsibility for that benchmark and its failure diagnosis.
 
+### Published checkpoint: full CI
+
+CI run `45774582989` on `6fcdc856f753c12dee5cc9933a32a1f8c9118e7b`
+produced all five shard artifacts: 31,303 examples, zero failures, and five
+pending cases. The pending cases are the same four optional execution-runner
+resource contracts and optional real gdUnit4 acceptance case as the earlier
+benchmark. The combined coverage artifact reports 95% line coverage.
+
+Summed example execution is 5,065.0 seconds versus the earlier benchmark's
+4,771.9 seconds. The slowest shard's execution is 1,226.8 versus 1,023.0
+seconds. Different revisions and hosted-runner variability prevent attributing
+the difference to this patch, but these results do not show whole-suite halving.
+The ranking file decreased from 107.1 to 55.0 example seconds; dashboard
+decreased from 57.9 to 57.2 and candidate selection from 60.5 to 56.8.
+The published checkpoint excludes the activity/anomaly follow-ups below.
+
+Downloaded ZIPs were verified against GitHub's artifact digests. Raw reports,
+combined coverage metadata, and the comparison are under
+`/tmp/paid-testprof-audit/ci-5463-6fcdc856/`. The complete suite still requires
+broader improvements; selected local gains cannot establish its runtime target.
+
 ## Follow-up: shared configuration and focused dashboard sections
 
 Measured against commit `90f5c341a159bfdfb745bf74530b14a6ca4a989f`, the candidate-source
@@ -97,6 +121,97 @@ The follow-up passes `bin/lint --changed`, `git diff --check`, and the LID
 coherence command. Coherence still emits existing repository-wide warnings.
 The simplicity review retains explicit shared contexts and the existing public
 dashboard interface without a new fixture framework or global defaults.
+
+## Follow-up: activity setup and repeated executions
+
+Failure-marking, PR-creation, and issue-analysis specs share their uncustomized
+project configuration through the existing context, now named `with stable
+project`. Custom nested project/owner overrides remain per example. Provisioning
+uses the renamed context without changing its fixture contract.
+
+Three groups consolidate checks for identical inputs and operations: error
+state/logging, successful issue analysis, and successful PR completion/sync.
+Their assertions remain, including token accounting, diagnostics, notification
+jobs, PR labels, and local row creation. Distinct cancellation, transport,
+trust, malformed-response, and configuration cases remain independent. The
+PR status, URL, and number checks use one attribute matcher; its job and row
+count checks use a composed block matcher. The separate creation-log example
+keeps the main completion check within the style guide's size limit.
+
+The same three absolute profile paths, seed 24680, private database,
+`COVERAGE=false`, `FPROF=1`, and `RD_PROF=1` produced:
+
+| Workload | Before | After |
+| --- | ---: | ---: |
+| Execution seconds | 430.15 | 339.35 |
+| Examples | 303 | 294 |
+| Failures / pending | 0 / 0 | 0 / 0 |
+| Factory records | 2,423 | 992 |
+| Projects | 302 | 21 |
+| Users | 606 | 44 |
+| Agent runs | 342 | 333 |
+| Issues | 266 | 257 |
+| Top-level factory seconds | 182.03 | 107.46 |
+
+That is a 21.1% observed reduction for these files. The devcontainer still
+runs Paid workers and agent containers, so varying contention limits timing
+comparisons. No callbacks, rendering, validations, tenant constraints, or
+application database settings were disabled. Reports:
+`activity-shared-project-before.json` and `activity-shared-project-after.json`.
+
+The strengthened isolation file passes all 16 examples with seed 97531,
+including owner settings, credential status, and scenario-row rollback.
+Provisioning discovery finds all 384 examples after the context rename; this
+is a dry run, not evidence that those 384 examples executed. Temporary diagnostic
+wrappers corrupt the saved failure message, issue analysis state, and PR number.
+The three consolidated examples fail on exactly those fields, preserving the
+removed examples' regression checks. Reports: `activity-isolation.json`,
+`activity-provisioning-discovery.json`, and `activity-regression-mutant.json`.
+
+Coverage-enabled focused comparisons pass the original 12 and consolidated
+three examples with seed 97531. They retain identical covered-line sets in all
+three activities: 207 lines for analysis, 225 for PR creation, and 68 for failure
+marking. Reports: `activity-coverage-before.json`, `activity-coverage-after.json`,
+and `activity-coverage-comparison.json`. The normal whole-suite coverage gate
+remains unchanged.
+
+## Follow-up: anomaly checks and provider value tests
+
+Five token-outlier examples repeat one detection against the same seven-run
+scenario. One aggregate example now checks the detected metric/type, persisted
+row, warning log, and notification fields/severity. Other anomaly scenarios keep
+their original inputs and assertions. Historical runs still use per-example
+factories; only project configuration is shared.
+
+Five effective-provider normalization cases instantiate `AgentRun` directly.
+They only read attributes and normalize names. The existing persisted legacy
+alias integration also checks the effective provider after reloading the run.
+
+Using the same two absolute profile paths, seed 24680, private database, and
+FactoryProf/RSpecDissect options, all 29 original and 25 retained examples pass.
+Runtime decreases from 59.88 to 54.31 seconds, while factory records decrease
+from 442 to 246, runs/issues from 142 each to 109 each, and projects from 28 to
+two. The observed runtime gain is 9.3%; factory counts alone would overstate it.
+Reports: `anomaly-values-before.json` and `anomaly-values-after.json`.
+
+Coverage-enabled runs with seed 97531 also pass all 29 and 25 examples. They
+cover identical sets of 95 anomaly-service lines and both executable lines of
+the effective-runner method. The model comparison is scoped to that method,
+not a claim about all AgentRun callbacks. Raw comparison:
+`anomaly-values-coverage-comparison.json`.
+
+The consolidated anomaly example independently catches three injected defects:
+an unsaved result, wrong anomaly direction, and missing notification. Replacing
+provider normalization with the raw requested agent type makes four of five
+value cases fail on the expected values. Reports:
+`anomaly-retained-check-mutant.json` and `provider-value-check-mutant.json`.
+These are temporary negative controls, not skipped or failing committed tests.
+
+LID mode: Full; version: 1.3.0. Existing TEST-SUITE-011 and TEST-SUITE-017
+govern the fixture changes. The final working-patch simplicity pass against
+HEAD `6fcdc856f753c12dee5cc9933a32a1f8c9118e7b` retains existing contexts,
+explicit assertions, and ordinary model construction without a new test
+framework. Lint and coherence pass; coherence retains repository-wide warnings.
 
 ## First changes and measured effect
 

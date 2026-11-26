@@ -221,3 +221,17 @@ and projects retain their original factory ownership relationships. Scenario
 issues, runs, role changes, owner settings, and secondary projects remain local
 to each example; isolation checks mutate configuration and create scenario rows
 to verify that the next example starts clean.
+
+Failure marking, pull-request creation, and issue-analysis activity specs reuse
+an uncustomized project through the existing stable project context. Customized
+nested project and owner overrides remain per example. The context also serves
+provisioning scenarios; its generic name reflects the shared factory contract.
+All business callbacks and rendering remain enabled in these measurements.
+
+Anomaly-detection checks for the same token outlier can inspect persistence,
+classification, logging, and notification from one detection. Keep cost, duration,
+severity boundaries, stale baselines, and guardrail scenarios independent. The
+historical runs still use normal factories in each retained example.
+Effective-provider value tests instantiate a run directly because they only
+exercise attribute normalization; the legacy alias integration retains a
+persisted run and verifies its effective provider after reloading.

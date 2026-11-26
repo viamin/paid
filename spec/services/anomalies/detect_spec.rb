@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Anomalies::Detect do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
 
   describe ".call" do
     before do
@@ -59,50 +60,28 @@ RSpec.describe Anomalies::Detect do
             cost_cents: 150)
         end
 
-        it "detects token anomaly" do
-          anomalies = described_class.call(anomalous_run)
+        # @spec NOTIFICATION-SEVERITY-001
+        it "detects and persists a token anomaly with a warning log and info notification", :aggregate_failures do
+          allow(Rails.logger).to receive(:warn)
+          anomalies = nil
+
+          expect { anomalies = described_class.call(anomalous_run) }
+            .to change(AgentRunAnomaly, :count).by_at_least(1)
+
           token_anomaly = anomalies.find { |a| a.metric_name == "tokens_total" }
           expect(token_anomaly).to be_present
           expect(token_anomaly.anomaly_type).to eq("high_value")
-        end
-
-        it "persists the anomaly" do
-          expect { described_class.call(anomalous_run) }
-            .to change(AgentRunAnomaly, :count).by_at_least(1)
-        end
-
-        it "logs the anomaly" do
-          allow(Rails.logger).to receive(:warn)
-          described_class.call(anomalous_run)
-
-          expect(Rails.logger).to have_received(:warn).with(
-            hash_including(
-              message: "anomaly_detection.anomaly_detected",
-              metric_name: "tokens_total"
-            )
-          )
-        end
-
-        it "publishes an agent run notification" do
-          described_class.call(anomalous_run)
-
-          expect(Notifications::Publish).to have_received(:call).with(
-            hash_including(
-              account: project.account,
-              source: "agent_run_anomaly",
-              subject: anomalous_run,
-              nav_section: "agent_runs"
-            )
-          )
-        end
-
-        # @spec NOTIFICATION-SEVERITY-001
-        it "always classifies the notification as info" do
-          described_class.call(anomalous_run)
-
-          expect(Notifications::Publish).to have_received(:call).with(
-            hash_including(severity: :info)
-          )
+          expect(Rails.logger).to have_received(:warn).with(hash_including(
+            message: "anomaly_detection.anomaly_detected",
+            metric_name: "tokens_total"
+          ))
+          expect(Notifications::Publish).to have_received(:call).with(hash_including(
+            account: project.account,
+            source: "agent_run_anomaly",
+            subject: anomalous_run,
+            nav_section: "agent_runs",
+            severity: :info
+          ))
         end
       end
 

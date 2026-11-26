@@ -1026,7 +1026,7 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#provision" do
-    include_context "with stable provisioning project"
+    include_context "with stable project"
 
     context "when successful" do
       it "creates and starts a container" do

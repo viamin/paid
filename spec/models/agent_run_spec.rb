@@ -86,6 +86,7 @@ RSpec.describe AgentRun do
       expect(agent_run.provider_switches).to eq(2)
       expect(agent_run.providers_attempted).to eq([ { "runner" => runner.routing_key } ])
       expect(agent_run.final_provider).to eq(runner.routing_key)
+      expect(agent_run.reload.effective_provider).to eq(runner.routing_key)
     end
 
     it "keeps runner-named attributes synchronized when legacy provider setters are used" do
@@ -5637,27 +5638,27 @@ RSpec.describe AgentRun do
 
   describe "#effective_provider" do
     it "returns final_runner when present and not mapped" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "codex")
+      agent_run = described_class.new(agent_type: "claude_code", final_runner: "codex")
       expect(agent_run.effective_provider).to eq("codex")
     end
 
     it "normalizes final_runner when it contains a legacy agent-type identifier" do
-      agent_run = create(:agent_run, agent_type: "cursor", final_runner: "claude_code")
+      agent_run = described_class.new(agent_type: "cursor", final_runner: "claude_code")
       expect(agent_run.effective_provider).to eq("claude")
     end
 
     it "returns normalized runner key when final_runner is nil" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: nil)
+      agent_run = described_class.new(agent_type: "claude_code", final_runner: nil)
       expect(agent_run.effective_provider).to eq("claude")
     end
 
     it "returns normalized runner key when final_runner is blank" do
-      agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "")
+      agent_run = described_class.new(agent_type: "claude_code", final_runner: "")
       expect(agent_run.effective_provider).to eq("claude")
     end
 
     it "returns agent_type as-is for non-mapped types" do
-      agent_run = create(:agent_run, :cursor, final_runner: nil)
+      agent_run = described_class.new(agent_type: "cursor", final_runner: nil)
       expect(agent_run.effective_provider).to eq("cursor")
     end
   end
