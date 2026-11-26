@@ -9,20 +9,25 @@ RSpec.describe TokenUsageTracker do
   let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
 
   describe ".track" do
-    it "increments tokens_input on the agent run" do
+    it "updates run and project tokens and records the metric for one usage", :aggregate_failures do
       expect {
         described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
       }.to change { agent_run.reload.tokens_input }.by(1000)
+        .and change { agent_run.reload.tokens_output }.by(500)
+        .and change { project.reload.total_tokens_used }.by(1500)
+        .and change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
+
+      log = agent_run.agent_run_logs.where(log_type: "metric").last
+      content = JSON.parse(log.content)
+      expect(content["tokens_input"]).to eq(1000)
+      expect(content["tokens_output"]).to eq(500)
+      expect(log.metadata).to eq({ "type" => "token_usage" })
     end
 
-    it "increments tokens_output on the agent run" do
+    it "updates run and project cost for the same usage", :aggregate_failures do
       expect {
-        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
-      }.to change { agent_run.reload.tokens_output }.by(500)
-    end
-
-    it "calculates and sets cost_cents on the agent run" do
-      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
+      }.to change { project.reload.total_cost_cents }.by(1800)
 
       agent_run.reload
       # $3/M input + $15/M output = $18 = 1800 cents
@@ -38,18 +43,6 @@ RSpec.describe TokenUsageTracker do
       expect(agent_run.tokens_output).to eq(150)
     end
 
-    it "updates project total_tokens_used" do
-      expect {
-        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
-      }.to change { project.reload.total_tokens_used }.by(1500)
-    end
-
-    it "updates project total_cost_cents" do
-      expect {
-        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1_000_000, tokens_output: 1_000_000 })
-      }.to change { project.reload.total_cost_cents }.by(1800)
-    end
-
     it "resolves the per-run token limit once per tracking call" do
       project.update!(max_tokens_per_run: nil)
       project.created_by.settings.update!(max_tokens_per_run: 5_000)
@@ -59,18 +52,6 @@ RSpec.describe TokenUsageTracker do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
 
       expect(AgentRuns::UserSettingsResolver).to have_received(:call).once.with(project: project, strict: false, create: false)
-    end
-
-    it "creates a metric log entry" do
-      expect {
-        described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 500 })
-      }.to change { agent_run.agent_run_logs.where(log_type: "metric").count }.by(1)
-
-      log = agent_run.agent_run_logs.where(log_type: "metric").last
-      content = JSON.parse(log.content)
-      expect(content["tokens_input"]).to eq(1000)
-      expect(content["tokens_output"]).to eq(500)
-      expect(log.metadata).to eq({ "type" => "token_usage" })
     end
 
     it "creates a per-request TokenUsage record" do
