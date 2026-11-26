@@ -144,7 +144,8 @@
   with normal queue, Auto-Pick, controller and MCP creation; a refused recheck
   SHALL leave the failed lineage unconsumed. A different-goal owner SHALL NOT
   retire the failed implementation as retried. Classifications alone SHALL
-  not be reported as execution.
+  not be reported as execution; scheduling, locked claim, and refusal SHALL
+  remain distinct inspectable decisions.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
   `RetryFailedManualIssueCreatePrJob`, `Activities::QueueAgentRunActivity`,
   `Issues::EnqueueEligible`, `Tools::TriggerAgentRun`.

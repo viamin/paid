@@ -21,6 +21,7 @@ module RetryableAttempts
       return record_skip(attempt, assessment) unless assessment.eligible?
 
       job_class.set(wait: delay.call(assessment.attempt)).perform_later(attempt.id, assessment.attempt)
+      policy.record_scheduled!(attempt, decision_point: decision_point, retry_number: assessment.attempt) if policy.respond_to?(:record_scheduled!)
       Result.new(:scheduled, :scheduled, attempt, nil)
     end
 
