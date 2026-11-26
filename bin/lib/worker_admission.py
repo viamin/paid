@@ -50,10 +50,14 @@ def write_json(path, value):
         temporary.unlink(missing_ok=True)
 
 
+def process_start_ticks(pid):
+    contents = (Path("/proc") / str(pid) / "stat").read_text()
+    return int(contents[contents.rindex(")") + 2:].split()[19])
+
+
 def process_identity(pid):
     directory = Path("/proc") / str(pid)
-    contents = (directory / "stat").read_text()
-    start_ticks = int(contents[contents.rindex(")") + 2:].split()[19])
+    start_ticks = process_start_ticks(pid)
     arguments = (directory / "cmdline").read_bytes().split(b"\0")
     workspace = (directory / "cwd").resolve(strict=True)
     worker_script = workspace / "bin/temporal_worker"
@@ -64,6 +68,8 @@ def process_identity(pid):
     )
     if not is_worker:
         raise AdmissionError("process is not the expected Temporal worker")
+    if process_start_ticks(pid) != start_ticks:
+        raise AdmissionError("worker process changed during observation")
     return {"start_ticks": start_ticks, "workspace": str(workspace)}
 
 
@@ -110,7 +116,8 @@ def supervisor_cohort(workspace, supervisors, processes):
 class Drain:
     """One serialized, persistent generation for every affected worker role."""
 
-    def __init__(self, workspace, roles, target_revision, expected_processes, *, identity_reader=process_identity):
+    def __init__(self, workspace, roles, target_revision, expected_processes, *, identity_reader=process_identity,
+                 original_process_reader=process_start_ticks):
         self.workspace = str(Path(workspace).resolve(strict=True))
         if sorted(roles) != ["agent", "poll"]:
             raise AdmissionError("both worker roles are required")
@@ -123,6 +130,7 @@ class Drain:
         self.target_revision = target_revision
         self.expected_processes = self.validate_processes(expected_processes)
         self.identity_reader = identity_reader
+        self.original_process_reader = original_process_reader
         self.directory = Path(self.workspace) / "tmp"
         self.journal = self.directory / "worker-admission.json"
         self.generation = str(uuid.uuid4())
@@ -267,9 +275,15 @@ class Drain:
             self.preserve_requests = True
             current = {role: self.snapshot(role) for role in self.roles}
             unchanged = current == self.snapshots
-            target = all(value["revision"] == self.target_revision and value["boot_id"] != self.snapshots[role]["boot_id"] and (value["pid"], value["process_start_ticks"]) != (self.snapshots[role]["pid"], self.snapshots[role]["process_start_ticks"]) for role, value in current.items())
-            if not unchanged and not (previous["phase"] == "acknowledged" and target):
+            target_roles = {
+                role for role, value in current.items()
+                if value["revision"] == self.target_revision and value["boot_id"] != self.snapshots[role]["boot_id"]
+                and (value["pid"], value["process_start_ticks"]) != (self.snapshots[role]["pid"], self.snapshots[role]["process_start_ticks"])
+            }
+            known = all(value == self.snapshots[role] or role in target_roles for role, value in current.items())
+            if not unchanged and not (previous["phase"] == "acknowledged" and known):
                 raise AdmissionError("mixed or unknown worker boots require investigation before stop")
+            self.verify_original_instances_gone(target_roles)
             for path in sorted({Path(str(value) + ".admission.request") for value in self.roles.values()}):
                 try:
                     value = read_json(path)
@@ -289,7 +303,7 @@ class Drain:
             self.check_deadline(deadline)
             self.acknowledged = True
             return {"generation": self.generation, "roles": sorted(self.roles), "acknowledged": True,
-                    "cohort": "unchanged" if unchanged else "target"}
+                    "cohort": "unchanged" if unchanged else "target" if len(target_roles) == len(self.roles) else "mixed"}
         except BaseException:
             self.close()
             raise
@@ -324,6 +338,23 @@ class Drain:
         self.preserve_requests = False
         self.close()
 
+    def verify_original_instances_gone(self, roles):
+        observed = set()
+        for role in roles:
+            original = self.snapshots[role]
+            identity = (original["pid"], original["process_start_ticks"])
+            if identity in observed:
+                continue
+            observed.add(identity)
+            try:
+                current_ticks = self.original_process_reader(original["pid"])
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            except (OSError, ValueError, IndexError):
+                raise AdmissionError("original worker process visibility is unknown") from None
+            if current_ticks == original["process_start_ticks"]:
+                raise AdmissionError("original worker process instance remains alive")
+
     def resume(self, revision, expected_processes):
         if not self.acknowledged or revision != self.target_revision:
             raise AdmissionError("no complete acknowledgement")
@@ -333,6 +364,7 @@ class Drain:
             old = self.snapshots[role]
             if current["revision"] != revision or current["boot_id"] == old["boot_id"] or (current["pid"], current["process_start_ticks"]) == (old["pid"], old["process_start_ticks"]):
                 raise AdmissionError("target worker boot is not verified")
+        self.verify_original_instances_gone(self.roles)
         self.remove_requests()
         self.record("resumed")
         self.acknowledged = False

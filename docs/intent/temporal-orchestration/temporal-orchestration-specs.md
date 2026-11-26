@@ -53,7 +53,10 @@
   new poll and eager task admission, includes every outstanding unused poll or
   eager reservation, and identifies each admitted task as either safely queued
   with its original attempt/deadline unspent or a tracked owner that finishes
-  before the stop boundary. The acknowledgement and resume operations SHALL be
+  before the stop boundary. Before reopening after replacement, it SHALL prove
+  every original PID/start-time instance has exited; fresh target metadata or
+  unknown process visibility SHALL NOT substitute for that proof.
+  The acknowledgement and resume operations SHALL be
   non-blocking with respect to SDK notification callbacks. On timeout, unknown
   state, abort, replacement, or a worker that lacks the capability, the updater
   SHALL defer adoption before stop and leave admission recoverable; it SHALL
@@ -81,7 +84,7 @@
   *Protocol and rollout:*
   `decisions/task-safe-worker-quiescence.md`.
   *Required tests:* `spec/lib/paid/worker_admission_spec.rb`,
-  `spec/lib/worker_admission_controller_spec.rb`, `spec/lib/dev_update_spec.rb`.
+  `spec/lib/paid/worker_admission_controller_spec.rb`, `spec/lib/dev_update_spec.rb`.
 
 ## Durable Workflow Boundary
 

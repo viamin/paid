@@ -34,6 +34,15 @@ class ControllerTest(unittest.TestCase):
         for role, pid in zip(self.paths, self.processes):
             self.marker(role, pid)
 
+    def start_ticks(self, pid):
+        if pid not in self.processes:
+            try:
+                value = (Path("/proc") / str(pid) / "stat").read_text()
+                return int(value[value.rindex(")") + 2:].split()[19])
+            except FileNotFoundError:
+                raise ProcessLookupError(pid) from None
+        return self.processes[pid]["start_ticks"]
+
     def tearDown(self):
         for drain in self.drains:
             drain.close()
@@ -52,7 +61,7 @@ class ControllerTest(unittest.TestCase):
 
     def drain(self):
         drain = Drain(self.root, self.paths, "b" * 40, self.expected_processes,
-                      identity_reader=lambda pid: self.processes[pid])
+                      identity_reader=lambda pid: self.processes[pid], original_process_reader=self.start_ticks)
         self.drains.append(drain)
         return drain
 
@@ -67,9 +76,12 @@ class ControllerTest(unittest.TestCase):
         self.permits.remove(descriptor)
 
     def replace(self, role, pid, revision="b" * 40):
+        old_pid = self.expected_processes[role]["pid"]
         self.processes[pid] = {"start_ticks": pid + 200, "workspace": str(self.root)}
         self.expected_processes[role] = {"pid": pid, "start_ticks": pid + 200}
         self.marker(role, pid, revision=revision)
+        if old_pid not in {value["pid"] for value in self.expected_processes.values()}:
+            del self.processes[old_pid]
 
     def requests(self):
         return [Path(str(path) + ".admission.request") for path in set(self.paths.values())]
@@ -211,18 +223,61 @@ class ControllerTest(unittest.TestCase):
         recovery.abort()
         self.assertFalse(any(path.exists() for path in self.requests()))
 
-    def test_recovery_can_resume_verified_target_but_refuses_mixed_boots(self):
+    def test_recovery_classifies_known_mixed_boots_before_replacing_remaining_roles(self):
         original = self.drain()
         original.acquire(1)
         original.close()
         self.replace("agent", 21)
+        mixed = self.drain()
+        self.assertEqual(mixed.recover(1)["cohort"], "mixed")
         with self.assertRaises(AdmissionError):
-            self.drain().recover(1)
+            mixed.abort()
+        mixed.close()
         self.assertTrue(all(path.exists() for path in self.requests()))
         self.replace("poll", 22)
         recovery = self.drain()
         recovery.recover(1)
         recovery.resume("b" * 40, self.expected_processes)
+        self.assertFalse(any(path.exists() for path in self.requests()))
+
+    def test_resume_refuses_when_an_original_worker_remains_alive(self):
+        drain = self.drain()
+        drain.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        self.processes[11] = {"start_ticks": 101, "workspace": str(self.root)}
+        with self.assertRaises(AdmissionError):
+            drain.resume("b" * 40, self.expected_processes)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_target_recovery_refuses_a_retained_original_process(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        self.processes[12] = {"start_ticks": 102, "workspace": str(self.root)}
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_unknown_original_pid_visibility_does_not_authorize_resume(self):
+        drain = self.drain()
+        drain.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        with patch.object(drain, "original_process_reader", side_effect=PermissionError):
+            with self.assertRaises(AdmissionError):
+                drain.resume("b" * 40, self.expected_processes)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_reused_numeric_pid_does_not_preserve_the_original_process_instance(self):
+        drain = self.drain()
+        drain.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        self.processes[11] = {"start_ticks": 999, "workspace": str(self.root)}
+        drain.resume("b" * 40, self.expected_processes)
         self.assertFalse(any(path.exists() for path in self.requests()))
 
     def test_late_successful_lock_acquisition_cannot_ack_after_deadline(self):
