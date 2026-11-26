@@ -34,7 +34,7 @@ module Dashboard
 
     def ranked_held_issues_sql
       <<~SQL.squish
-        WITH excluded_issues AS MATERIALIZED (#{excluded.select(:id).to_sql})
+        WITH excluded_issues AS MATERIALIZED (#{excluded.select(:id, :project_id, :github_number).to_sql})
         SELECT held_issues.id
         FROM (#{held_issue_candidates.to_sql}) AS held_issues
         WHERE held_issue_rank <= #{MAX_HELD_ISSUES}
@@ -42,7 +42,7 @@ module Dashboard
     end
 
     def held_issue_candidates
-      excluded.where(held_issue_predicate)
+      Issue.unscoped.from("excluded_issues AS issues").where(held_issue_predicate)
         .select("issues.id, ROW_NUMBER() OVER (PARTITION BY issues.project_id ORDER BY issues.github_number) AS held_issue_rank")
     end
 

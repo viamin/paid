@@ -292,7 +292,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     end
 
     # @spec QUEUE-HANDOFF-004
-    it "materializes the held-work exclusion once for blocker and action selection" do
+    it "reuses the materialized held-work exclusion for ranking, blockers, and actions" do
       create_dependency_held_issues(project)
 
       queries = capture_queries { described_class.call(user: user) }
@@ -300,7 +300,8 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
       expect(held_work_query).to include("WITH excluded_issues AS MATERIALIZED")
       expect(held_work_query.scan("WITH excluded_issues AS MATERIALIZED").size).to eq(1)
-      expect(held_work_query.scan("FROM excluded_issues").size).to eq(6)
+      expect(held_work_query).to include("FROM excluded_issues AS issues")
+      expect(held_work_query.scan("FROM excluded_issues").size).to eq(7)
     end
 
     # @spec QUEUE-HANDOFF-004

@@ -56,10 +56,10 @@ decisions route to their existing Inbox action; amendment holds direct the
 operator to the affected issue's existing review context.
 
 Held-work ranking evaluates the shared candidate-eligibility exclusion once in
-a materialized `excluded_issues` relation. The blocker and decision subqueries
-read their issue IDs from that relation while the outer candidate exclusion
-remains in place. This keeps the existing ranking and tenant-visible result
-set while preventing each subquery from independently expanding the
+a materialized `excluded_issues` relation. The ranked candidate source and the
+blocker and decision subqueries read their issue IDs from that relation. This
+keeps the existing ranking and tenant-visible result set while preventing the
+ranking or any provenance subquery from independently expanding the
 tenant-policy-qualified eligibility relation.
 Other admission controls remain summarized rather than being inferred as a
 human decision or made actionable by the diagnostic.

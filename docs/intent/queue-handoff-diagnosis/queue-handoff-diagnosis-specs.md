@@ -26,4 +26,4 @@
   provenance, while retaining every blocker and action for each selected issue;
   it SHALL not infer that a summarized admission control is a human decision.
   It SHALL evaluate the candidate-eligibility exclusion once in a materialized
-  relation and reuse that relation for blocker and action selection.
+  relation and reuse that relation for ranking, blocker, and action selection.
