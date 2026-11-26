@@ -55,7 +55,7 @@
   turn is cancelled, the system SHALL use the existing lifecycle only before an
   invocation begins, preserve history, record one terminal outcome, and never
   replay a possibly started CLI invocation or duplicate an assistant reply.
-  *Planned tests:* focused recovery/serialization specs and a permanent system
+  *Planned tests:* focused recovery specs and a permanent system
   history-preservation flow.
 
 - [ ] **WORKSPACE-AGENT-CHAT-007** — When the flag is disabled or a session is
@@ -64,3 +64,18 @@
   session; it SHALL NOT silently switch mode, authentication, billing, privacy,
   runner authority, or tool confirmation semantics.
   *Planned tests:* permanent system flag/rollback flow and focused route guards.
+
+- [ ] **WORKSPACE-AGENT-CHAT-008** — When two distinct workspace-agent messages
+  are submitted concurrently for one session, the system SHALL atomically admit
+  at most one active turn under a session-level `ChatSession` row lock before
+  persisting its message and `ChatTurn` or invoking the CLI. While that turn is
+  active, the other submission SHALL receive a retryable `turn_in_progress`
+  result and SHALL NOT create a `ChatTurn`, persist a user message, invoke the
+  CLI, or produce an assistant reply. Retrying the admitted request SHALL return
+  its existing turn; after its terminal transition, a rejected message MAY be
+  submitted as a new turn.
+  *Planned tests:* focused concurrent admission service spec using two
+  distinct-message workers and an explicit invocation barrier; assert one
+  admitted turn and CLI call, one `turn_in_progress` result, no losing-message
+  persistence, idempotent retry of the admitted request, and admission of the
+  rejected message only after the first turn is terminal.
