@@ -7,11 +7,21 @@ prefix: TEST-SUITE
 
 ## Purpose
 
-Paid's non-system CI suite runs over 25,000 examples serially and takes about
-43 minutes of test execution. The slowest individual examples account for only
-a small fraction of that total. Reduce feedback latency while retaining every
-existing check, example, isolation boundary, and the 80% whole-suite coverage
+Paid's non-system suite contains tens of thousands of examples. Repeated fixture
+construction and queries accumulate across the suite, so the slowest individual
+examples account for only part of the total. Reduce feedback latency while retaining every
+distinct regression check, isolation boundary, and the 80% whole-suite coverage
 floor. Keep local `bin/rspec` and separate system/performance checks available.
+
+Examples with the same setup and operation may consolidate related assertions
+without dropping the assertions or distinct failure scenarios. Similar names or
+overlapping code coverage alone do not establish redundancy.
+A cheaper retained check must catch the removed example's plausible regression;
+use failure or mutation evidence where practical alongside code coverage.
+Section-specific dashboard examples exercise the public `only:` interface for
+the sections they assert, while default-response and cross-account integration
+examples retain complete dashboard assembly. Avoid recomputing unrelated
+sections in every component example.
 
 ## Execution
 
@@ -192,3 +202,11 @@ global factory defaults to reduce counts.
 Queue host-saturation setup reuses one project per generated load batch. Host
 occupancy retains a distinct active run and issue for every requested slot;
 other accounts and independently constructed batches remain separate.
+
+Auto-pick candidate selection and dashboard statistics specs reuse their stable
+project configuration through group transactions and fresh per-example instances.
+Candidate projects retain auto-pick enablement from creation. Dashboard accounts
+and projects retain their original factory ownership relationships. Scenario
+issues, runs, role changes, owner settings, and secondary projects remain local
+to each example; isolation checks mutate configuration and create scenario rows
+to verify that the next example starts clean.
