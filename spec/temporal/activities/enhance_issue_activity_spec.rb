@@ -4,8 +4,10 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::EnhanceIssueActivity do
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
   let(:issue) do
     create(:issue, :in_progress,
       project: project,

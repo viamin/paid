@@ -509,14 +509,24 @@ RSpec.describe AgentRun do
   end
 
   describe "scopes" do
-    describe ".by_status" do
-      it "returns agent runs with the specified status" do
-        running_run = create(:agent_run, :running)
-        create(:agent_run, :completed)
-
-        expect(described_class.by_status("running")).to include(running_run)
-        expect(described_class.by_status("running").count).to eq(1)
+    # @spec TEST-SUITE-017
+    it "classifies persisted status scopes across projects", :aggregate_failures do
+      projects = create_pair(:project)
+      statuses = %i[queued running completed no_output failed cancelled timeout retried
+        auth_expired rate_limited paused token_budget_exceeded]
+      runs = statuses.each_with_index.to_h do |status, index|
+        [ status, create(:agent_run, status, project: projects[index % projects.size]) ]
       end
+      finished = %i[completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited]
+
+      runs.each do |status, run|
+        expect(described_class.by_status(status.to_s)).to contain_exactly(run)
+      end
+      runs.except(:token_budget_exceeded).each do |status, run|
+        expect(described_class.public_send(status)).to contain_exactly(run)
+      end
+      expect(described_class.active).to contain_exactly(runs.fetch(:running))
+      expect(described_class.finished).to match_array(runs.values_at(*finished))
     end
 
     describe ".claimed" do
@@ -538,16 +548,6 @@ RSpec.describe AgentRun do
 
         expect(described_class.unclaimed).to include(queued_run)
         expect(described_class.unclaimed).not_to include(synthetic_run)
-      end
-    end
-
-    describe ".running" do
-      it "returns only running runs" do
-        running_run = create(:agent_run, :running)
-        create(:agent_run)
-
-        expect(described_class.running).to include(running_run)
-        expect(described_class.running.count).to eq(1)
       end
     end
 
@@ -668,105 +668,6 @@ RSpec.describe AgentRun do
       end
     end
 
-    describe ".completed" do
-      it "returns only completed runs" do
-        completed_run = create(:agent_run, :completed)
-        create(:agent_run)
-
-        expect(described_class.completed).to include(completed_run)
-        expect(described_class.completed.count).to eq(1)
-      end
-    end
-
-    describe ".failed" do
-      it "returns only failed runs" do
-        failed_run = create(:agent_run, :failed)
-        create(:agent_run)
-
-        expect(described_class.failed).to include(failed_run)
-        expect(described_class.failed.count).to eq(1)
-      end
-    end
-
-    describe ".cancelled" do
-      it "returns only cancelled runs" do
-        cancelled_run = create(:agent_run, :cancelled)
-        create(:agent_run)
-
-        expect(described_class.cancelled).to include(cancelled_run)
-        expect(described_class.cancelled.count).to eq(1)
-      end
-    end
-
-    describe ".timeout" do
-      it "returns only timeout runs" do
-        timeout_run = create(:agent_run, :timeout)
-        create(:agent_run)
-
-        expect(described_class.timeout).to include(timeout_run)
-        expect(described_class.timeout.count).to eq(1)
-      end
-    end
-
-    describe ".queued" do
-      it "returns only queued runs" do
-        queued_run = create(:agent_run, :queued)
-        create(:agent_run, :running)
-
-        expect(described_class.queued).to include(queued_run)
-        expect(described_class.queued.count).to eq(1)
-      end
-    end
-
-    describe ".retried" do
-      it "returns only retried runs" do
-        retried_run = create(:agent_run, :retried)
-        create(:agent_run)
-
-        expect(described_class.retried).to include(retried_run)
-        expect(described_class.retried.count).to eq(1)
-      end
-    end
-
-    describe ".active" do
-      it "includes running runs but not queued or completed" do
-        running_run = create(:agent_run, :running)
-        create(:agent_run, :completed)
-        create(:agent_run, :queued)
-
-        active = described_class.active
-        expect(active).to include(running_run)
-        expect(active.count).to eq(1)
-      end
-    end
-
-    describe ".finished" do
-      it "includes completed, failed, cancelled, timeout, retried, auth_expired, and rate_limited runs" do
-        completed_run = create(:agent_run, :completed)
-        failed_run = create(:agent_run, :failed)
-        cancelled_run = create(:agent_run, :cancelled)
-        timeout_run = create(:agent_run, :timeout)
-        retried_run = create(:agent_run, :retried)
-        auth_expired_run = create(:agent_run, :auth_expired)
-        rate_limited_run = create(:agent_run, :rate_limited)
-        create(:agent_run)
-
-        finished = described_class.finished
-        expect(finished).to include(completed_run, failed_run, cancelled_run, timeout_run, retried_run, auth_expired_run, rate_limited_run)
-        expect(finished.count).to eq(7)
-      end
-    end
-
-    describe ".rate_limited" do
-      it "returns only rate_limited runs" do
-        rate_limited_run = create(:agent_run, :rate_limited)
-        create(:agent_run)
-
-        expect(described_class.rate_limited).to include(rate_limited_run)
-        expect(described_class.rate_limited.count).to eq(1)
-      end
-    end
-
     describe ".rate_limited_due" do
       it "returns only rate_limited runs whose recovery window has elapsed" do
         due = create(:agent_run, :rate_limited, rate_limited_until: 1.minute.ago)
@@ -774,16 +675,6 @@ RSpec.describe AgentRun do
         create(:agent_run, :rate_limited, rate_limited_until: nil)
 
         expect(described_class.rate_limited_due).to contain_exactly(due)
-      end
-    end
-
-    describe ".auth_expired" do
-      it "returns only auth_expired runs" do
-        auth_expired_run = create(:agent_run, :auth_expired)
-        create(:agent_run)
-
-        expect(described_class.auth_expired).to include(auth_expired_run)
-        expect(described_class.auth_expired.count).to eq(1)
       end
     end
 

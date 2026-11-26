@@ -5,7 +5,9 @@ require "shellwords"
 require "open3"
 
 RSpec.describe Containers::GitOperations do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
   let(:container_service) { instance_double(Containers::Provision) }
   let(:git_ops) { described_class.new(container_service: container_service, agent_run: agent_run) }

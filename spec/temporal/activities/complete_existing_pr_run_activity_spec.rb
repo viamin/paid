@@ -4,6 +4,9 @@ require "ostruct"
 require "rails_helper"
 
 RSpec.describe Activities::CompleteExistingPrRunActivity do
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   before { configure_llm_routing(project: project)
 allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive(:pull_request)
@@ -29,7 +32,6 @@ allow(GithubClient).to receive(:new).and_return(github_client)
     )
    }
 
-  let(:project) { create(:project) }
   let(:issue) { create(:issue, :pull_request, project: project) }
   let(:agent_run) do
     create(:agent_run, :running, project: project, issue: issue,

@@ -3,7 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Llm::AnalyzePartialCloseout do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   let(:issue) { create(:issue, :in_progress, project: project, github_state: "open") }
   let(:agent_run) { create(:agent_run, :completed, project: project, issue: issue, pull_request_number: 99) }
 
