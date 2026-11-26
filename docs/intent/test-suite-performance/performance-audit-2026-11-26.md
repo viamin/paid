@@ -350,6 +350,38 @@ These changes are a candidate for full-suite verification. The measured
 599-example gain does not establish that the complete suite is twice as fast;
 the normal aggregate coverage and all full CI shards remain required.
 
+### Full-suite compatibility follow-up
+
+The first full CI run for `f72ad56662ce0d770a5fa3fc1404229dc865c275`,
+run `45789558929`, reports 21 failures across its five shards. Three query
+assertions assume literal SQL values; they now inspect the actual predicate
+and typed binds while retaining the named-issue, bootstrap-query-count, and
+crossed-repository exclusion checks. The shared query recorder exposes filtered
+payloads alongside its existing SQL-string API; it does not change executed SQL.
+
+The other 18 failures are prepared `SELECT issues.*` result-type errors. The
+25 affected closeout examples pass alone, but a 35-example reproduction with
+the preceding migration specs reproduces exactly the same 18 failures. The
+review-goal retry-reset migration removes and re-adds an issue column, changing
+column order during the example. Its final reload caches that temporary result
+shape. Clearing Issue's existing column/statement metadata in the migration
+spec's teardown prevents that plan from surviving fixture rollback. The same
+35-example reproduction then passes with no failures or skips. No connection
+retry, global cache flush, or prepared-statement suppression is added.
+
+The passing reproduction uses private database
+`paid_test_prof_repair_20261126_093644`, cloned from the earlier isolated schema
+test database. Its verified pre-run snapshot is 2,145,397 bytes with SHA-256
+`e0fa59ba07c358849a8ba00a823c7a9f21d2dfa38af0857e81f9f7bb03e03152`.
+Original databases remain intact. Reports: `prepared-closeout-repro.json`,
+`prepared-order-repro.json`, `prepared-order-green.json`, and
+`prepared-bound-query-green.json` in `/tmp/paid-testprof-audit/`.
+All 247 examples in the three changed query-spec files pass with seed 97531,
+with no skips. A new full CI run remains required. The simplicity pass against
+`f72ad56662ce0d770a5fa3fc1404229dc865c275` keeps cache cleanup local to the
+schema-changing spec and preserves the query recorder's existing filtering and
+SQL-string contract; only callers needing binds use its payload API.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or

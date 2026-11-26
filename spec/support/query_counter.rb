@@ -19,11 +19,15 @@ module QueryCounter
   end
 
   def capture_queries
+    capture_query_payloads { yield }.map { |payload| payload[:sql] }
+  end
+
+  def capture_query_payloads
     queries = []
     callback = lambda do |*, payload|
       next if IGNORED_QUERY_NAMES.include?(payload[:name]) || payload[:cached]
 
-      queries << payload[:sql]
+      queries << payload
     end
 
     ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
