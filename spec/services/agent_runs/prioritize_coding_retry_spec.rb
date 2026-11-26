@@ -65,6 +65,36 @@ RSpec.describe AgentRuns::PrioritizeCodingRetry do # @spec QUEUE-TIER-008
     end
   end
 
+  [
+    { temporal_workflow_id: "retained-workflow" },
+    { started_at: 1.minute.ago },
+    { container_id: "retained-container" },
+    { runner_handle: { "identifier" => "retained-runner" } },
+    { service_container_ids: [ "retained-service" ] },
+    { worktree_path: "/private/retained-worktree" }
+  ].each do |ownership|
+    it "leaves retained #{ownership.keys.first} ownership unchanged" do # @spec QUEUE-TIER-008
+      agent_run.update!(ownership)
+      retained = agent_run.attributes.slice(*ownership.keys.map(&:to_s))
+
+      expect(prioritize).to be(false)
+
+      expect(agent_run.reload.attributes.slice(*retained.keys)).to eq(retained)
+      expect(agent_run.operator_coding_priority_requested_at).to be_nil
+      expect(account.account_activity_events.where(action: "agent_run.coding_priority_requested")).to be_empty
+    end
+  end
+
+  it "leaves an active associated worktree unchanged" do # @spec QUEUE-TIER-008
+    worktree = create(:worktree, :active, project:, agent_run:)
+
+    expect(prioritize).to be(false)
+
+    expect(worktree.reload).to be_active
+    expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
+    expect(account.account_activity_events.where(action: "agent_run.coding_priority_requested")).to be_empty
+  end
+
   it "does not prioritize an automatic run without retry or continuation authority" do
     agent_run.update!(continuation_request: nil, source_pull_request_number: nil)
 
