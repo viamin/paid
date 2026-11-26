@@ -79,6 +79,29 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     expect(ranking.paths.sole.issues).to eq([ root, blocked ])
   end
 
+  # @spec DEPENDENCY-DECLARATIONS-011, PARTIAL-CLOSEOUT-048
+  it "evaluates each prerequisite's lifecycle independently from a recommend-close dependent" do
+    dependent = issue(1)
+    dependent.update!(paid_state: "recommend_close")
+    fulfilled_issue = create(:issue, :completed, project:, github_number: 2, github_state: "open")
+    open_pr = create(:issue, :pull_request, :completed, project:, github_number: 3, github_state: "open")
+    closed_unmerged_pr = create(:issue, :pull_request, :recommend_close, project:, github_number: 4,
+      github_state: "closed", pr_review_phase: "ready")
+    undeployed_merged_pr = create(:issue, :pull_request, project:, github_number: 5, github_state: "closed",
+      pr_review_phase: "merged", deployed_at: nil)
+    deployed_merged_pr = create(:issue, :pull_request, project:, github_number: 6, github_state: "closed",
+      pr_review_phase: "merged", deployed_at: Time.current)
+    [ fulfilled_issue, open_pr, closed_unmerged_pr, undeployed_merged_pr, deployed_merged_pr ].each do |prerequisite|
+      create(:issue_dependency, issue: dependent, depends_on_issue: prerequisite,
+        requires_deployment: prerequisite == undeployed_merged_pr || prerequisite == deployed_merged_pr)
+    end
+
+    ranking = described_class.call(account:, queue_issue_ids: [ dependent.id ])
+
+    expect(ranking.map(&:root)).to contain_exactly(open_pr, closed_unmerged_pr)
+    expect(ranking.flat_map(&:paths).map(&:completion_alone_makes_runnable)).to all(be(false))
+  end
+
   # @spec PARTIAL-CLOSEOUT-048
   it "does not claim sole unblockability while an undeployed merged PR also blocks the work" do
     root = issue(1)
@@ -122,6 +145,22 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
 
     expect(ranking.paths.sole.completion_alone_makes_runnable).to be(true)
+  end
+
+  # @spec DEPENDENCY-DECLARATIONS-011, PARTIAL-CLOSEOUT-048
+  it "retains a tracked external open completed PR for a recommend-close dependent" do
+    upstream_project = create(:project, account:)
+    dependent = issue(1)
+    dependent.update!(paid_state: "recommend_close")
+    external_pr = create(:issue, :pull_request, :completed, project: upstream_project, github_number: 2,
+      github_state: "open")
+    create(:issue_dependency, issue: dependent, depends_on_issue: nil, depends_on_owner: upstream_project.owner,
+      depends_on_repo: upstream_project.repo, depends_on_number: external_pr.github_number)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ dependent.id ])
+
+    expect(ranking.sole.root).to eq(external_pr)
+    expect(ranking.sole.paths.sole.issues).to eq([ external_pr, dependent ])
   end
 
   # @spec PARTIAL-CLOSEOUT-048
