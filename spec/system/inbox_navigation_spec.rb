@@ -7,6 +7,11 @@ require "warden/test/helpers"
 RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :system do
   include Warden::Test::Helpers
 
+  # History restoration can outlast the default wait under concurrent suite load.
+  around do |example|
+    Capybara.using_wait_time(15) { example.run }
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account:, password: "password123") }
   let(:project) do
@@ -145,6 +150,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   def expect_project_switch_history(filtered_url:, selected_url:, issue:)
     page.go_back
     expect(page).to have_current_path(filtered_url)
+    expect(page).to have_css("#inbox-list", visible: true)
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
     page.go_back
     expect(page).to have_current_path(member_path(first_issue))
@@ -152,6 +158,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_button("Filters", text: project.full_name)
     page.go_forward
     expect(page).to have_current_path(filtered_url)
+    expect(page).to have_css("#inbox-list", visible: true)
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
     page.go_forward
     expect(page).to have_current_path(selected_url)

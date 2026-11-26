@@ -3,12 +3,21 @@
 require "rails_helper"
 
 RSpec.describe PartialCloseouts::AutoAudit do
-  let(:account) { create(:account) }
-  let(:owner) { create(:user, account:) }
-  let(:project) { create(:project, account:, created_by: owner, auto_pick_enabled: true) }
+  let_it_be(:account, refind: true) do
+    TenantContext.with_system_access { create(:account) }
+  end
+  let_it_be(:owner, refind: true) do
+    TenantContext.with_system_access { create(:user, account:) }
+  end
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access { create(:project, account:, created_by: owner, auto_pick_enabled: true) }
+  end
   let(:issue) { create(:issue, project:, github_state: "open", paid_state: "completed") }
 
   before do
+    owner.account = account
+    project.account = account
+    project.created_by = owner
     create(:issue, :pull_request, project:, parent_issue: issue, github_number: 12,
       github_state: "closed", pr_review_phase: "merged")
   end

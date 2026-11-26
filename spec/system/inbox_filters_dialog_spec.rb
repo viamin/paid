@@ -22,6 +22,8 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
   let(:questions_body) do
     "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. What is the expected behavior?\n"
   end
+  let(:alpha_question) { create(:issue, :needs_input, project: project_a, title: "Alpha question", body: questions_body) }
+  let(:beta_question) { create(:issue, :needs_input, project: project_b, title: "Beta question", body: questions_body) }
   # Factory projects ship with a github_token, so the context_markdown
   # accessor reaches for issue comments on the selected inbox entry. Stub the
   # client so the inbox page builds under WebMock without touching the
@@ -35,8 +37,8 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
 
     project_a
     project_b
-    create(:issue, :needs_input, project: project_a, title: "Alpha question", body: questions_body)
-    create(:issue, :needs_input, project: project_b, title: "Beta question", body: questions_body)
+    alpha_question
+    beta_question
     create(:issue, project: project_b, paid_state: "manual_review", manual_review_reason: "Round limit reached.")
 
     Warden.test_mode!
@@ -66,7 +68,7 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
 
     expect(page).to have_content("Alpha question")
     expect(page).to have_selector("turbo-frame#inbox-detail")
-    expect(page).to have_selector("form[action='#{project_issue_clarifying_questions_path(project_a, project_a.issues.first)}']")
+    expect(page).to have_selector("form[action='#{project_issue_clarifying_questions_path(project_a, alpha_question)}']")
     expect(page).to have_selector("turbo-frame#inbox-history[loading='lazy']")
     page.execute_script("document.querySelector('#inbox-history').scrollIntoView()")
     expect(page).to have_content("Action history")
@@ -78,7 +80,7 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     within("#inbox-list") { click_link "Beta question" }
 
     expect(page).to have_selector("turbo-frame#inbox-detail h2", text: "Beta question")
-    expect(page).to have_selector("turbo-frame#inbox-detail form[action='#{project_issue_clarifying_questions_path(project_b, project_b.issues.first)}']")
+    expect(page).to have_selector("turbo-frame#inbox-detail form[action='#{project_issue_clarifying_questions_path(project_b, beta_question)}']")
   end
 
   # @spec INBOX-FOUNDATION-012
