@@ -639,6 +639,67 @@ instances, system tests, performance tests, and aggregate coverage. Evidence:
 `resource-isolated-throughput-summary.json` and the seven raw JSON/coverage
 reports in `/tmp/paid-testprof-audit/`.
 
+## Follow-up: SQL debug logging
+
+The 599-example, coverage-enabled workload at
+`386f241733b29947202608dcbfe65da0031e86c5` was repeated with debug/info/debug
+logging, seed 24680, separate fresh databases and dedicated Temporal namespaces
+and queues. Normal callbacks, prepared statements, and tenant constraints remain.
+
+| Logger | Examples / failures / pending | Test seconds | User CPU seconds | Measured SQL queries | Log bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Debug, before | 599 / 0 / 0 | 315.35 | 164.68 | 58,589 | 40,971,695 |
+| Info | 599 / 0 / 0 | 234.77 | 140.32 | 58,589 | 277,926 |
+| Debug, after | 599 / 0 / 0 | 304.04 | 179.06 | 58,589 | 40,971,750 |
+
+All three cover exactly the same 48,006 application lines. Info mode is 24.2%
+faster than the surrounding test-duration controls' mean and uses 18.4% less
+user CPU. Log output falls 99.3%. This is scoped evidence on a live host, not a
+whole-suite speedup claim. Raw controls, SQL counts, coverage sets, and namespace
+cleanup are in `/tmp/paid-testprof-audit/logging-controls-*` and
+`logging-temporal-namespaces-cleanup.json`.
+
+The test environment now defaults to info; `RAILS_LOG_LEVEL=debug` restores SQL
+diagnostics. One-off boot acceptance first fails on the old default because it
+emits SQL debug output. The changed default and explicit debug override then
+both pass: a real read-only `SELECT 1` executes, and actual captured info,
+warning, and error messages remain; SQL debug appears only in debug mode.
+The temporary acceptance check was removed from `.ephemeral-tests/` after
+verification, avoiding recurring suite cost. Its source, hashes, red failure,
+and green outputs are retained in `logging-default-acceptance.json`,
+`test_logging_acceptance.rb`, and `logging-*-green.log` under the audit directory.
+Full native-suite acceptance is still required for the changed default.
+LID: Full, version 1.3.0; TEST-SUITE-028.
+
+The first full local attempt at `c5ea9cf85` was intentionally interrupted after
+baseline failure analysis exposed a hard-coded Qdrant stub in the clarification
+specs. All three partial shards report zero failures across 2,692 examples, but
+this interrupted run is not full acceptance or performance evidence. Its
+processes were reaped, its private database containers were stopped with data
+retained, and all 1,237 unconsumed private Temporal executions were terminated.
+The original run and stop reason remain in `bounded-full/` under the audit path.
+
+The existing five clarification examples reproduce five failures with an
+alternate Qdrant URL: their collections stub only matches the shared service
+hostname. Using `Paid.qdrant_url` for that same HTTP 503 stub makes all five
+pass, with coverage enabled and no pending cases, against an `.invalid` URL
+with real HTTP still blocked. Every assertion remains. This repairs the test
+boundary for FEATURE-CREATION-001/002; it does not change application behavior
+or permit live service requests. Evidence: `qdrant-fixture-{red,green}.json`
+and their logs/coverage. The replacement full run uses the corrected fixture
+and private temporary-directory permissions from setup onward.
+
+Separate per-database PostgreSQL statistics identify a remaining planning cost.
+One snapshot reports 60.34 seconds planning versus 7.33 seconds executing, with
+zero reported JIT functions. The stalled-closeout membership check accounts for
+700 plans, 17.72 seconds planning, and only 0.14 seconds executing. These shared
+server statistics are diagnostic snapshots, not complete accounting; entries
+can be evicted. Rails' SQL-literal visitor marks literal-bearing queries as
+unpreparable, and `exists?` adds a literal projection. Inspect actual query
+preparability and tenant behavior before changing query construction or planner
+policy. Evidence: `logging-first-debug-pg-statements.json`,
+`logging-first-debug-planning.json`, and `logging-controls-pg-statements.json`.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or
