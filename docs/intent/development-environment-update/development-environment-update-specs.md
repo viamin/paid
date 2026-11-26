@@ -48,7 +48,7 @@
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
 
 - [D] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Task-safe Temporal worker
-  quiescence is deferred to `TEMPORAL-ORCHESTRATION-019`. Activity-body counts
+  quiescence is deferred to `TEMPORAL-ORCHESTRATION-021`. Activity-body counts
   remain observability only and SHALL NOT be used to authorize a worker stop,
   and missing readiness metadata SHALL NOT be treated as a verified
   no-Temporal-worker state. A failed supervisor inspection SHALL be treated as
@@ -75,3 +75,24 @@
   *Test:* `spec/models/worker_readiness_observation_spec.rb`,
   `spec/lib/paid/worker_readiness/heartbeat_spec.rb`,
   `spec/lib/paid/worker_readiness/startup_identity_spec.rb`.
+
+- [ ] **DEVELOPMENT-ENVIRONMENT-UPDATE-006** — Before stopping a supported
+  Temporal worker cohort, the standalone updater SHALL resolve the actual
+  supervisor descendants' PID/start-time, workspace and launch mode, reject
+  uncovered or changing workers, and obtain complete two-stage public-SDK
+  quiescence for both roles within the existing drain budget. It SHALL retain
+  the controller's exclusive locks through stop, setup and target boot
+  verification, coalesce both-mode roles without double-locking, and prevent
+  controller lock/control-pipe descriptors from reaching restarted services.
+  It SHALL reopen only its owned generation after proving target boots and
+  every original process instance has exited. Interrupted acknowledged updates
+  SHALL remain closed with actionable phase-aware recovery for unchanged,
+  known mixed, stopped and verified target cohorts; unknown visibility SHALL
+  NOT authorize stop or reopening. Pre-stop abort SHALL reopen only unchanged
+  workers, and unsupported legacy workers SHALL defer automatically without
+  cancelling owners or changing queues, task attempts, deadlines, concurrency
+  or shutdown budgets. Process discovery SHALL emit only role PID/start-time
+  identities, never raw process arguments, environment or credentials.
+  *Required tests:* `spec/lib/dev_update_spec.rb`,
+  `spec/lib/paid/worker_admission_cohort_spec.rb`, the protocol's supplier and
+  controller tests, and real unchanged-budget SDK/server adoption evidence.
