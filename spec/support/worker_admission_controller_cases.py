@@ -382,11 +382,27 @@ class ControllerTest(unittest.TestCase):
             self.assertEqual(controller.returncode, 1, errors)
             self.assertTrue(json.loads(output)["recovery_required"])
             self.assertTrue(all(path.exists() for path in self.requests()))
-            recovery = subprocess.run(command + ["--mode", "recover"], input="abort\n",
-                                      capture_output=True, text=True, timeout=3)
-            self.assertEqual(recovery.returncode, 0, recovery.stderr + recovery.stdout)
-            self.assertEqual([json.loads(line)["status"] for line in recovery.stdout.splitlines()],
-                             ["acknowledged", "aborted"])
+            recovery = subprocess.Popen(command + ["--mode", "recover", "--finish-handshake"],
+                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(json.loads(recovery.stdout.readline())["status"], "acknowledged")
+                recovery.stdin.write("abort\n")
+                recovery.stdin.flush()
+                self.assertEqual(json.loads(recovery.stdout.readline())["status"], "aborted")
+                self.assertIsNone(recovery.poll(), "completion must remain readable until caller closes")
+                self.assertFalse(any(path.exists() for path in self.requests()))
+                recovery.stdin.write("close\n")
+                recovery.stdin.flush()
+                output, errors = recovery.communicate(timeout=2)
+                self.assertEqual(recovery.returncode, 0, errors + output)
+            finally:
+                if recovery.poll() is None:
+                    recovery.terminate()
+                    recovery.wait(timeout=2)
+                for stream in (recovery.stdin, recovery.stdout, recovery.stderr):
+                    if stream is not None:
+                        stream.close()
             self.assertFalse(any(path.exists() for path in self.requests()))
         finally:
             for process in ([controller] if controller else []) + workers:
