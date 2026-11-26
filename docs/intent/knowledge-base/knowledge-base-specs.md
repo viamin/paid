@@ -41,9 +41,10 @@
   After that policy is exhausted, it SHALL mark the collection failed and
   report the terminal failure through the exception-notification path.
   *Code:* `app/services/knowledge/containerized_runner.rb`,
-  `app/jobs/run_collectors_job.rb`.
+  `app/jobs/run_collectors_job.rb`, `app/jobs/run_collector_batch_job.rb`.
   *Test:* `spec/services/knowledge/containerized_runner_spec.rb`,
-  `spec/jobs/run_collectors_job_spec.rb`.
+  `spec/jobs/run_collectors_job_spec.rb`,
+  `spec/jobs/run_collector_batch_job_spec.rb`.
 
 - [x] **KNOWLEDGE-015** — When import-time knowledge collection or collector
   execution encounters a transient PostgreSQL connection failure, it SHALL

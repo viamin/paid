@@ -87,6 +87,20 @@ RSpec.describe RunCollectorBatchJob do
       collector_types: [ "tree_sitter" ], preserved_collector_types: [], collector_cursor: "app/a.rb")
   end
 
+  # @spec KNOWLEDGE-017
+  it "keeps knowledge_status collecting when provisioning fails before a retry" do
+    allow(Knowledge::CollectorRunner).to receive(:registry).and_return({ "tree_sitter" => Object })
+    allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(true)
+    allow(Knowledge::ContainerizedRunner).to receive(:call)
+      .and_raise(Knowledge::ContainerizedRunner::ProvisionError, "read timeout reached")
+
+    job = described_class.new(project.id, commit_sha)
+    job.exception_executions = { "[Knowledge::ContainerizedRunner::ProvisionError]" => 0 }
+
+    expect { job.perform_now }.not_to raise_error
+    expect(project.reload.knowledge_status).to eq("collecting")
+  end
+
   # @spec KNOWLEDGE-014
   it "stops the chain when a collector fails" do
     allow(Knowledge::CollectorRunner).to receive_messages(
