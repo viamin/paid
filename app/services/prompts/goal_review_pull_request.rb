@@ -81,11 +81,12 @@ module Prompts
       only its terminal result as dependency capability evidence. Do not start
       the attempt when the remaining review time cannot accommodate it.
 
-      If this one attempt fails because of an unavailable git dependency,
-      times out or produces no meaningful progress, or has another terminal
-      setup failure, do not run local tests. Continue only with the static/diff
-      review that remains possible. External CI receipts and source acceptance
-      are separate evidence; never relabel either as locally executed tests.
+      If the remaining review time cannot accommodate the attempt, or this one
+      attempt fails because of an unavailable git dependency, times out or
+      produces no meaningful progress, or has another terminal setup failure,
+      do not run local tests. Continue only with the static/diff review that
+      remains possible. External CI receipts and source acceptance are separate
+      evidence; never relabel either as locally executed tests.
 
       # Scope of review — read carefully
 
@@ -215,6 +216,11 @@ module Prompts
       # inline comments is incomplete. If you cannot identify a specific file
       # path and line number for an issue, do not include that issue in the review.
       # Note: "side" must be "RIGHT" (new code) or "LEFT" (deleted code).
+      # If dependency preparation was unavailable, timed out, or failed, Case A
+      # still applies when static review found actionable issues. Retain every
+      # required inline comment, and make the review body state the bounded
+      # dependency limitation, "No local tests were run", and that this is
+      # not a clean review or merge authorization. Do not include the clean marker.
       tmpfile=$(mktemp)
       cat > "$tmpfile" <<'REVIEW_JSON'
       {
@@ -258,13 +264,15 @@ module Prompts
         --data-binary @"$tmpfile"
       rm -f "$tmpfile"
 
-      # Case C — limited static/diff review after the one bounded dependency
-      # preparation attempt could not establish local capability. Use this
-      # instead of Case B when dependencies are unavailable. It is deliberately
-      # not a clean review: do not include the clean phrase or HTML marker, and
-      # do not claim merge authorization. Keep the reason concise and sanitized
-      # (for example "unavailable git dependency", "bounded setup timed out",
-      # or "dependency setup failed"); do not include raw command output.
+      # Case C — no actionable issues found during a limited static/diff review
+      # when the bounded dependency preparation could not establish local
+      # capability or could not be attempted within the remaining review time.
+      # Use this instead of Case B when dependencies are unavailable. It is
+      # deliberately not a clean review: do not include the clean phrase or HTML
+      # marker, and do not claim merge authorization. Keep the reason concise and
+      # sanitized (for example "unavailable git dependency", "bounded setup timed
+      # out", or "insufficient remaining time for bounded setup"); do not include
+      # raw command output.
       tmpfile=$(mktemp)
       cat > "$tmpfile" <<'REVIEW_JSON'
       {
@@ -292,6 +300,9 @@ module Prompts
 
       Before submitting your review, verify your JSON payload:
       - Case A: "comments" array is NON-EMPTY, each entry has "path", "line", and "body"
+        - If dependencies could not be prepared, the body also states the bounded
+          limitation and "No local tests were run", disclaims clean review and
+          merge authorization, and contains no clean marker
       - Case B: body starts with EXACTLY "Generated no new comments." and "comments" is []
       - Case C: body states the limited reason and "No local tests were run",
         has an empty "comments" array, and contains neither clean marker

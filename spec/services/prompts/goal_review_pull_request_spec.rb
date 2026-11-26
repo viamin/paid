@@ -132,11 +132,12 @@ RSpec.describe Prompts::GoalReviewPullRequest, :no_db do
       expect(described_class::TEMPLATE).to include("--retry 0")
       expect(described_class::TEMPLATE).to include("Do not pipe this command")
       expect(described_class::TEMPLATE).to include("Do not make a second dependency-preparation attempt")
+      expect(described_class::TEMPLATE).to include("remaining review time cannot accommodate the attempt")
     end
 
     it "keeps unavailable git dependencies, stalled setup, and terminal setup failures truthful" do
       expect(described_class::TEMPLATE).to include("unavailable git dependency")
-      expect(described_class::TEMPLATE).to include("times out or produces no meaningful progress")
+      expect(described_class::TEMPLATE).to match(/times out or\s+produces no meaningful progress/)
       expect(described_class::TEMPLATE).to match(/another terminal\s+setup failure/)
       expect(described_class::TEMPLATE).to include("No local tests were run")
     end
@@ -149,6 +150,14 @@ RSpec.describe Prompts::GoalReviewPullRequest, :no_db do
       expect(limited_review).not_to include("<!-- paid-review-clean -->")
       expect(limited_review).to include("not a clean review or merge authorization")
       expect(described_class::TEMPLATE).to include("actionable unavailable stop")
+    end
+
+    it "discloses unavailable dependencies when a limited review finds actionable issues" do
+      actionable_review = described_class::TEMPLATE.match(/Case A.*?Case B/m)[0]
+
+      expect(actionable_review).to include("No local tests were run")
+      expect(actionable_review).to include("not a clean review or merge authorization")
+      expect(actionable_review).to include("inline comments")
     end
   end
 
