@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 require "rails_helper"
-require "temporalio/client"
-require "paid/temporal_data_converter"
+require "open3"
+require "rbconfig"
 
 class TemporalSdkDependencyContract < Pathname
 end
@@ -20,7 +20,12 @@ RSpec.describe TemporalSdkDependencyContract, :no_db do
     expect(json_3_compatible?("< 3")).to be(false)
   end
 
-  it "loads a resolved Temporal SDK without a JSON requirement that excludes JSON 3" do
+  it "loads the selected Temporal client and Paid converter under the JSON 3 contract" do
+    stdout, stderr, status = Open3.capture3(RbConfig.ruby, "-Ilib", "-e", client_and_converter_load_script)
+
+    expect(status.success?).to be(true), stderr
+    expect(stdout).to be_empty
+
     json_dependency = Gem.loaded_specs.fetch("temporalio").runtime_dependencies.find { |dependency| dependency.name == "json" }
 
     expect(json_dependency).to be_nil.or satisfy { |dependency| json_3_compatible?(*dependency.requirement.requirements.map(&:join)) }
@@ -32,5 +37,14 @@ RSpec.describe TemporalSdkDependencyContract, :no_db do
     requirement = Gem::Requirement.new(*requirements)
 
     [ Gem::Version.new("3.1.0"), Gem::Version.new("3.99.0") ].all? { |version| requirement.satisfied_by?(version) }
+  end
+
+  def client_and_converter_load_script
+    <<~RUBY
+      require "bundler/setup"
+      require "temporalio/client"
+      require "paid/temporal_data_converter"
+      Paid::TemporalDataConverter.new
+    RUBY
   end
 end
