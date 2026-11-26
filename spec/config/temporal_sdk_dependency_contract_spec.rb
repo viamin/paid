@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/client"
+require "paid/temporal_data_converter"
 
 class TemporalSdkDependencyContract < Pathname
 end
