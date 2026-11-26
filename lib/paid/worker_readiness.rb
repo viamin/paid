@@ -105,7 +105,7 @@ module Paid
 
       payload = JSON.parse(File.read(path)).merge(
         "heartbeat_at" => Time.now.utc.iso8601,
-        **metadata.stringify_keys
+        **metadata.stringify_keys.except("pid", "ready_at", "revision", "admission", "heartbeat_at")
       )
       write_payload(path, payload.to_json)
     rescue StandardError => error
