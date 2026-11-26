@@ -3299,6 +3299,9 @@ module Activities
       cutoff = conversation_feedback_cutoff(project, issue, last_run)
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
+      return [] if comments.empty?
+
+      receipts = recorded_operator_report_identities(project, issue, revision)
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -3308,7 +3311,7 @@ module Activities
         next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
-        next false if recorded_operator_acceptance_report?(project, issue, c, revision)
+        next false if receipts.include?(operator_report_identity(issue, c, revision))
 
         true
       end
@@ -3321,17 +3324,16 @@ module Activities
     # An operator selects the report purpose through the authorized recorder;
     # Ruby never guesses it from comment prose. A changed body or head invalidates
     # that receipt, leaving the comment eligible for normal feedback admission.
+    # Receipts are loaded in one bounded query per scan so a large comment
+    # window adds no per-comment database round trips.
     # @spec FOCUSED-RUN-015
-    def recorded_operator_acceptance_report?(project, issue, comment, revision)
-      identity = operator_report_identity(issue, comment, revision)
+    def recorded_operator_report_identities(project, issue, revision)
       project.account.account_activity_events.where(
         action: PullRequests::RecordOperatorAcceptanceReport::ACTION, subject: issue
-      ).where("metadata ->> 'report_identity' = ?", identity).exists?
+      ).where("metadata ->> 'revision' = ?", revision).pluck(Arel.sql("metadata ->> 'report_identity'")).to_set
     end
 
     def operator_report_identity(issue, comment, revision)
-      return "" if revision.blank?
-
       [ issue.id, comment.id, Digest::SHA256.hexdigest(comment.body.to_s), revision ].join(":")
     end
 

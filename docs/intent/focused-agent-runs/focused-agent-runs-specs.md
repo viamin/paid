@@ -83,7 +83,7 @@
   SHALL NOT infer it from prose.
   *Code:* `PullRequests::RecordOperatorAcceptanceReport`,
   `Tools::RecordOperatorAcceptanceReport`,
-  `ScanPaidPrsActivity#recorded_operator_acceptance_report?`.
+  `ScanPaidPrsActivity#recorded_operator_report_identities`.
   *Test:* `spec/services/pull_requests/record_operator_acceptance_report_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_conversation_feedback_spec.rb`.
 

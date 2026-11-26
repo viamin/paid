@@ -98,6 +98,27 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(AgentRun.where(project:, source_pull_request_number: 42, status: "queued")).to be_empty
     end
 
+    it "loads recorded report receipts once per conversation evaluation instead of once per comment" do # @spec FOCUSED-RUN-015
+      pull_request = project.issues.find_by!(github_number: 42)
+      PullRequests::RecordOperatorAcceptanceReport.call(
+        pull_request:, actor: operator, comment_id: comment.id,
+        environment: "devcontainer", results: "63/0 source acceptance"
+      )
+      more_comments = Array.new(5) do |index|
+        OpenStruct.new(id: 7157569300 + index, user: OpenStruct.new(login: "viamin"),
+          body: "Please correct the remaining regression #{index}", created_at: 4.minutes.ago)
+      end
+      stub_pr_signals(comments: [ comment, *more_comments ])
+
+      receipt_queries = capture_queries { activity.execute(project_id: project.id) }
+        .select { |sql| sql.include?("report_identity") }
+
+      # One receipt load per conversation evaluation; the scan evaluates the
+      # six-comment window twice (trigger collection and focus resolution),
+      # matching the pinned revision-reuse count above.
+      expect(receipt_queries.size).to eq(2)
+    end
+
     it "keeps a later actionable comment distinct from a recorded operator report" do # @spec FOCUSED-RUN-015
       pull_request = project.issues.find_by!(github_number: 42)
       PullRequests::RecordOperatorAcceptanceReport.call(
