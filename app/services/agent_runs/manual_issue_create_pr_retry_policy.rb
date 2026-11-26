@@ -78,6 +78,14 @@ module AgentRuns
         result: { new_agent_run_id: successor.id, reason: "retry_claimed" })
     end
 
+    # Scheduling is durable evidence that a delayed claim was requested; it
+    # is not evidence that a replacement was admitted or executed.
+    def record_scheduled!(agent_run, decision_point:, retry_number:)
+      OrchestrationDecision.record(project: agent_run.project, issue: agent_run.issue, agent_run:,
+        decision_point:, action: "manual_issue_create_pr_failed_run_retry", status: "scheduled",
+        signals: retry_signals(retry_number), result: { retry_attempt: retry_number })
+    end
+
     def record_skip!(agent_run, reason:, decision_point:, retry_number:)
       OrchestrationDecision.record(project: agent_run.project, issue: agent_run.issue, agent_run:,
         decision_point:, action: "manual_issue_create_pr_failed_run_retry", status: "noop",

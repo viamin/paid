@@ -273,6 +273,13 @@ not attached to a coding run. A disposable, text-only container has no
 repository or Rails-workspace mount, receives only the selected runner's
 scoped credential material, and is removed for every terminal outcome.
 
+Interactive chat keeps execution authority explicit. API-mode inference may use
+that disposable text boundary, while a separately selected workspace-agent mode
+may execute a native CLI only inside the session's isolated workspace. A mode,
+its credential/billing intent, privacy requirement, and tool-confirmation
+semantics are persisted rather than inferred from a runner or silently changed
+by fallback; an unavailable compatible route fails visibly.
+
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:

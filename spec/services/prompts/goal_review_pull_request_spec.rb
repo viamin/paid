@@ -124,6 +124,46 @@ RSpec.describe Prompts::GoalReviewPullRequest, :no_db do
     end
   end
 
+  describe "dependency preparation and limited review (#5398)" do # @spec REVIEW-PR-008, REVIEW-PR-009
+    it "checks the locked bundle before one visible, bounded preparation attempt" do
+      expect(described_class::TEMPLATE).to include("bundle check")
+      expect(described_class::TEMPLATE).to include("timeout 120s")
+      expect(described_class::TEMPLATE).to include("BUNDLE_FROZEN=true")
+      expect(described_class::TEMPLATE).to include("--retry 0")
+      expect(described_class::TEMPLATE).to include("Do not pipe this command")
+      expect(described_class::TEMPLATE).to include("Do not make a second dependency-preparation attempt")
+      expect(described_class::TEMPLATE).to include("remaining review time cannot accommodate the attempt")
+    end
+
+    it "keeps unavailable git dependencies, stalled setup, and terminal setup failures truthful" do
+      expect(described_class::TEMPLATE).to include("unavailable git dependency")
+      expect(described_class::TEMPLATE).to match(/times out or\s+produces no meaningful progress/)
+      expect(described_class::TEMPLATE).to match(/another terminal\s+setup failure/)
+      expect(described_class::TEMPLATE).to include("No local tests were run")
+    end
+
+    it "publishes a limited review without the clean marker and stops when the diff is unavailable" do
+      limited_review = described_class::TEMPLATE.match(/Case C.*?If the base\/head diff/m)[0]
+
+      expect(limited_review).to include('"event": "COMMENT"')
+      expect(limited_review).to include('"comments": []')
+      expect(limited_review).not_to include("<!-- paid-review-clean -->")
+      expect(limited_review).to include("<!-- paid-review-environment-unavailable -->")
+      expect(limited_review).to include("not a clean review or merge authorization")
+      expect(limited_review).to include("matching the observed terminal outcome")
+      expect(limited_review).to match(/Never post the sample's\s+#\s+unavailable-git-dependency reason when it is not true/)
+      expect(described_class::TEMPLATE).to include("actionable unavailable stop")
+    end
+
+    it "discloses unavailable dependencies when a limited review finds actionable issues" do
+      actionable_review = described_class::TEMPLATE.match(/Case A.*?Case B/m)[0]
+
+      expect(actionable_review).to include("No local tests were run")
+      expect(actionable_review).to include("not a clean review or merge authorization")
+      expect(actionable_review).to include("inline comments")
+    end
+  end
+
   describe "renders all declared placeholders" do # @spec REVIEW-PR-007
     let(:variables) { described_class::VARIABLES.map { |v| v["name"].to_sym } }
 

@@ -83,6 +83,9 @@
   authority, fairness, capacity or dequeue guards. Automatic joins,
   implementation work and already claimed/running/terminal runs SHALL NOT
   receive a new priority request; repeated operator joins SHALL be idempotent.
+  A queued audit with a persisted workflow, start timestamp, container, runner
+  handle, service-container reference, worktree path, or associated worktree
+  SHALL be treated as retained execution ownership and remain unchanged.
   Tracked by [#5235](https://github.com/viamin/paid/issues/5235).
   *Code:* `AgentRuns::PrioritizeAudit`, `Issues::RequestContinuation`,
   `AgentRun::QUEUE_PRIORITY_CASE_SQL`, `AgentRun#queue_priority_tier`.
@@ -101,6 +104,10 @@
   SHALL neither create, claim, restart, cancel, nor convert the run to manual;
   denied, untrusted, claimed, running, terminal, audit-only, rate-limited, or
   otherwise ineligible work SHALL remain unchanged.
+  A queued retry with a persisted workflow, start timestamp, container, runner
+  handle, service-container reference, worktree path, or associated worktree
+  SHALL be treated as retained execution ownership and remain unchanged while
+  legitimate retry lineage remains eligible.
   *Code:* `AgentRuns::PrioritizeCodingRetry`,
   `Projects::AgentRunsController#bump_priority`,
   `Tools::PrioritizeCodingRetry`.

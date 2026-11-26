@@ -2698,6 +2698,7 @@ module Activities
     def review_bot_review_status_from(reviews, latest)
       return :unknown if reviews.nil?
       return :no_review if latest.nil?
+      return :environment_unavailable if paid_agent_limited_review?(latest)
       return :clean if paid_agent_clean_review?(latest)
 
       REVIEW_BOT_CLEAN_PATTERN.match?(latest[:body]) ? :clean : :has_comments
@@ -2757,14 +2758,21 @@ module Activities
       .freeze
 
     BODY_ONLY_REVIEW_PROVIDER_KEYS = %w[codex paid_agent].freeze
+    PAID_REVIEW_ENVIRONMENT_UNAVAILABLE_MARKER = "<!-- paid-review-environment-unavailable -->".freeze
 
-    # @spec FOCUSED-RUN-012
+    # @spec FOCUSED-RUN-012, REVIEW-PR-009
     def check_review_bot_status(reviews, unresolved_threads, project: nil, last_run: nil, client: nil, issue: nil,
       allowed_bot_logins: nil)
       allowed = allowed_bot_logins || allowed_review_bot_logins(project)
       latest = latest_allowed_bot_review(reviews, allowed)
       paid_agent_limit_reached_for_latest_review =
         paid_agent_review_limit_reached_for_review?(project, reviews, latest, issue)
+
+      # A limited Case C review is terminal and must not be masked by a newer
+      # body-only clean comment, which would otherwise allow auto-merge.
+      if paid_agent_limited_review?(latest)
+        return [ { type: "review_environment_unavailable", details: "Review environment unavailable" } ]
+      end
 
       # Body-only bots (Codex, paid_agent) can post their CLEAN signal as an issue
       # comment — e.g. "Codex Review: Didn't find any major issues. Bravo." —
@@ -3369,6 +3377,7 @@ module Activities
       findings = latest_trusted_reviews(reviews, project).select do |review|
         eligible = review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
           !paid_agent_clean_review?(review) &&
+          !paid_agent_limited_review?(review) &&
           !(review_bot?(review[:user_login]) && REVIEW_BOT_CLEAN_PATTERN.match?(review[:body].to_s)) &&
           (!cutoff || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
         next false unless eligible
@@ -3746,6 +3755,14 @@ module Activities
       return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
 
       paid_agent_review_clean?(review[:body])
+    end
+
+    # @spec REVIEW-PR-009
+    def paid_agent_limited_review?(review)
+      return false unless review.is_a?(Hash)
+      return false unless RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login])
+
+      review[:body].to_s.include?(PAID_REVIEW_ENVIRONMENT_UNAVAILABLE_MARKER)
     end
 
     def paid_agent_review_clean?(body)

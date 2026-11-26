@@ -37,7 +37,7 @@ module AgentRuns
     end
 
     def eligible?
-      return false unless agent_run.status == "queued" && agent_run.temporal_workflow_id.blank?
+      return false unless agent_run.status == "queued" && UnclaimedExecution.eligible?(agent_run)
       return false unless agent_run.trigger_type == "automatic" && agent_run.goal == "create_pr"
       return false if agent_run.operator_coding_priority_requested_at.present?
       return false if agent_run.rate_limited_until&.future?

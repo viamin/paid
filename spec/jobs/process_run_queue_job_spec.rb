@@ -21,6 +21,44 @@ RSpec.describe ProcessRunQueueJob do
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
+  describe "post-start provisioning bookkeeping" do
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "preserves a resume claim written after the scheduler loaded the run" do
+      run = create(:agent_run, :running, external_metadata: { "existing" => "retained" })
+      scheduler_run = AgentRun.find(run.id)
+      run.update!(external_metadata: run.external_metadata.merge(
+        "queued_run_resume" => { "attempt" => 2 }, "activity_evidence" => "retained"
+      ))
+
+      job.send(:record_provisioning_start!, scheduler_run, "local")
+
+      expect(run.reload.external_metadata).to include(
+        "existing" => "retained", "queued_run_resume" => { "attempt" => 2 },
+        "activity_evidence" => "retained", "provisioning_started_at" => be_present
+      )
+      expect do
+        Activities::CreateAgentRunActivity.new.send(:ensure_queued_resume_attempt_current!, run, 2)
+      end.not_to raise_error
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-019
+    it "preserves a newer terminal result while recording accepted provisioning" do
+      run = create(:agent_run, :running)
+      scheduler_run = AgentRun.find(run.id)
+      completed_at = Time.current.change(usec: 0)
+      run.update!(status: "failed", completed_at: completed_at,
+        external_metadata: run.external_metadata.merge("terminal_evidence" => "retained"))
+
+      job.send(:record_provisioning_start!, scheduler_run, "local")
+
+      expect(run.reload).to have_attributes(status: "failed", completed_at: completed_at)
+      expect(run.external_metadata).to include("terminal_evidence" => "retained")
+      expect do
+        Activities::CreateAgentRunActivity.new.send(:ensure_queued_resume_attempt_current!, run, 1)
+      end.to raise_error(Temporalio::Error::ApplicationError, "Queued run resume attempt is no longer current")
+    end
+  end
+
   def temporal_priority_for(run)
     job.send(:temporal_priority_for, run)
   end
