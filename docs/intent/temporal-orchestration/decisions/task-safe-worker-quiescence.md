@@ -32,6 +32,23 @@ admission-lock inode. A permit owns its shared lock from reservation until
 SDK release, including an unused long-poll permit or eager permit.
 
 A separate persistent drain request closes *future* reservation admission.
+A remote supplier also bounds outstanding unused poll permits by the same
+fixed public poller configuration passed to its SDK worker. Workflow budgets
+are separate for sticky and nonsticky polls; activity polls have their own
+budget. The SDK can acquire a permit before waiting for poller capacity, so
+an additional unused permit could otherwise begin another long poll after
+admission closes. The supported configuration retains the existing poll counts,
+1,000-workflow cache and 0.2 nonsticky ratio. Its split is at least one
+nonsticky poller, using the rounded-down nonsticky share, and at least one
+sticky poller from the remainder.
+
+Task-used notification returns only the unused-poll budget. The task retains
+its execution slot and shared lock until SDK release. Unused release returns
+both budgets exactly once. Eager reservations do not wait for poller capacity
+and therefore use only the execution-slot budget. These budgets add no RPC,
+change no configured execution or polling concurrency, and never revoke an
+issued permit.
+
 A blocking reservation checks the request before claiming capacity and again
 after obtaining a nonblocking shared lock. If either check is closed or
 unknown, it returns capacity and waits cancellably without issuing a permit.

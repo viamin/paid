@@ -53,7 +53,12 @@
   new poll and eager task admission, includes every outstanding unused poll or
   eager reservation, and identifies each admitted task as either safely queued
   with its original attempt/deadline unspent or a tracked owner that finishes
-  before the stop boundary. Before reopening after replacement, it SHALL prove
+  before the stop boundary. Outstanding unused poll permits SHALL NOT exceed
+  their configured fixed poller capacity, separately for sticky workflow,
+  nonsticky workflow and activity polls. Task-used notification SHALL return
+  only that poll budget, retaining the execution slot and admission lock until
+  SDK release. Eager reservations SHALL retain their execution-slot policy
+  independently of the poll budget. Before reopening after replacement, it SHALL prove
   every original PID/start-time instance has exited; fresh target metadata or
   unknown process visibility SHALL NOT substitute for that proof.
   The acknowledgement and resume operations SHALL be

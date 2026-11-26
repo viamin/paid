@@ -39,6 +39,17 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
     File.write(request_path, '{"generation":"fixture-owned"}')
   end
 
+  def reserve_poll(from: supplier, sticky: false)
+    cancellation = Struct.new(:canceled?).new(false)
+    allow(cancellation).to receive(:canceled?).and_return(false, false, true)
+    result = nil
+    from.reserve_slot(Struct.new(:sticky?).new(sticky), cancellation) do |permit|
+      permits << permit
+      result = permit
+    end
+    result
+  end
+
   def worker_profile(activity_slots: 4)
     { "workflow_slots" => 4, "activity_slots" => activity_slots, "local_activity_slots" => activity_slots,
       "workflow_task_polls" => 4, "activity_task_polls" => activity_slots }
@@ -173,7 +184,8 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
 
   it "preserves the fixed local supplier and independent configured remote capacities" do
     tuner = described_class.tuner(
-      workflow_slots: 2, activity_slots: 1, local_activity_slots: 3, readiness_file:
+      workflow_slots: 2, activity_slots: 1, local_activity_slots: 3,
+      workflow_task_polls: 2, activity_task_polls: 1, readiness_file:
     )
     expect(tuner.local_activity_slot_supplier).to be_a(Temporalio::Worker::Tuner::SlotSupplier::Fixed)
     expect(tuner.local_activity_slot_supplier.slots).to eq(3)
@@ -187,6 +199,84 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
     expect(exclusive_available?).to be(false)
   ensure
     [ first, second, third ].compact.each { |permit| permit.lock.close unless permit.lock.closed? }
+  end
+
+  context "with unused poll reservations" do
+    let(:supplier) { Paid::WorkerAdmission::SlotSupplier.new(slots: 4, readiness_file:) }
+
+    it "does not prefetch another permit behind a full poller" do
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll).to be_nil
+      expect(exclusive_available?).to be(false)
+    end
+
+    it "keeps sticky and nonsticky poll budgets independent" do
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll(sticky: true)).not_to be_nil
+      expect(reserve_poll).to be_nil
+      expect(reserve_poll(sticky: true)).to be_nil
+    end
+
+    it "returns poll capacity on assignment while retaining all execution slots and locks" do
+      first = reserve_poll
+      supplier.mark_slot_used(Struct.new(:permit).new(first))
+      expect(reserve_poll).not_to be_nil
+      expect(reserve).not_to be_nil
+      expect(reserve).not_to be_nil
+      expect(reserve).to be_nil
+      expect(exclusive_available?).to be(false)
+      release(first)
+      expect(exclusive_available?).to be(false)
+    end
+
+    it "does not charge eager permits against the unused poll budget" do
+      expect(reserve).not_to be_nil
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll).to be_nil
+      expect(reserve).not_to be_nil
+    end
+
+    it "does not return the poll budget twice when an assigned slot is released" do
+      first = reserve_poll
+      supplier.mark_slot_used(Struct.new(:permit).new(first))
+      release(first)
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll).to be_nil
+    end
+
+    it "restores both budgets when cancellation wins before permit delivery" do
+      cancellation = Struct.new(:canceled?).new(false)
+      allow(File).to receive(:open).and_wrap_original do |original, *arguments|
+        original.call(*arguments).tap { cancellation[:canceled?] = true }
+      end
+      expect { |block| supplier.reserve_slot(nil, cancellation, &block) }.not_to yield_control
+      allow(File).to receive(:open).and_call_original
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll).to be_nil
+    end
+
+    it "restores both budgets when the admission lock cannot be opened" do
+      allow(File).to receive(:open).with(lock_path, anything, anything).and_raise(Errno::EACCES)
+      expect(reserve_poll).to be_nil
+      allow(File).to receive(:open).and_call_original
+      expect(reserve_poll).not_to be_nil
+      expect(reserve_poll).to be_nil
+    end
+
+    it "uses poller counts rather than execution slots for the public fixed split" do
+      tuner = described_class.tuner(
+        workflow_slots: 12, activity_slots: 8, local_activity_slots: 8,
+        workflow_task_polls: 5, activity_task_polls: 2, readiness_file:
+      )
+      workflow = tuner.workflow_slot_supplier
+      expect(reserve_poll(from: workflow)).not_to be_nil
+      expect(reserve_poll(from: workflow)).to be_nil
+      4.times { expect(reserve_poll(from: workflow, sticky: true)).not_to be_nil }
+      expect(reserve_poll(from: workflow, sticky: true)).to be_nil
+      activity = tuner.activity_slot_supplier
+      2.times { expect(reserve_poll(from: activity)).not_to be_nil }
+      expect(reserve_poll(from: activity)).to be_nil
+    end
   end
 
   it "captures both logical roles in one immutable process boot identity" do
