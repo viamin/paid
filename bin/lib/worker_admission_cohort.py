@@ -1,4 +1,4 @@
-"""Read-only supervisor-to-worker identity resolution.
+"""Supervisor identity checks and verified controller cleanup.
 
 @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
 """
@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 
-from worker_admission import AdmissionError, Drain, process_start_ticks, supervisor_cohort
+from worker_admission import AdmissionError, Drain, process_start_ticks, read_json, supervisor_cohort
 
 
 def bounded_bytes(path, limit=131072):
@@ -182,6 +182,43 @@ def original_cohort_gone(cohort):
             raise AdmissionError("original worker process instance remains alive")
 
 
+def readiness_paths(cohort, directory):
+    if not isinstance(cohort, dict) or set(cohort) != {"poll", "agent"}:
+        raise AdmissionError("complete role cohort is required")
+    for identity in cohort.values():
+        if not isinstance(identity, dict) or set(identity) != {"pid", "start_ticks"} or any(
+                type(value) is not int or value <= 0 for value in identity.values()):
+            raise AdmissionError("role identity is invalid")
+    directory = Path(directory).resolve(strict=True)
+    if any(ord(character) < 32 for character in str(directory)):
+        raise AdmissionError("readiness directory contains control characters")
+    both = cohort["agent"] == cohort["poll"]
+    return {role: str(directory / ("paid-worker-ready-temporal_worker-" + ("both" if both else role)))
+            for role in cohort}
+
+
+def journal_context(workspace):
+    value = read_json(Path(workspace) / "tmp/worker-admission.json")
+    if type(value.get("protocol")) is not int or value["protocol"] != 1 or value.get("workspace") != workspace:
+        raise AdmissionError("recorded recovery context is unsupported")
+    target = value.get("target_revision")
+    if not isinstance(target, str) or not re.fullmatch(r"[0-9a-f]{40}", target):
+        raise AdmissionError("recorded target revision is unknown")
+    roles = Drain.normalize_roles(value.get("roles"))
+    gates = {Drain.normalize_path(path) for path in value.get("gates", roles.values())}
+    parents = {path.parent for path in gates}
+    if len(parents) != 1:
+        raise AdmissionError("recorded readiness directory is ambiguous")
+    directory = parents.pop()
+    if any(ord(character) < 32 for character in str(directory)):
+        raise AdmissionError("recorded readiness directory contains control characters")
+    expected = {directory / ("paid-worker-ready-temporal_worker-" + role) for role in ("poll", "agent", "both")}
+    if gates != expected or not set(roles.values()).issubset(gates):
+        raise AdmissionError("recorded generation lacks complete launch-path coverage")
+    return {"target_revision": target, "readiness_directory": str(directory),
+            "roles": {role: str(path) for role, path in roles.items()}}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
@@ -189,11 +226,30 @@ def main():
     parser.add_argument("--caller-pid", type=int)
     parser.add_argument("--reap-controller")
     parser.add_argument("--originals-gone", action="store_true")
+    parser.add_argument("--journal", action="store_true")
+    parser.add_argument("--absent", action="store_true")
+    parser.add_argument("--marker-roles")
     parser.add_argument("--ready-target")
     parser.add_argument("--readiness-directory")
     arguments = parser.parse_args()
     try:
         workspace = str(Path(arguments.workspace).resolve(strict=True))
+        if arguments.journal:
+            print(json.dumps(journal_context(workspace), sort_keys=True))
+            return 0
+        if arguments.marker_roles:
+            if not arguments.readiness_directory:
+                raise AdmissionError("readiness directory is required")
+            print(json.dumps(readiness_paths(json.loads(arguments.marker_roles), arguments.readiness_directory), sort_keys=True))
+            return 0
+        if arguments.absent:
+            deadline = time.monotonic() + 5
+            for _ in range(2):
+                snapshot = process_snapshot(Path("/proc"), deadline)
+                if any(value.get("workspace") == workspace and value.get("worker_roles") for value in snapshot.values()):
+                    raise AdmissionError("workspace still has a Temporal worker")
+            print(json.dumps({"absent": True}))
+            return 0
         if arguments.controller_identity:
             if not arguments.caller_pid:
                 raise AdmissionError("controller caller identity is required")
@@ -211,16 +267,13 @@ def main():
         if arguments.ready_target:
             if not arguments.readiness_directory:
                 raise AdmissionError("target readiness directory is required")
-            directory = Path(arguments.readiness_directory)
-            both = cohort["agent"] == cohort["poll"]
-            roles = {role: directory / ("paid-worker-ready-temporal_worker-" + ("both" if both else role))
-                     for role in cohort}
+            roles = readiness_paths(cohort, arguments.readiness_directory)
             reader = Drain(arguments.workspace, roles, arguments.ready_target, cohort)
             if any(reader.snapshot(role)["revision"] != arguments.ready_target for role in roles):
                 raise AdmissionError("target boot revision is not verified")
         print(json.dumps(cohort, sort_keys=True))
         return 0
-    except (AdmissionError, OSError, ValueError, KeyError, IndexError) as error:
+    except (AdmissionError, OSError, ValueError, KeyError, IndexError, TypeError) as error:
         print(json.dumps({"status": "deferred", "reason": str(error) if isinstance(error, AdmissionError) else type(error).__name__}))
         return 1
 

@@ -11,7 +11,7 @@ RSpec.describe Paid::WorkerAdmission do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-0
       { "PYTHONDONTWRITEBYTECODE" => "1" },
       "python3", File.join(root, "spec/support/dev_worker_admission_cases.py")
     )
-    expect(output).to include("Ran 7 tests")
+    expect(output).to include("Ran 13 tests")
     expect(status.success?).to be(true), output
   end
 end
