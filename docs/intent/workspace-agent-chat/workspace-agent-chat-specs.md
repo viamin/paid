@@ -6,11 +6,14 @@
 
 - [ ] **WORKSPACE-AGENT-CHAT-001** — When an eligible user explicitly creates
   a workspace-agent chat while `container_agent_chat` is enabled for its
-  approved account/project scope, the system SHALL persist its execution mode
-  and display that native CLI tools can mutate the workspace under container
+  approved account/project scope, the system SHALL persist its execution mode,
+  authorized credential/billing intent, privacy requirement, execution authority,
+  and tool-confirmation semantics for the life of the started session, and display that native CLI tools can mutate the workspace under container
   permissions outside Paid structured-tool confirmation.
   *Planned tests:* permanent system mode-selection and chat-rendering spec;
-  focused creation service spec.
+  focused creation/persistence service specs; later-turn, retry and fallback
+  cases after runner or project-policy changes SHALL retain the original
+  authorized attributes or reject the route, never silently re-derive them.
 
 - [ ] **WORKSPACE-AGENT-CHAT-002** — When a workspace-agent turn starts, the
   system SHALL select only a runner/model satisfying the persisted mode, ready

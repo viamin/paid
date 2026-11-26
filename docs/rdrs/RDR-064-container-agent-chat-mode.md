@@ -52,9 +52,12 @@ container. It is not an HTTP transport, and a disposable API-inference
 container is not an implementation substitute.
 
 The mode is selected and persisted on the **session**, not per message. A
-session has one execution authority, authentication/billing intent, native-tool
-semantics, and transcript interpretation. New turns cannot silently replace
-those properties. V1 uses one **stateless CLI invocation per turn**; provider
+session persists its authorized execution authority, authentication/billing
+intent, privacy requirement, and native-tool confirmation semantics alongside
+the mode; these are session choices, not values re-derived from a changed
+runner or project policy. New turns cannot silently replace those properties.
+Current policy may reject a previously authorized route, but cannot relax or
+rewrite the persisted choices. V1 uses one **stateless CLI invocation per turn**; provider
 session reuse is deferred until it has a separately specified recovery and
 credential contract.
 
