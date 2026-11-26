@@ -597,13 +597,15 @@ jobs:
 
   # Re-runs exactly the legs the platform never created, using the same
   # services, credentials, and per-leg artifact contract as the matrix. Legs
-  # that executed are never re-run here: their verdicts stand.
-  # @spec TEST-SUITE-018
+  # that executed are never re-run here: their verdicts stand. GitHub
+  # re-evaluates `always()` when cancelling a workflow, so pair it with
+  # `!cancelled()` to keep a superseded run from starting this expensive job.
+  # @spec TEST-SUITE-018 @spec TEST-SUITE-025
   shard-recovery:
     name: Recover dropped test shards
     needs: shard-status
     if: >-
-      always() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
+      always() && !cancelled() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
     runs-on: ubuntu-24.04
     # One dropped leg costs a normal shard runtime; allow for the worst case
     # of recovering several legs serially in this single job, including
