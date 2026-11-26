@@ -29,6 +29,7 @@ module Knowledge
   class ContainerizedRunner
     class Error < StandardError; end
     class ContainerError < Error; end
+    class ProvisionError < ContainerError; end
     class CloneError < Error; end
     class TimeoutError < ContainerError; end
 
@@ -238,6 +239,7 @@ module Knowledge
       raise CloneError, "Failed to clone repo: #{e.message}"
     end
 
+    # @spec KNOWLEDGE-017
     def provision_container!
       log("containerized_runner.provision.start")
 
@@ -248,7 +250,7 @@ module Knowledge
       log("containerized_runner.provision.success", container_id: @container.id)
     rescue Docker::Error::DockerError => e
       cleanup!
-      raise ContainerError, "Failed to provision collector container: #{e.message}"
+      raise ProvisionError, "Failed to provision collector container: #{e.message}"
     end
 
     # Creates a Docker named volume for the workspace. Named volumes are
