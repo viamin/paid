@@ -130,7 +130,13 @@ target boot verification. Every original PID/start-time instance must be proved
 gone before reopening; unknown visibility is not absence. Interrupted
 acknowledged updates keep persistent requests closed and expose an explicit
 recovery action for unchanged, known mixed, stopped or verified target phases.
-Mixed or unknown cohorts never silently reopen. Migration-sensitive updates
+Mixed or unknown cohorts never silently reopen. `bin/dev-update --recover`
+uses the recorded target and readiness directory. It continues stop/setup/start
+for known unchanged, mixed or stopped cohorts, starts without repeating completed
+setup when that phase was recorded, and verifies a completed target without a
+new stop or pull. Unsupported journal coverage or unknown identities defer;
+recovery retains normal Git-failure-lock handling and never renews actor
+allowances. Migration-sensitive updates
 fetch and pin the exact target before draining; the later fast-forward pull
 cannot silently select a newer main. The Bash client retains its original
 CLOEXEC coprocess descriptors, reads durable completion before closing them,

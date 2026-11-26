@@ -11,6 +11,7 @@
 # Usage:
 #   bin/dev-update --lightweight   # git pull only
 #   bin/dev-update --full          # git pull + overmind stop + bin/setup
+#   bin/dev-update --recover       # continue the recorded admission generation
 #
 # Safety:
 #   - Must be run from the repository root.
@@ -843,6 +844,22 @@ recover_dev_if_needed() {
   fi
 }
 
+setup_and_start_dev() {
+  if ! run_setup; then
+    log "Setup failed after Overmind stop."
+    recover_dev_if_needed
+    fail "Full restart aborted because bin/setup --skip-server failed."
+  fi
+  run_migrations_if_needed
+  # @spec PROMPT-DEFAULT-SYNC-007
+  run_prompt_default_sync_or_fail
+
+  if ! start_dev; then
+    fail "Full restart completed setup but failed to restore a healthy Overmind session."
+  fi
+
+}
+
 run_full_restart() {
   log "Starting full restart update..."
   if migrations_changed_in_trigger_context; then
@@ -862,20 +879,56 @@ run_full_restart() {
   wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
   stop_overmind
 
-  if ! run_setup; then
-    log "Setup failed after Overmind stop."
-    recover_dev_if_needed
-    fail "Full restart aborted because bin/setup --skip-server failed."
-  fi
-  run_migrations_if_needed
-  # @spec PROMPT-DEFAULT-SYNC-007
-  run_prompt_default_sync_or_fail
-
-  if ! start_dev; then
-    fail "Full restart completed setup but failed to restore a healthy Overmind session."
-  fi
+  setup_and_start_dev
 
   log "Full restart update complete."
+}
+
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+run_admission_recovery() {
+  local target cohort phase stopped="" checkout
+  worker_admission_load_context || fail "No valid recorded admission generation is available; inspect the workspace before requesting another update."
+  target="$WORKER_ADMISSION_TARGET"
+  if ! worker_admission_discover >/dev/null; then
+    timeout 5 python3 "$APP_ROOT/bin/lib/worker_admission_cohort.py" --workspace "$APP_ROOT" --absent >/dev/null ||
+      fail "Recovery cannot identify the complete live cohort or prove it stopped. Admission remains closed."
+    stopped=stopped
+  fi
+  worker_admission_begin "$target" recover "$stopped" || fail "Recorded admission could not be recovered; no stop or restart is authorized."
+  cohort="$(worker_admission_recovery_cohort)"
+  phase="$(worker_admission_recovery_phase)"
+  checkout="$(git rev-parse HEAD)" || fail "Checkout identity is unknown; admission remains closed."
+  if [ "$cohort" = target ]; then
+    [ "$checkout" = "$target" ] || fail "Recorded target boots disagree with the checkout; restore the pinned revision before recovery."
+    worker_admission_resume "$target" || fail "Target generation could not be verified; no new restart was attempted."
+    log "Recorded target generation verified; recovery required no restart."
+    return
+  fi
+  if [ "$cohort" = stopped ]; then
+    timeout 5 python3 "$APP_ROOT/bin/lib/worker_admission_cohort.py" --workspace "$APP_ROOT" --absent >/dev/null ||
+      fail "Worker presence changed during stopped recovery; no stop is authorized."
+    # The complete SDK cohort is already absent and all launch paths are
+    # fenced. Finish stopping other supervisor processes before setup.
+    stop_overmind_services
+    STOPPED_OVERMIND=1
+    if [ "$phase" = draining ] || [ "$phase" = stopping ]; then
+      worker_admission_checkpoint stopped || fail "Stopped phase could not be recorded."
+    fi
+  else
+    stop_overmind
+  fi
+  if [ "$checkout" != "$target" ]; then
+    [ "$phase" != starting ] || fail "Checkout changed after setup completed; restore the pinned target before starting."
+    check_failure_lock
+    ensure_on_main || fail "Cannot restore the pinned target from this working tree."
+    pull_latest || fail "Pinned target pull failed; admission remains closed."
+  fi
+  if [ "$phase" = starting ]; then
+    start_dev || fail "Recorded setup completed, but target workers did not start safely."
+  else
+    setup_and_start_dev
+  fi
+  log "Recorded worker update recovery complete."
 }
 
 case "$MODE" in
@@ -899,22 +952,19 @@ case "$MODE" in
       log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
       wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
       stop_overmind
-      if ! run_setup; then
-        recover_dev_if_needed
-        fail "Full restart aborted because bin/setup --skip-server failed."
-      fi
-      run_migrations_if_needed
-      # @spec PROMPT-DEFAULT-SYNC-007
-      run_prompt_default_sync_or_fail
-      if ! start_dev; then
-        fail "Full restart completed setup but failed to restore a healthy Overmind session."
-      fi
+      setup_and_start_dev
+
       log "Full restart update complete."
     else
       # @spec PROMPT-DEFAULT-SYNC-007
       run_prompt_default_sync_or_fail
       log "Lightweight update complete. Rails will autoload changes."
     fi
+    ;;
+  --recover)
+    configure_logging
+    log_trigger_context
+    run_admission_recovery
     ;;
   --full)
     configure_logging
@@ -923,7 +973,7 @@ case "$MODE" in
     run_full_restart
     ;;
   *)
-    echo "Usage: bin/dev-update [--lightweight|--full]" >&2
+    echo "Usage: bin/dev-update [--lightweight|--full|--recover]" >&2
     exit 1
     ;;
 esac
