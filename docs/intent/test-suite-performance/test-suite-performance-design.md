@@ -248,3 +248,19 @@ accounts. Each named scope is checked against competing statuses, and by_status
 is checked for every matrix entry. Active and finished membership use explicit
 expected sets. Specialized claim, recovery, timeout, synthetic-run, and tenant
 cases remain independent; all matrix rows use normal status factory traits.
+
+## Prepared query plans
+
+The default PostgreSQL test connection uses prepared statements, matching normal
+Rails connection behavior. Reusing query plans avoids repeating planning work
+across factory callbacks and service queries. Cached statements must continue to
+read tenant context at execution time; an uncached client query warmed across
+account changes verifies the server-side statement is reused with correct rows.
+That regression forces generic planning only inside its test transaction and
+checks the server reports at least eighteen executions of the generic plan;
+normal connection plan selection remains unchanged.
+Schema-mutating specs must keep statement and model-schema caches coherent at
+their own mutation boundaries. Do not restore a suite-wide prepared-statement
+opt-out to mask a local fixture problem. Existing complete DATABASE_URL routing,
+transactional fixtures, callbacks, RLS roles and the aggregate coverage gate
+remain authoritative.

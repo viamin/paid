@@ -47,6 +47,30 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
   let(:account_a) { create(:account) }
   let(:account_b) { create(:account) }
 
+  # @spec TEST-SUITE-027
+  it "reuses a prepared statement while switching tenants", :aggregate_failures do
+    accounts = described_class.with_system_access { [ account_a, account_b, account_a ] }
+    statement_names = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |event|
+      statement_names << event.payload[:statement_name] if event.payload[:name] == "Account Pluck"
+    end
+    connection = ActiveRecord::Base.connection
+    as_restricted_role do
+      connection.execute("SET LOCAL plan_cache_mode = force_generic_plan")
+      ActiveRecord::Base.uncached do
+        accounts.each do |account|
+          described_class.with(account) do
+            6.times { expect(Account.where(status: "active").pluck(:id)).to eq([ account.id ]) }
+          end
+        end
+      end
+    end
+    expect(statement_names).to match_array([ statement_names.first ] * 18)
+    expect(connection.select_value("SELECT generic_plans FROM pg_prepared_statements WHERE name = #{connection.quote(statement_names.first)}").to_i).to be >= 18
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it "filters direct account records through the database policy" do
     project_a = described_class.with_system_access { create(:project, account: account_a) }
     described_class.with_system_access { create(:project, account: account_b) }
