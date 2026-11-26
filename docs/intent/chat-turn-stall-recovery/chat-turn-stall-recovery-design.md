@@ -83,6 +83,11 @@ do refresh a separate durable `attempt_heartbeat_at` lease at a bounded
 interval. The detector requires both timestamps to be stale, so a provider
 that is still producing chunks cannot be classified as stalled and recovered
 concurrently with its original loop.
+The fallback loop also maintains the attempt lease while the provider is
+silent. Its heartbeat thread checks the stop state under the same mutex
+before waiting and after waking. This preserves a completion signal sent
+before the thread starts waiting, so fast failures do not wait for the
+30-second heartbeat interval during thread cleanup.
 `record_activity!` also flips `write_tool_dispatched` to `true` the first
 time a message represents a write-tool call (`Tools::Registry.write_tool?`),
 regardless of whether the call later pauses for confirmation or auto-approves

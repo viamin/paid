@@ -8,6 +8,18 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
   let(:user) { create(:user, :owner, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
 
+  # @spec CHAT-TURN-RECOVERY-001
+  it "does not wait for the heartbeat interval when the attempt already stopped" do
+    turn = instance_double(ChatTurn)
+    wakeup = instance_double(ConditionVariable)
+    expect(wakeup).not_to receive(:wait)
+    expect(turn).not_to receive(:heartbeat!)
+
+    thread = fallback_host(nil).send(:start_heartbeat_thread, turn, Mutex.new, wakeup, -> { true })
+    thread.report_on_exception = false
+    thread.value
+  end
+
   # @spec CHAT-API-006
   # @spec CHAT-API-017
   it "raises AgentHarness::RateLimitError and pauses the session for a classified 429 provider rate limit" do

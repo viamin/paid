@@ -78,7 +78,7 @@ module ChatSessions
       Thread.new do
         loop do
           should_stop = mutex.synchronize do
-            wakeup.wait(mutex, ChatTurn::HEARTBEAT_INTERVAL)
+            wakeup.wait(mutex, ChatTurn::HEARTBEAT_INTERVAL) unless stopped.call
             stopped.call
           end
           break if should_stop
