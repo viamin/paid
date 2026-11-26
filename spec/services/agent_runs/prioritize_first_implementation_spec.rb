@@ -33,6 +33,16 @@ RSpec.describe AgentRuns::PrioritizeFirstImplementation do # @spec QUEUE-TIER-01
     expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested").count).to eq(1)
   end
 
+  it "keeps an existing first-implementation request idempotent" do # @spec QUEUE-TIER-010
+    requested_at = 1.minute.ago
+    agent_run.update!(operator_first_implementation_priority_requested_at: requested_at)
+
+    expect(described_class.call(agent_run:, actor:)).to be(false)
+    expect(agent_run.reload.operator_first_implementation_priority_requested_at).to be_within(0.000001).of(requested_at)
+    expect(agent_run.operator_coding_priority_requested_at).to be_nil
+    expect(account.account_activity_events.where(action: "agent_run.first_implementation_priority_requested")).not_to exist
+  end
+
   it "refuses priority while the project is quality paused" do # @spec QUEUE-TIER-010
     project.update!(quality_paused_at: 1.hour.ago)
 
