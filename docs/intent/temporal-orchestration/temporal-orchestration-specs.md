@@ -62,7 +62,10 @@
   every original PID/start-time instance has exited; fresh target metadata or
   unknown process visibility SHALL NOT substitute for that proof.
   The acknowledgement and resume operations SHALL be
-  non-blocking with respect to SDK notification callbacks. A requested final
+  non-blocking with respect to SDK notification callbacks. The acknowledgement
+  deadline SHALL preserve `DEV_UPDATE_WORKER_DRAIN_POLL_COUNT` multiplied by
+  `DEV_UPDATE_OVERMIND_POLL_INTERVAL`, including discovery and startup time;
+  invalid or nonpositive budgets SHALL defer before admission requests. A requested final
   transport handshake SHALL be bounded and SHALL NOT retain admission locks
   after durable completion. On timeout, unknown
   state, abort, replacement, or a worker that lacks the capability, the updater

@@ -78,6 +78,10 @@ standalone updater does not depend on a bootable Rails application. It owns
 a stable controller lock, request generation and per-role exclusive locks.
 The updater consumer in `bin/dev-update` supplies the expected workspace,
 role identities, target revision, and its existing finite drain budget. The
+acknowledgement deadline includes cohort discovery and controller startup and
+uses `DEV_UPDATE_WORKER_DRAIN_POLL_COUNT` times
+`DEV_UPDATE_OVERMIND_POLL_INTERVAL` (defaults 120 and 1 second). Invalid or
+nonpositive budgets fail before requesting admission. The
 default `both` worker mode has two SDK workers in one process: their distinct
 slot capacities share one boot identity and admission inode. The controller
 coalesces that physical path while acknowledging both logical roles; it must

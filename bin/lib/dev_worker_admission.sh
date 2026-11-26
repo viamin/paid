@@ -79,7 +79,13 @@ worker_admission_begin() {
   local target="$1" mode="${2:-drain}" stopped="${3:-}" budget identities entry markers response
   local -a arguments=(--workspace "$APP_ROOT" --target-revision "$target" --mode "$mode" --finish-handshake)
   [ "$WORKER_ADMISSION_ACTIVE" -eq 0 ] || return 0
-  WORKER_ADMISSION_DEADLINE="$(python3 -c 'import time; print(time.monotonic()+120)')" || return 1
+  WORKER_ADMISSION_DEADLINE="$(python3 -c '
+import math,sys,time
+count=int(sys.argv[1]); interval=float(sys.argv[2]); budget=count*interval
+assert count>0 and interval>0 and math.isfinite(budget)
+print(time.monotonic()+budget)
+' "${WORKER_DRAIN_POLL_COUNT:-${DEV_UPDATE_WORKER_DRAIN_POLL_COUNT:-120}}" \
+    "${OVERMIND_POLL_INTERVAL:-${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}}")" || return 1
   if [ "$mode" = recover ]; then
     worker_admission_load_context || return 1
     [ "$target" = "$WORKER_ADMISSION_TARGET" ] || return 1

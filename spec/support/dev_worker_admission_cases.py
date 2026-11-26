@@ -308,5 +308,46 @@ worker_admission_resume ''' + "b" * 40 + "\n")
         self.temporary.cleanup()
 
 
+class DrainBudgetTest(unittest.TestCase):
+    """@spec DEVELOPMENT-ENVIRONMENT-UPDATE-006 @spec TEMPORAL-ORCHESTRATION-021"""
+
+    def deadline(self, count=None, interval=None):
+        source = Path(__file__).resolve().parents[2]
+        environment = dict(os.environ)
+        for key in ("DEV_UPDATE_WORKER_DRAIN_POLL_COUNT", "DEV_UPDATE_OVERMIND_POLL_INTERVAL"):
+            environment.pop(key, None)
+        if count is not None:
+            environment["DEV_UPDATE_WORKER_DRAIN_POLL_COUNT"] = count
+        if interval is not None:
+            environment["DEV_UPDATE_OVERMIND_POLL_INTERVAL"] = interval
+        code = """set -euo pipefail
+APP_ROOT="$PWD"
+source bin/lib/dev_worker_admission.sh
+worker_admission_discover() { return 1; }
+worker_admission_begin target || true
+python3 -c 'import sys,time; print(float(sys.argv[1])-time.monotonic())' "$WORKER_ADMISSION_DEADLINE"
+"""
+        return subprocess.run(["bash", "-c", code], cwd=source, env=environment,
+                              capture_output=True, text=True, timeout=5)
+
+    def test_default_budget_remains_120_seconds(self):
+        result = self.deadline()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertGreater(float(result.stdout), 118)
+        self.assertLessEqual(float(result.stdout), 120)
+
+    def test_configured_count_and_fractional_interval_bound_the_deadline(self):
+        result = self.deadline("2", "0.5")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertGreater(float(result.stdout), 0)
+        self.assertLessEqual(float(result.stdout), 1)
+
+    def test_nonpositive_or_nonfinite_budget_refuses_before_discovery(self):
+        for count, interval in (("0", "1"), ("-1", "1"), ("1", "nan"), ("2", "0")):
+            with self.subTest(count=count, interval=interval):
+                result = self.deadline(count, interval)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
