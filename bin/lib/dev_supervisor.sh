@@ -75,6 +75,29 @@ dev_supervisor_overmind_has_dead_processes() {
   printf '%s\n' "$output" | awk 'NR > 1 { print $3 }' | grep -qx 'dead'
 }
 
+# Whether `overmind status` output matches its real PROCESS/PID/STATUS
+# grammar (header row, then one row per process with a numeric PID and a
+# running/dead STATUS). A zero exit status only proves the command ran, not
+# that its output parsed as status rows — unparseable text must not be
+# treated as proof that no row names a Temporal worker process.
+# @spec TEMPORAL-ORCHESTRATION-019
+dev_supervisor_overmind_status_well_formed() {
+  local output="$1"
+  printf '%s\n' "$output" | awk '
+    BEGIN { valid = 1 }
+    NR == 1 {
+      if (NF != 3 || $1 != "PROCESS" || $2 != "PID" || $3 != "STATUS") valid = 0
+      next
+    }
+    NF == 0 { next }
+    {
+      rows += 1
+      if (NF != 3 || $2 !~ /^[0-9]+$/ || ($3 != "running" && $3 != "dead")) valid = 0
+    }
+    END { exit(valid && rows > 0 ? 0 : 1) }
+  '
+}
+
 dev_supervisor_log_line() {
   local file="$1"
   shift
@@ -389,6 +412,32 @@ dev_supervisor_workspace_tmux_sessions() {
     while IFS='|' read -r session_name pane_path; do
       [ "$pane_path" = "$APP_ROOT" ] || continue
       printf '%s|%s\n' "$socket" "$session_name"
+    done <<< "$panes"
+  done < <(dev_supervisor_tmux_sockets)
+}
+
+# Lists the Overmind window names of same-workspace tmux panes so the updater
+# can tell whether an orphaned (socket-less) supervisor session still hosts
+# worker_poll/worker_agent Temporal workers. Overmind names each tmux window
+# after its Procfile process, so the window name identifies the process. A
+# server that cannot be inspected emits no window name and is skipped here:
+# enumeration never force-kills, and an uninspectable orphaned session is
+# failed before setup by the stop path's own guard (RAILS-CONTROL-PLANE-019),
+# not silently assumed to hold workers.
+# @spec TEMPORAL-ORCHESTRATION-019
+dev_supervisor_workspace_tmux_window_names() {
+  local socket panes window_name pane_path
+
+  while IFS= read -r socket; do
+    [ -n "$socket" ] || continue
+    if ! panes="$(LC_ALL=C tmux -S "$socket" list-panes -a -F '#{pane_current_path}|#{window_name}' 2>&1)"; then
+      printf '%s\n' "$panes" >> "$(dev_supervisor_tmux_log)"
+      continue
+    fi
+
+    while IFS='|' read -r pane_path window_name; do
+      [ "$pane_path" = "$APP_ROOT" ] || continue
+      printf '%s\n' "$window_name"
     done <<< "$panes"
   done < <(dev_supervisor_tmux_sockets)
 }

@@ -233,13 +233,46 @@ the selected worker mode and activity-slot counts. Regular activities can
 consume an additional database connection through heartbeat helper threads, so
 pool sizing must account for both activity slots and heartbeat threads.
 
+## Task-Safe Worker Quiescence
+
+The selected protocol closes future reservations before waiting for exclusive
+ownership of every already-issued workflow and remote activity permit. It uses
+the installed SDK's public custom-slot callbacks; no hypothetical lifecycle
+method or private bridge operation is required. The request is not an
+acknowledgement. Only exclusive ownership of the complete affected role set,
+with unchanged trusted boot identities, authorizes a stop.
+
+Permits retain shared ownership from reservation through SDK release. New
+blocking reservations wait cancellably after a request, while eager reservation
+attempts return immediately. Notification callbacks never acquire an admission
+fence after assignment and never publish readiness files. Existing fixed slot
+counts, queues, task deadlines, retries and shutdown grace are preserved.
+
+The capability covers Paid's registered workflows and remote activity boundary.
+The unused fixed local-activity supplier remains unchanged. General local
+activity, Nexus or additional worker configurations must not advertise this
+capability without their own proven ownership protocol. Both poll and agent
+roles, including sticky workflow polling and enabled remote eager admission,
+require real SDK/server verification before TEMPORAL-ORCHESTRATION-021 can be
+marked implemented.
+
+The standalone updater uses a controller outside restarted services, with
+serialized generation ownership, persistent fail-closed requests and
+non-inherited lock descriptors. Timeout before acknowledgement aborts only the
+caller's request without stopping workers; an interrupted acknowledged update
+has an explicit recoverable generation, never a false success. Unsupported
+legacy workers and missing or ambiguous readiness defer before stop. A
+controlled empty-workload maintenance bootstrap is separate from steady-state
+adoption. The complete protocol, legacy preconditions and real verification
+matrix are in [the quiescence decision](decisions/task-safe-worker-quiescence.md).
+
 ## Health control routing alternatives
 
-| Choice | Decision | Rationale |
-| --- | --- | --- |
-| Existing poll worker for the bounded health activity | Selected | Its activity registration and capacity already exist independently of long agent work. |
-| New worker process or larger agent slot count | Rejected | Adds capacity and deployment complexity without isolating the observed control dependency. |
-| Longer health deadline on the agent queue | Rejected | A queued check still supplies no endpoint observation and can discard completed work. |
+| Choice | Decision | Alternatives | Rationale |
+| --- | --- | --- | --- |
+| Existing poll worker for the bounded health activity | Selected | New worker process or larger agent slot count | Its activity registration and capacity already exist independently of long agent work. |
+| Longer health deadline on the agent queue | Rejected | Existing poll worker | A queued check still supplies no endpoint observation and can discard completed work. |
+| Task-safe worker quiescence | Two-stage request and reservation-to-release ownership through public SDK suppliers, subject to real verification | Activity-body locks; permit transfer after assignment; reader renewal without a request; shutdown as a reversible fence | Closing renewal lets outstanding poll and eager permits settle before exclusive acknowledgement. Unproven or legacy roles defer, and unknown supervisor state never proves absence. |
 
 ## Deferred Work
 

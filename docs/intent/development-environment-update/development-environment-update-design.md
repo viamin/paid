@@ -110,25 +110,40 @@ code. The readiness facts remain evidence about worker adoption
 only and do not attest
 application-level behavior.
 
-## Active-Work Drain Before Restart
+## Temporal Worker Quiescence Before Restart
 
-Before a full update asks Overmind to stop, each Temporal activity holds shared
-ownership of a per-worker admission barrier for its full execution. The updater
-acquires the corresponding barriers exclusively and retains both through the
-stop request. Acquiring a role's barrier waits for its existing activities and
-then closes admission for that role, so work cannot arrive on the first role
-while the updater waits for the second. Workers continue to publish safe active
-counts alongside immutable boot identity for observability; neither the barrier
-nor metadata contains activity input, process arguments, environment, or
-credentials.
+Activity-body counts are observability only: a Temporal task can already be
+reserved by a long poll before Ruby enters an activity body. The installed Ruby
+SDK does not expose a public worker operation that closes new poll and eager
+admission, accounts for already-reserved work, and acknowledges that boundary
+without beginning shutdown. Therefore `bin/dev-update` defers before stopping
+any ready Temporal worker and reports the missing capability. It does not infer
+safety from `active_activities`, block an SDK notification callback, cancel an
+owner, reset an attempt, enlarge a deadline, or alter control queue routing.
 
-The wait has a bounded poll budget. If either ready worker remains active or
-its count cannot be read within that budget, the update fails before stopping
-Overmind and records that adoption was deferred. It does not turn the failed
-update into a restart, cancel an owner, reset an audit, enlarge any activity or
-shutdown timeout, or alter the existing control queues. A later authorized
-normal full update can retry after the owners have reached their normal
-terminal or handoff state.
+Missing readiness metadata is not itself evidence that no worker is running: a
+worker can fail before it marks ready, or its flag can be removed, while the
+supervisor keeps the process. The deferral therefore also applies when metadata
+is missing and a running Overmind still reports Temporal worker processes. It
+also applies when the control socket is absent but a same-workspace orphaned
+Overmind tmux session that the stop path would force-kill still hosts a
+`worker_poll`/`worker_agent` window — a missing socket cannot be quit
+gracefully, so stopping it would interrupt that worker without acknowledgement.
+The update proceeds without quiescence only when the supervisor state verifies
+no Temporal worker will be stopped (the configured Overmind Unix control socket
+is absent and no such orphaned worker-bearing session exists, or a successful
+status inspection reports no `worker_poll`/`worker_agent` processes). When
+status fails, a present socket must also positively reject a local connection as
+stale; any other failure is unknown, not proof that no worker is running. An
+orphaned session that cannot be inspected is not drained: the stop path fails
+before setup on it (`RAILS-CONTROL-PLANE-019`) rather than force-killing it.
+
+`TEMPORAL-ORCHESTRATION-019` owns the required SDK contract and rollout. Once a
+released SDK implements that contract, the updater may use its acknowledged
+quiescence result for both poll and agent roles, retain it through the stop
+boundary, and resume normal update adoption on a timeout or abort. Until then,
+the deferral is bounded and recoverable, not a claim that an idle legacy worker
+is safe to stop.
 
 ## Decisions & Alternatives
 
@@ -140,9 +155,9 @@ terminal or handoff state.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
+| Temporal worker quiescence | Defer before stop when a Temporal worker is ready, when a running Overmind reports one without readiness metadata, or when a socket-less orphaned same-workspace session hosts a worker window the stop path would force-kill; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata or an absent control socket as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, missing metadata cannot prove no worker owns work, and an absent control socket does not stop the tmux cleanup from killing an orphaned session's workers. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-019`. |
 | Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
 | Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
-| Active work during update | Acquire and retain exclusive per-worker activity-admission barriers through the stop request, then use the existing graceful restart; fail before stop on a bounded acquisition timeout | Sequential idle snapshots; stop immediately; force a handoff; increase shutdown/activity deadlines | A retained barrier closes the arrival race between roles while existing shared owners drain. An immediate stop can end a live activity's heartbeat and consume its finite retry budget. |
 
 ## References
 

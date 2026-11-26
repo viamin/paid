@@ -43,8 +43,6 @@ OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
 WORKER_ADOPTION_POLL_COUNT="${DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT:-120}"
-WORKER_DRAIN_POLL_COUNT="${DEV_UPDATE_WORKER_DRAIN_POLL_COUNT:-120}"
-WORKER_ADMISSION_LOCK_FDS=()
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
@@ -449,7 +447,6 @@ stop_overmind() {
       for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
         if [ ! -e "$OVERMIND_SOCKET" ]; then
           log "Overmind socket removed."
-          release_worker_admission_barriers
           return
         fi
 
@@ -462,7 +459,6 @@ stop_overmind() {
       done
 
       remove_stale_overmind_socket
-      release_worker_admission_barriers
       return
     fi
   fi
@@ -478,7 +474,6 @@ stop_overmind() {
   else
     log "Overmind not running, skipping stop."
   fi
-  release_worker_admission_barriers
 }
 
 # Drop databases left behind by removed git worktrees. bin/setup creates a
@@ -606,76 +601,107 @@ worker_reports_revision() {
   [ -n "$revision" ] && [ "$revision" = "$expected_revision" ]
 }
 
-worker_readiness_active_activities() {
-  local file="$1"
-  [ -f "$file" ] || return 1
-  sed -n 's/.*"active_activities"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$file" | tail -n 1
+# Whether the supervisor state verifies that stopping it cannot interrupt a
+# Temporal worker. An absent configured Unix control socket means no running
+# Overmind can be quit gracefully, but stop_overmind still force-kills any
+# same-workspace orphaned Overmind tmux session, so an absent socket is safe
+# only when no such session positively hosts a Temporal worker (see
+# workspace_tmux_hosts_temporal_worker). If the socket exists, only a
+# successful `overmind status` with no Temporal worker process is safe:
+# command failure is an unknown supervisor state, not proof of absence.
+# Readiness metadata missing against any other state is not evidence of safety
+# — a worker that failed before mark_ready! (or whose flag was removed) still
+# owns or has reserved work under a running supervisor.
+# @spec TEMPORAL-ORCHESTRATION-019
+overmind_control_socket_has_no_listener() {
+  ruby -rsocket -e '
+    begin
+      UNIXSocket.new(ARGV.fetch(0)).close
+    rescue Errno::ECONNREFUSED, Errno::ENOENT
+      exit 0
+    rescue SystemCallError
+      exit 1
+    end
+    exit 1
+  ' "$OVERMIND_SOCKET"
 }
 
-worker_admission_lock_file() {
-  local mode="$1"
-  printf '%s.admission.lock' "$(worker_readiness_file "$mode")"
+# Whether a same-workspace orphaned Overmind tmux session that stop_overmind
+# would kill still hosts a Temporal worker. When the control socket is absent,
+# stop_overmind force-kills such sessions (dev_supervisor_stop_workspace_tmux_sessions),
+# and Overmind keeps each worker in a tmux window named after its Procfile
+# process, so a worker_poll/worker_agent window identifies a live Temporal
+# worker. awk is the terminal pipeline stage and consumes all input, so its
+# exit status is deterministic under pipefail (an early-exiting reader could
+# otherwise race the producer into SIGPIPE).
+# @spec TEMPORAL-ORCHESTRATION-019
+workspace_tmux_hosts_temporal_worker() {
+  dev_supervisor_workspace_tmux_window_names |
+    awk '$0 == "worker_poll" || $0 == "worker_agent" { found = 1 } END { exit(found ? 0 : 1) }'
 }
 
-release_worker_admission_barriers() {
-  local fd
-  for fd in "${WORKER_ADMISSION_LOCK_FDS[@]}"; do
-    exec {fd}>&-
-  done
-  WORKER_ADMISSION_LOCK_FDS=()
-}
-
-acquire_worker_admission_barrier() {
-  local mode="$1"
-  local fd
-  exec {fd}<>"$(worker_admission_lock_file "$mode")"
-  if flock -n "$fd"; then
-    local active_activities
-    active_activities="$(worker_readiness_active_activities "$(worker_readiness_file "$mode")")" || true
-    if [ "$active_activities" = "0" ]; then
-      WORKER_ADMISSION_LOCK_FDS+=("$fd")
-      return 0
+# @spec TEMPORAL-ORCHESTRATION-019
+verified_no_temporal_worker() {
+  local status_output
+  if [ ! -S "$OVERMIND_SOCKET" ]; then
+    # A missing socket cannot be quit gracefully; stop_overmind force-kills any
+    # same-workspace orphaned session. Defer only when such a session positively
+    # hosts a Temporal worker. An uninspectable or stop-failing session is not
+    # assumed worker-free here, but it is never killed either: the stop path
+    # fails before setup on it (RAILS-CONTROL-PLANE-019) rather than draining.
+    if workspace_tmux_hosts_temporal_worker; then
+      return 1
     fi
+    return 0
   fi
 
-  exec {fd}>&-
-  return 1
+  if ! status_output="$(dev_supervisor_overmind_status_output)"; then
+    overmind_control_socket_has_no_listener
+    return
+  fi
+
+  # A zero exit status does not prove the output parsed as status rows: a
+  # malformed successful response finds no "worker_poll"/"worker_agent" row
+  # not because none exists, but because nothing is being parsed correctly.
+  # Only a recognizably valid response can stand in for verified absence.
+  if ! dev_supervisor_overmind_status_well_formed "$status_output"; then
+    log "ERROR: overmind status output did not match the expected PROCESS/PID/STATUS format; treating worker presence as unverified."
+    return 1
+  fi
+
+  # awk is the terminal pipeline stage and consumes all input, so its exit
+  # status is deterministic under pipefail (an early-exiting grep reader
+  # could otherwise race a writer into SIGPIPE).
+  if printf '%s\n' "$status_output" | awk 'NR > 1 && ($1 == "worker_poll" || $1 == "worker_agent") { found = 1 } END { exit(found ? 0 : 1) }'; then
+    return 1
+  fi
+  return 0
 }
 
-# Preserve current activity ownership before a worker-loaded code restart.
-# Each activity owns a shared per-worker admission lock for its full execution.
-# Acquiring that lock exclusively waits for current owners and closes admission
-# atomically. Retaining each acquired barrier while the other role drains
-# prevents the cross-role arrival race left by sequential idle snapshots.
-# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+# The SDK reports an activity body only after accepting a task. It cannot
+# acknowledge an atomic close of task admission that includes long-poll
+# reservations or eager activity admission. Treat a ready legacy worker as an
+# unsupported rollout boundary rather than inferring safety from body counts.
+# @spec TEMPORAL-ORCHESTRATION-019
 wait_for_workers_to_drain() {
   local poll_readiness
   local agent_readiness
   poll_readiness="$(worker_readiness_file poll)"
   agent_readiness="$(worker_readiness_file agent)"
   if [ ! -f "$poll_readiness" ] && [ ! -f "$agent_readiness" ]; then
-    log "No existing Temporal worker readiness metadata found; no worker activity ownership needs draining."
-    return 0
+    if verified_no_temporal_worker; then
+      log "No Temporal worker readiness metadata found and no Temporal worker is running; no Temporal worker quiescence is required."
+      return 0
+    fi
+
+    log "ERROR: Temporal worker readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind."
+    log "A worker that failed before marking ready can still own or have reserved work, and an orphaned Overmind tmux session the stop path would kill can still host Temporal workers. Resolve the dev environment state, including any orphaned Overmind tmux session or failed status inspection, or install an SDK release implementing TEMPORAL-ORCHESTRATION-019 before rerunning bin/dev-update --full."
+    return 1
   fi
 
-  local mode
-  local i
-  for mode in poll agent; do
-    for ((i = 0; i < WORKER_DRAIN_POLL_COUNT; i += 1)); do
-      if acquire_worker_admission_barrier "$mode"; then
-        log "Worker (${mode}) activity admission is closed and existing activities have drained."
-        break
-      fi
-      sleep "$OVERMIND_POLL_INTERVAL"
-    done
-
-    if [ "$i" -ge "$WORKER_DRAIN_POLL_COUNT" ]; then
-      release_worker_admission_barriers
-      log "Warning: ${mode} worker activity admission barrier was not acquired within ${WORKER_DRAIN_POLL_COUNT} polls."
-      log "ERROR: Worker drain did not complete; deferring worker adoption without stopping Overmind."
-      return 1
-    fi
-  done
+  log "ERROR: Installed Temporal Ruby SDK does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind."
+  log "Install an SDK release implementing TEMPORAL-ORCHESTRATION-019 before restarting a ready Temporal worker."
+  return 1
 }
 
 # Effective worker adoption verification: Overmind health alone cannot
@@ -775,7 +801,7 @@ run_full_restart() {
   log "Starting full restart update..."
   if migrations_changed_in_trigger_context; then
     log "Migration files are in the trigger context; stopping Overmind before pulling to avoid Rails pending-migration errors."
-    wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
+    wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
     stop_overmind
   fi
 
@@ -787,7 +813,7 @@ run_full_restart() {
     recover_dev_if_needed
     fail "git pull --ff-only failed. Check for diverged history or upstream issues."
   fi
-  wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
+  wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
   stop_overmind
 
   if ! run_setup; then
@@ -825,7 +851,7 @@ case "$MODE" in
     fi
     if restart_required_from_pull; then
       log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
-      wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
+      wait_for_workers_to_drain || fail "Temporal worker state was not safe to stop; the update was deferred before stopping Overmind. Resolve the reported worker state and rerun bin/dev-update --full."
       stop_overmind
       if ! run_setup; then
         recover_dev_if_needed

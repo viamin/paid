@@ -53,6 +53,34 @@ RSpec.describe Paid::WorkerReadiness do
   end
 
   describe ".mark_ready!" do
+    it "retains one admission boot identity through observations and changed checkout signals" do # @spec TEMPORAL-ORCHESTRATION-021
+      fields = %w[activity_slots activity_task_polls local_activity_slots workflow_slots workflow_task_polls]
+      identity = Paid::WorkerAdmission.boot_identity(
+        workspace: tmpdir, revision: "a" * 40, profiles: { "agent" => fields.to_h { |field| [ field, 4 ] } }
+      )
+      env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "b" * 40 }
+      described_class.mark_ready_with_admission!(identity, env)
+      initial = JSON.parse(File.read(file_path))
+      expect(initial.fetch("admission")).to eq(identity)
+      expect(initial.fetch("revision")).to eq("a" * 40)
+
+      described_class.with_activity_observation(env) do
+        observed = JSON.parse(File.read(file_path))
+        expect(observed.fetch("admission")).to eq(identity)
+        expect(observed.fetch("revision")).to eq("a" * 40)
+        expect(observed.fetch("active_activities")).to eq(1)
+      end
+      described_class.heartbeat!(env, health: "healthy")
+      described_class.mark_ready!(env)
+      expect(JSON.parse(File.read(file_path)).fetch("admission")).to eq(identity)
+      expect(JSON.parse(File.read(file_path)).fetch("revision")).to eq("a" * 40)
+    end
+
+    it "does not advertise a Temporal capability for another readiness path" do # @spec TEMPORAL-ORCHESTRATION-021
+      described_class.mark_ready!("WORKER_READINESS_FILE" => file_path)
+      expect(JSON.parse(File.read(file_path))).not_to have_key("admission")
+    end
+
     it "creates the readiness file" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -82,7 +110,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload.fetch("heartbeat_at")).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-020
     it "publishes a coarse active activity count without exposing activity data" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -96,19 +124,15 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    it "holds activity admission ownership until the activity finishes" do
+    # @spec TEMPORAL-ORCHESTRATION-020
+    it "observes activity ownership without claiming to control SDK admission" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
       activity, release = start_owned_activity(env)
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
-      end
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 1)
       release << true
       activity.join
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(0)
-      end
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     ensure
       release << true if activity&.alive?
       activity&.join
@@ -131,7 +155,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["revision"]).to eq("deployed-sha")
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-020
     it "retains the boot revision while activity ownership changes" do
       env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "booted-sha" }
       described_class.mark_ready!(env)
@@ -241,7 +265,7 @@ RSpec.describe Paid::WorkerReadiness do
     entered = Queue.new
     release = Queue.new
     activity = Thread.new do
-      described_class.with_activity(env) do
+      described_class.with_activity_observation(env) do
         entered << true
         release.pop
       end
