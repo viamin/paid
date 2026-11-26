@@ -5886,21 +5886,24 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      # @spec TEST-SUITE-029
       it "caps startup timeout by the remaining execution budget" do
-        agent_run.update!(status: "running", started_at: 4.minutes.ago)
-        project.update!(max_execution_seconds: 270)
-        allow(container_service).to receive(:execute).and_return(exec_success)
-        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+        freeze_time do
+          agent_run.update!(status: "running", started_at: 4.minutes.ago)
+          project.update!(max_execution_seconds: 270)
+          allow(container_service).to receive(:execute).and_return(exec_success)
+          allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
-        expect(container_service).to receive(:execute).with(
-          anything,
-          hash_including(
-            timeout: 30,
-            startup_timeout: 30
-          )
-        ).and_return(exec_success)
+          expect(container_service).to receive(:execute).with(
+            anything,
+            hash_including(
+              timeout: 30,
+              startup_timeout: 30
+            )
+          ).and_return(exec_success)
 
-        activity.execute(agent_run_id: agent_run.id)
+          activity.execute(agent_run_id: agent_run.id)
+        end
       end
 
       it "does not apply idle timeout to runners without heartbeat support" do
