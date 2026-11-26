@@ -56,6 +56,9 @@ rescue ArgumentError => error
   exit 1
 end
 
+# Readiness and slot suppliers must use the effective CLI/environment mode.
+ENV["TEMPORAL_WORKER_MODE"] = worker_mode
+
 puts "Starting Temporal worker..."
 puts "Worker mode: #{worker_mode}"
 puts "Activities: #{activities.map(&:name).join(", ")}"

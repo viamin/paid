@@ -64,7 +64,10 @@ role identities, target revision, and its existing finite drain budget. The
 default `both` worker mode has two SDK workers in one process: their distinct
 slot capacities share one boot identity and admission inode. The controller
 coalesces that physical path while acknowledging both logical roles; it must
-not attempt to acquire the same exclusive inode twice.
+not attempt to acquire the same exclusive inode twice. Implicit and explicit
+`both` launches use the canonical `-both` marker, and CLI-only split launches
+bind their resolved mode before readiness publication. An old unsuffixed marker
+remains legacy evidence and must defer rather than authorize a worker-free stop.
 
 1. Validate every affected role before changing any admission state. Bind the
    readiness records to the expected workspace and supervisor-owned process
@@ -132,8 +135,14 @@ A supported maintenance acceptance case must establish exclusive control of
 the complete producer cohort and retain all finite business owners until they
 finish under their original budgets. A genuine operator may explicitly request
 normal cancellation of an **idle** continuous control workflow. Bind that
-request to its exact workflow run and first-execution identity; never retarget
-an ID-only request across continue-as-new. Await the actual server terminal
+request to its exact workflow run. Record and verify the first-execution
+identity through read-only metadata, then cancel through a public SDK handle
+that carries the exact `run_id` and omits `first_execution_run_id`.
+[Temporal 1.29.7 clears the requested run ID when the first-execution field is
+supplied](https://github.com/temporalio/temporal/blob/v1.29.7/service/history/api/requestcancelworkflow/api.go#L29-L35),
+so sending both fields can target a continued successor instead of the recorded
+run. Never retarget after continue-as-new or treat a successful cancellation
+RPC as proof that the recorded run was cancelled. Await the actual server terminal
 result with following runs disabled, and inspect the history delta. Any owned
 activity cancellation, timeout, unexpected business dispatch, a new continued
 run, an unexcluded client or an unknown RPC outcome invalidates the bootstrap

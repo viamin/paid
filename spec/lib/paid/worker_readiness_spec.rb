@@ -52,6 +52,43 @@ RSpec.describe Paid::WorkerReadiness do
     end
   end
 
+  context "when running a Temporal worker" do
+    around do |example|
+      original_program = $PROGRAM_NAME
+      $PROGRAM_NAME = "bin/temporal_worker"
+      example.run
+    ensure
+      $PROGRAM_NAME = original_program
+    end
+
+    it "uses the same canonical path for implicit and explicit both mode" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+      implicit = described_class.default_file_name({})
+      explicit = described_class.default_file_name("TEMPORAL_WORKER_MODE" => "both")
+      expect(implicit).to eq("paid-worker-ready-temporal_worker-both")
+      expect(explicit).to eq(implicit)
+    end
+
+    it "keeps split roles and explicit readiness overrides distinct" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+      expect(described_class.default_file_name("TEMPORAL_WORKER_MODE" => "poll")).to end_with("-poll")
+      expect(described_class.default_file_name("TEMPORAL_WORKER_MODE" => "agent")).to end_with("-agent")
+      expect(described_class.file_path("WORKER_READINESS_FILE" => file_path)).to eq(file_path)
+    end
+  end
+
+  context "when running jobs" do
+    around do |example|
+      original_program = $PROGRAM_NAME
+      $PROGRAM_NAME = "bin/jobs"
+      example.run
+    ensure
+      $PROGRAM_NAME = original_program
+    end
+
+    it "retains the jobs readiness path" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+      expect(described_class.default_file_name({})).to eq("paid-worker-ready-jobs")
+    end
+  end
+
   describe ".mark_ready!" do
     it "retains one admission boot identity through observations and changed checkout signals" do # @spec TEMPORAL-ORCHESTRATION-021
       fields = %w[activity_slots activity_task_polls local_activity_slots workflow_slots workflow_task_polls]

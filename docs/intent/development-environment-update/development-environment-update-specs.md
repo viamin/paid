@@ -82,15 +82,17 @@
   uncovered or changing workers, and obtain complete two-stage public-SDK
   quiescence for both roles within the existing drain budget. It SHALL retain
   the controller's exclusive locks through stop, setup and target boot
-  verification, coalesce both-mode roles through the default unsuffixed
-  `paid-worker-ready-temporal_worker` marker without double-locking, and prevent
+  verification, coalesce implicit and explicit both-mode roles through the
+  canonical `paid-worker-ready-temporal_worker-both` marker without double-locking,
+  preserve resolved split-mode markers and jobs readiness, and prevent
   controller lock/control-pipe descriptors from reaching restarted services.
   It SHALL reopen only its owned generation after proving target boots and
   every original process instance has exited. Interrupted acknowledged updates
   SHALL remain closed with actionable phase-aware recovery for unchanged,
   known mixed, stopped and verified target cohorts; unknown visibility SHALL
   NOT authorize stop or reopening. Pre-stop abort SHALL reopen only unchanged
-  workers, and unsupported legacy workers SHALL defer automatically without
+  workers, and unsupported legacy workers, including an unsuffixed Temporal
+  readiness marker, SHALL defer automatically without
   cancelling owners or changing queues, task attempts, deadlines, concurrency
   or shutdown budgets. Process discovery SHALL emit only role PID/start-time
   identities, never raw process arguments, environment or credentials.

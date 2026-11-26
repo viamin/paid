@@ -35,7 +35,7 @@ profile = %w[activity_slots activity_task_polls local_activity_slots workflow_sl
 revision = ENV.fetch("FIXTURE_REVISION")
 roles = mode == "both" ? %w[poll agent] : [mode]
 admission = {protocol: 1, scope: "paid-workflow-and-remote-activity", pid: pid, process_start_ticks: ticks, workspace: Dir.pwd, revision: revision, boot_id: SecureRandom.uuid, profiles: roles.to_h { |role| [role, profile] }}
-path = File.join(ENV.fetch("TMPDIR"), "paid-worker-ready-temporal_worker#{"-#{mode}" unless mode == "both"}")
+path = File.join(ENV.fetch("TMPDIR"), "paid-worker-ready-temporal_worker-#{mode}")
 File.write(path, JSON.generate({pid: pid, revision: revision, admission: admission}))
 $stdout.sync = true
 puts pid

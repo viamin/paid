@@ -611,11 +611,7 @@ wait_for_overmind_health() {
 
 worker_readiness_file() {
   local mode="$1"
-  if [ "$mode" = both ]; then
-    printf '%s/paid-worker-ready-temporal_worker' "${TMPDIR:-/tmp}"
-  else
-    printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
-  fi
+  printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
 }
 
 # Extract the revision identity from a worker readiness JSON payload. The
@@ -719,7 +715,7 @@ verified_no_temporal_worker() {
 wait_for_workers_to_drain() {
   local target
   [ "$WORKER_ADMISSION_ACTIVE" -eq 0 ] || return 0
-  if [ ! -f "$(worker_readiness_file poll)" ] && [ ! -f "$(worker_readiness_file agent)" ] && [ ! -f "$(worker_readiness_file both)" ]; then
+  if [ ! -f "$(worker_readiness_file poll)" ] && [ ! -f "$(worker_readiness_file agent)" ] && [ ! -f "$(worker_readiness_file both)" ] && [ ! -f "${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker" ]; then
     if verified_no_temporal_worker; then
       log "No Temporal worker readiness metadata found and no Temporal worker is running; no Temporal worker quiescence is required."
       return 0

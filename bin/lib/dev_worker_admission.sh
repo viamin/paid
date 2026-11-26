@@ -60,11 +60,7 @@ worker_admission_markers() {
 
 worker_admission_readiness_file() {
   local role="$1"
-  if [ "$role" = both ]; then
-    printf '%s/paid-worker-ready-temporal_worker' "$WORKER_ADMISSION_READINESS_DIRECTORY"
-  else
-    printf '%s/paid-worker-ready-temporal_worker-%s' "$WORKER_ADMISSION_READINESS_DIRECTORY" "$role"
-  fi
+  printf '%s/paid-worker-ready-temporal_worker-%s' "$WORKER_ADMISSION_READINESS_DIRECTORY" "$role"
 }
 
 worker_admission_recovery_cohort() {

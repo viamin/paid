@@ -119,9 +119,14 @@ actual worker descendants of the live supervisor entries, with PID/start-time,
 workspace and launch-mode checks. Another genuine worker's marker cannot cover
 the supervised process. Missing, uncovered, duplicate or changing workers defer.
 One both-mode worker can cover both logical roles without double-locking its
-physical admission inode. Its default readiness marker is the unsuffixed
-`paid-worker-ready-temporal_worker` path; the controller coalesces that one
-physical path for both logical roles.
+physical admission inode. Implicit and explicit `both` launches publish the
+canonical `paid-worker-ready-temporal_worker-both` marker; split roles retain
+their `-poll` and `-agent` paths. The worker binds its resolved launch mode before
+readiness publication, including CLI-only split launches. Jobs readiness and
+explicit readiness-path overrides retain their existing behavior. The controller
+coalesces the both-mode path for both logical roles. An old unsuffixed Temporal
+marker remains evidence of a legacy worker and cannot establish verified absence;
+unsupported legacy state defers before requests or stop.
 
 The standalone controller closes renewal on every role before waiting for
 reservation-to-release shared ownership, including unused poll and eager

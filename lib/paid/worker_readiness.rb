@@ -59,7 +59,7 @@ module Paid
     end
 
     # Per-worker default flag file name, derived from the running program and,
-    # for Temporal workers, TEMPORAL_WORKER_MODE. bin/jobs yields
+    # for Temporal workers, their resolved mode (defaulting to both). bin/jobs yields
     # "paid-worker-ready-jobs"; a temporal worker in poll mode yields
     # "paid-worker-ready-temporal_worker-poll". This keeps each colocated
     # worker's flag independent without requiring explicit configuration,
@@ -68,6 +68,7 @@ module Paid
     def default_file_name(env = ENV)
       program = File.basename($PROGRAM_NAME, ".*")
       mode = env["TEMPORAL_WORKER_MODE"].presence
+      mode ||= "both" if program == "temporal_worker"
       mode ? "#{DEFAULT_FILE_PREFIX}-#{program}-#{mode}" : "#{DEFAULT_FILE_PREFIX}-#{program}"
     end
 

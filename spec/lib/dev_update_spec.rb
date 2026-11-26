@@ -718,6 +718,21 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   # @spec TEMPORAL-ORCHESTRATION-019
+  it "defers an unsuffixed legacy marker even when supervisor rows look worker-free" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+      legacy = File.join(ENV.fetch("TMPDIR"), "paid-worker-ready-temporal_worker")
+      File.write(legacy, { pid: 12_345, revision: "legacy" }.to_json)
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}")
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(File.read(File.join(dir, "calls.log"))).not_to include("overmind quit")
+    end
+  end
+
   it "proceeds without worker quiescence when a running Overmind reports no Temporal worker processes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
