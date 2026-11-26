@@ -260,7 +260,10 @@ The standalone updater uses a controller outside restarted services, with
 serialized generation ownership, persistent fail-closed requests and
 non-inherited lock descriptors. Timeout before acknowledgement aborts only the
 caller's request without stopping workers; an interrupted acknowledged update
-has an explicit recoverable generation, never a false success. Unsupported
+has an explicit recoverable generation, never a false success. The Bash caller
+uses non-inherited control pipes. An optional bounded completion handshake keeps
+the controller available until the caller reads the durable final outcome;
+losing that caller never retains admission locks after completion. Unsupported
 legacy workers and missing or ambiguous readiness defer before stop. A
 controlled empty-workload maintenance bootstrap is separate from steady-state
 adoption. The complete protocol, legacy preconditions and real verification

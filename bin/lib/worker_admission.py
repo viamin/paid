@@ -418,6 +418,19 @@ def read_command(parent_pid):
     raise AdmissionError("invalid controller command; admission remains closed")
 
 
+def finish_handshake(parent_pid):
+    """Keep final stdout readable briefly without retaining admission locks."""
+    deadline = time.monotonic() + 5
+    while os.getppid() == parent_pid and time.monotonic() < deadline:
+        readable, _writable, _exceptional = select.select([sys.stdin.fileno()], [], [],
+                                                        min(0.1, max(0, deadline - time.monotonic())))
+        if readable:
+            # Completion is already durable. EOF, close or malformed input all
+            # end this transport-only wait; none can change admission state.
+            os.read(sys.stdin.fileno(), 1025)
+            return
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
@@ -426,6 +439,8 @@ def main():
     parser.add_argument("--target-revision", required=True)
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--mode", choices=("drain", "recover"), default="drain")
+    parser.add_argument("--finish-handshake", action="store_true",
+                        help="wait at most five seconds for caller close after final status")
     arguments = parser.parse_args()
     drain = None
     recovery = [sys.executable, str(Path(__file__).resolve()), "--workspace", arguments.workspace,
@@ -469,6 +484,9 @@ def main():
                 raise AdmissionError("caller outcome unknown; admission remains closed")
             drain.resume(arguments.target_revision, value.get("processes"))
             print(json.dumps({"status": "resumed"}), flush=True)
+        if arguments.finish_handshake:
+            drain.close()
+            finish_handshake(drain.parent_pid)
         return 0
     except (AdmissionError, OSError, ValueError, KeyError, TypeError) as error:
         if drain is not None:
