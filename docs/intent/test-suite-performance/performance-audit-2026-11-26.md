@@ -575,6 +575,70 @@ registry, cleaning strategy, global aggregation, or runtime setting. LID remains
 Full, version 1.3.0, under TEST-SUITE-011/017. Full CI remains required for the
 new fixture and consolidation patch.
 
+That patch passes full CI run `45807212560` at
+`386f241733b29947202608dcbfe65da0031e86c5`: 31,275 examples, zero failures,
+five existing pending cases, and 95% combined line coverage. System run
+`45807212621` also passes. All six downloaded artifact SHA-256 digests match.
+Summed shard execution is 3,789.85 seconds; the longest shard takes 922.17
+seconds. The seven-example reduction matches the documented consolidations.
+These hosted observations do not establish a causal improvement or the local
+whole-suite 50% target. Raw evidence:
+`/tmp/paid-testprof-audit/ci-5482-386f24173/`.
+
+After its prerequisites merged, the patch was rebased onto main at
+`1c0b851602d8dc5daeb65648d40d03bef417a2ac`. All eight edited spec files are
+byte-for-byte unchanged from the successful CI revision. The rebased revision
+still requires its own integration checks.
+
+### Local benchmark isolation correction
+
+The initial one/two/three-worker resource probe inherited the devcontainer's
+Temporal address and namespace. Project factory callbacks started polling on
+the shared service. Started-event identities identify 106 executions belonging
+to the seven exact probe process IDs; all 106 were already completed when
+inspected. No active owned execution remained. The last single-worker control
+was stopped after 113 examples, with no assertion failures, once this boundary
+problem was confirmed.
+
+Those local throughput observations are contaminated. Earlier local timing
+comparisons also inherited the service configuration and require isolated
+remeasurement before attributing the elapsed-time differences. Factory counts,
+covered-line comparisons, defect probes, and the full hosted CI checkpoint
+remain separate evidence. Replacement resource controls use one dedicated
+Temporal namespace and unique poll/agent queues per worker and mode, with
+startup assertions that the actual client uses that namespace. They preserve
+callbacks while preventing live workers from consuming test work. All source
+workspaces and database snapshots remain fixed. This correction does not
+establish the whole-suite target.
+
+Evidence: `resource-own-temporal-executions.json`,
+`resource-throughput-isolation-correction.json`,
+`isolated-temporal-namespaces.json`, and the replacement
+`resource-isolated-throughput-state.json` in `/tmp/paid-testprof-audit/`.
+
+The replacement one/two/three/one-worker controls all pass: seven complete
+599-example runs, with zero failures or pending cases, and identical sets of
+48,006 covered application lines. Coverage is enabled and CI eager loading is
+retained. Each worker uses a separate workspace, fresh restored database,
+Temporal namespace, and task queues at immutable revision
+`386f241733b29947202608dcbfe65da0031e86c5`, seed 24680.
+
+| Concurrent workers | Total examples | Batch wall seconds | Throughput versus single-worker controls |
+| --- | ---: | ---: | ---: |
+| 1, before | 599 | 150.14 | — |
+| 2 | 1,198 | 150.09 | 1.93× |
+| 3 | 1,797 | 165.14 | 2.64× |
+| 1, after | 599 | 140.10 | — |
+
+The two single-worker controls average 145.12 seconds. Three workers retain
+more throughput than two on this host; individual worker peak RSS is roughly
+594–611 MiB. These representative runs share the local PostgreSQL server and
+live host, so they select a concurrency candidate rather than prove full-suite
+halving. The full benchmark must also include separate PostgreSQL/Qdrant
+instances, system tests, performance tests, and aggregate coverage. Evidence:
+`resource-isolated-throughput-summary.json` and the seven raw JSON/coverage
+reports in `/tmp/paid-testprof-audit/`.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or
