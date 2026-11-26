@@ -157,6 +157,13 @@ profiling does not relax normal CI requirements. Compare before/after focused
 examples and actual CI wall time. Five jobs reduce latency at the cost of extra
 setup runner minutes; they do not claim a fivefold reduction in total CPU work.
 
+Normal test logging defaults to `info`, retaining application info, warnings,
+and errors without formatting every SQL debug event. `RAILS_LOG_LEVEL=debug`
+restores SQL diagnostics for investigation. This changes only test logging;
+callbacks, query execution, tenant policy, and coverage remain enabled.
+Validate the booted logger and actual SQL/application output in both modes,
+and measure runtime, CPU, query counts, and coverage before adopting the default.
+
 ## Open decisions
 
 Use observed timing artifacts to refine balancing if source-size estimates cause
