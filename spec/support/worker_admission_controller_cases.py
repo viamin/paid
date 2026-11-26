@@ -434,6 +434,103 @@ class ControllerTest(unittest.TestCase):
         with self.assertRaises(AdmissionError):
             self.drain().recover(1)
 
+    def layout_drain(self, gates):
+        drain = Drain(self.root, self.paths, "b" * 40, self.expected_processes, gate_paths=gates,
+                      identity_reader=lambda pid: self.processes[pid], original_process_reader=self.start_ticks)
+        self.drains.append(drain)
+        return drain
+
+    def test_both_to_split_replacement_keeps_future_paths_fenced_until_verified_resume(self):
+        gates = [self.root / name for name in ("agent", "poll", "both")]
+        self.paths = {role: self.root / "both" for role in ("agent", "poll")}
+        self.expected_processes = {role: {"pid": 11, "start_ticks": 101} for role in self.paths}
+        self.marker("agent", 11, roles=["agent", "poll"])
+        drain = self.layout_drain(gates)
+        drain.acquire(1)
+        self.assertEqual(len(drain.locks), 3)
+        for path in gates:
+            self.assertTrue(Path(str(path) + ".admission.request").exists())
+            descriptor = os.open(str(path) + ".admission.lock", os.O_RDWR)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            finally:
+                os.close(descriptor)
+        self.paths = {role: self.root / role for role in ("agent", "poll")}
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        drain.resume("b" * 40, self.expected_processes, roles=self.paths)
+        self.assertFalse(any(Path(str(path) + ".admission.request").exists() for path in gates))
+        recovery = self.layout_drain(gates)
+        self.assertTrue(recovery.recover(1)["completed"])
+
+    def test_split_to_both_recovery_preserves_generation_and_gate_coverage(self):
+        gates = [self.root / name for name in ("agent", "poll", "both")]
+        original = self.layout_drain(gates)
+        original.acquire(1)
+        original.close()
+        self.processes = {23: {"start_ticks": 223, "workspace": str(self.root)}}
+        self.expected_processes = {role: {"pid": 23, "start_ticks": 223} for role in self.paths}
+        self.paths = {role: self.root / "both" for role in ("agent", "poll")}
+        self.marker("agent", 23, revision="b" * 40, roles=["agent", "poll"])
+        recovery = self.layout_drain(gates)
+        self.assertEqual(recovery.recover(1)["cohort"], "target")
+        self.assertEqual(recovery.generation, original.generation)
+        recovery.resume("b" * 40, self.expected_processes, roles=self.paths)
+        self.assertFalse(any(Path(str(path) + ".admission.request").exists() for path in gates))
+
+    def test_abort_after_stop_checkpoint_cannot_reopen_a_possible_inflight_quit(self):
+        drain = self.drain()
+        drain.acquire(1)
+        drain.checkpoint("stopping")
+        with self.assertRaises(AdmissionError):
+            drain.abort()
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_recovery_refuses_live_original_instances_after_recorded_stopped_phase(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        journal = read_json(original.journal)
+        journal["update_phase"] = "stopped"
+        write_json(original.journal, journal)
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_closed_controller_cannot_abort_a_generation_reacquired_by_another_owner(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        recovery = self.drain()
+        recovery.recover(1)
+        with self.assertRaises(AdmissionError):
+            original.abort()
+        self.assertTrue(all(path.exists() for path in self.requests()))
+        recovery.abort()
+
+    def test_malformed_recovery_snapshot_never_clears_the_closed_generation(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        journal = read_json(original.journal)
+        journal["snapshots"] = {}
+        write_json(original.journal, journal)
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_recovery_refuses_unknown_update_phase_without_removing_requests(self):
+        original = self.drain()
+        original.acquire(1)
+        original.close()
+        journal = read_json(original.journal)
+        journal["update_phase"] = "unknown"
+        write_json(original.journal, journal)
+        with self.assertRaises(AdmissionError):
+            self.drain().recover(1)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+
     def test_real_controller_eof_preserves_generation_and_explicit_recovery_can_abort(self):
         # These processes exercise only kernel process identity and pipe
         # ownership. They are not Temporal workers or SDK acceptance evidence.
