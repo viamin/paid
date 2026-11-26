@@ -145,8 +145,10 @@
   SHALL leave the failed lineage unconsumed. A different-goal owner SHALL NOT
   retire the failed implementation as retried. Classifications alone SHALL
   not be reported as execution; scheduling, locked claim, and refusal SHALL
-  remain distinct inspectable decisions.
+  remain distinct inspectable decisions. A declined job enqueue SHALL record
+  a refusal without reporting scheduling or consuming retry lineage.
   *Code:* `AgentRuns::ManualIssueCreatePrRetryPolicy`,
+  `RetryableAttempts::RetryAttempt#schedule`,
   `RetryFailedManualIssueCreatePrJob`, `Activities::QueueAgentRunActivity`,
   `Issues::EnqueueEligible`, `Tools::TriggerAgentRun`.
   *Test:* `spec/services/agent_runs/manual_issue_create_pr_retry_policy_spec.rb`,
