@@ -457,6 +457,188 @@ with no skips. A new full CI run remains required. The simplicity pass against
 schema-changing spec and preserves the query recorder's existing filtering and
 SQL-string contract; only callers needing binds use its payload API.
 
+## Follow-up: more configuration reuse and repeated execution checks
+
+Eight further specs repeat an ordinary project graph across agent execution,
+native prerequisite validation, closeout evidence and reconciliation, issue
+creation, token accounting, decision drafting, and proxy requests. They now
+reuse the existing `with stable project` context. Fresh instances and rollback
+isolate configuration changes; scenario issues, runs, actors, credentials, and
+responses remain per example. Factories retain their callbacks and validation.
+
+The controlled comparison uses revision
+`fb4f95183f28882e12f920166da98dd698d19393`, the private
+`paid_test_prof_stats_20261126_095239_after` database, seed 24680, and
+`COVERAGE=false FPROF=1 RD_PROF=1`. Profile copies keep the same paths and line
+positions in all modes. Both proxy copies explicitly preserve the request type
+normally inferred from their source path. Only the project binding changes.
+
+| Mode | Examples | Failures / pending | Seconds | Factory calls |
+| --- | ---: | ---: | ---: | ---: |
+| Per-example control before | 332 | 0 / 0 | 125.54 | 2,670 |
+| Shared configuration | 332 | 0 / 0 | 97.80 | 1,090 |
+| Per-example control after | 332 | 0 / 0 | 125.27 | 2,670 |
+
+Shared setup is 22.0% faster than the surrounding controls' mean. Projects fall
+from 326 to 10 and users from 694 to 62; all 407 runs and 358 issues remain.
+Before consolidating the same-input execution checks, the actual eight edited
+files plus the existing fixture-isolation checks pass all 348 examples without
+failures or skips, seed 97531, with coverage enabled.
+Their 10.83% partial coverage does not replace the full-suite coverage gate.
+Evidence: `late-configuration-inputs.json`, `late-configuration-controls-state.json`,
+the three `late-configuration-*.log` profiles, and
+`late-configuration-acceptance.{json,log}` in `/tmp/paid-testprof-audit/`.
+
+Four successful-execution examples also invoke the same mocked response with
+the same input. One aggregate example retains success, response identity,
+persisted completion/time/duration, token totals, and both summary/delta ledger
+rows. Two repeated token-total assertions are removed. Proxy-record, timeout,
+authorization, and failure scenarios remain distinct. The full execution file
+passes 43 examples before and 40 afterward, with exactly the same 6,973 covered
+application lines. Its observed full-file times are 14.98 and 19.68 seconds;
+these do not establish a full-file speedup.
+
+The isolated same-input old/combined/old workload passes in 3.56 / 1.82 / 3.27
+seconds, with four / one / four examples and 13 / 7 / 13 factory calls.
+Injected response, completion, and missing-delta defects produce respectively
+two, three, and three aggregate assertion failures in the combined example.
+This demonstrates that the retained check detects the removed examples'
+regressions. Reports: `execute-consolidation-{before,after}.{json,log}`,
+their raw coverage directories, `execute-same-input-state.json`, and
+`execute-consolidation-mutant-{response,completion,delta}.json`.
+
+Token tracking applies the same consolidation to four equal 1,000/500-token
+calls and two equal cost calls. Compound change matchers retain each run,
+project, and metric-count delta; metric content and both cost assertions remain.
+Model-specific metadata, budget, repeated-call, and other input scenarios stay
+separate. All 49 original and 45 retained examples pass with exactly the same
+7,063 covered application lines. Factory calls fall from 100 to 92. Injected
+run-input, run-output, project-token, metric-count, run-cost, and project-cost
+defects each produce an assertion failure in the retained examples.
+The full-file timings, 25.05 and 46.73 seconds, do not establish a speedup.
+Per-run factory time also changes substantially, so planning and environment
+variance still need investigation. Evidence: `token-consolidation-{before,after}.{json,log}`,
+their raw coverage directories, and `token-consolidation-mutants-state.json`.
+An unchanged 45-example repeat passes in 25.79 seconds; SQL instrumentation
+records 3,875 events totaling 8.50 seconds. A metadata snapshot records a
+background vacuum of the core fixture tables, but its relationship to the
+timing change remains a hypothesis. Reports: `token-consolidation-repeat.json`,
+`token-consolidation-query-cost.json`, and `late-database-statistics.txt`.
+
+### Global settings evaluated
+
+A larger coverage-enabled YJIT comparison passes all 599 examples in each
+mode: disabled 132.21 seconds, enabled 135.60, disabled 133.27, seed 24680.
+All three runs cover exactly the same 15,622 application lines. Peak RSS is
+505,244 / 515,944 / 515,568 KiB. There is no measured benefit to enabling YJIT
+for normal coverage-enabled tests, so the configuration remains unchanged.
+Evidence: `yjit-broad-coverage-{inputs,state}.json` and the three raw coverage
+directories.
+
+Fresh private databases restored from the same verified snapshot also compare
+normal / ANALYZE / normal startup in the count-cache example: 1.44 / 1.38 /
+1.15 seconds. Statistics initialization itself takes 0.25 seconds. Both modes
+retain the restricted paid role, prepared statements, and the unchanged JIT
+threshold. Fresh unknown statistics alone do not reproduce the earlier costly
+join plan. This sample does not justify adding a global ANALYZE hook.
+Evidence: `statistics-small-controls-state.json` and its database/statistics
+manifests. Restores target newly created empty databases and wait for all 245
+public tables to become observable after the atomic restore.
+
+### Complete prepared-statement checkpoint
+
+GitHub CI run `45794101356` succeeds for repaired head
+`620f831ad1447e291a79f55ffc096835458eafed`: 31,300 examples, zero failures,
+five existing pending cases, and 95% combined line coverage. System, security,
+and mutation workflows also succeed. All six downloaded timing/coverage
+artifacts match their published SHA-256 digests. Summed shard execution is
+5,844.01 seconds and the longest shard takes 1,451.98 seconds. This remains
+slower than the earlier observed 5,311.15-second checkpoint; runner conditions
+and example counts differ, so these CI samples do not isolate a causal
+performance change. The whole-suite 50% target remains unproven.
+Raw artifacts: `/tmp/paid-testprof-audit/ci-5475-620f831ad/`.
+
+The stacked query-loading PR also passes full CI, run `45795696680`, at head
+`fb4f95183f28882e12f920166da98dd698d19393`: 31,282 examples, zero failures,
+five existing pending cases, and 95% coverage. Its summed shard time is
+4,482.31 seconds; the longest shard takes 976.43 seconds. All six artifact
+digests match. Its feature-branch base omits 19 newer main-branch examples from
+the preceding checkpoint and adds the loading regression; those 19 examples
+account for only 4.70 seconds in the preceding run. These successful runs
+remain insufficient to attribute the timing difference or prove halving.
+Raw artifacts: `/tmp/paid-testprof-audit/ci-5481-fb4f95183/`.
+
+The working-patch simplicity pass against
+`fb4f95183f28882e12f920166da98dd698d19393` reuses the existing fixture context
+and combines only identical execution and tracking inputs. It introduces no fixture
+registry, cleaning strategy, global aggregation, or runtime setting. LID remains
+Full, version 1.3.0, under TEST-SUITE-011/017. Full CI remains required for the
+new fixture and consolidation patch.
+
+That patch passes full CI run `45807212560` at
+`386f241733b29947202608dcbfe65da0031e86c5`: 31,275 examples, zero failures,
+five existing pending cases, and 95% combined line coverage. System run
+`45807212621` also passes. All six downloaded artifact SHA-256 digests match.
+Summed shard execution is 3,789.85 seconds; the longest shard takes 922.17
+seconds. The seven-example reduction matches the documented consolidations.
+These hosted observations do not establish a causal improvement or the local
+whole-suite 50% target. Raw evidence:
+`/tmp/paid-testprof-audit/ci-5482-386f24173/`.
+
+After its prerequisites merged, the patch was rebased onto main at
+`1c0b851602d8dc5daeb65648d40d03bef417a2ac`. All eight edited spec files are
+byte-for-byte unchanged from the successful CI revision. The rebased revision
+still requires its own integration checks.
+
+### Local benchmark isolation correction
+
+The initial one/two/three-worker resource probe inherited the devcontainer's
+Temporal address and namespace. Project factory callbacks started polling on
+the shared service. Started-event identities identify 106 executions belonging
+to the seven exact probe process IDs; all 106 were already completed when
+inspected. No active owned execution remained. The last single-worker control
+was stopped after 113 examples, with no assertion failures, once this boundary
+problem was confirmed.
+
+Those local throughput observations are contaminated. Earlier local timing
+comparisons also inherited the service configuration and require isolated
+remeasurement before attributing the elapsed-time differences. Factory counts,
+covered-line comparisons, defect probes, and the full hosted CI checkpoint
+remain separate evidence. Replacement resource controls use one dedicated
+Temporal namespace and unique poll/agent queues per worker and mode, with
+startup assertions that the actual client uses that namespace. They preserve
+callbacks while preventing live workers from consuming test work. All source
+workspaces and database snapshots remain fixed. This correction does not
+establish the whole-suite target.
+
+Evidence: `resource-own-temporal-executions.json`,
+`resource-throughput-isolation-correction.json`,
+`isolated-temporal-namespaces.json`, and the replacement
+`resource-isolated-throughput-state.json` in `/tmp/paid-testprof-audit/`.
+
+The replacement one/two/three/one-worker controls all pass: seven complete
+599-example runs, with zero failures or pending cases, and identical sets of
+48,006 covered application lines. Coverage is enabled and CI eager loading is
+retained. Each worker uses a separate workspace, fresh restored database,
+Temporal namespace, and task queues at immutable revision
+`386f241733b29947202608dcbfe65da0031e86c5`, seed 24680.
+
+| Concurrent workers | Total examples | Batch wall seconds | Throughput versus single-worker controls |
+| --- | ---: | ---: | ---: |
+| 1, before | 599 | 150.14 | — |
+| 2 | 1,198 | 150.09 | 1.93× |
+| 3 | 1,797 | 165.14 | 2.64× |
+| 1, after | 599 | 140.10 | — |
+
+The two single-worker controls average 145.12 seconds. Three workers retain
+more throughput than two on this host; individual worker peak RSS is roughly
+594–611 MiB. These representative runs share the local PostgreSQL server and
+live host, so they select a concurrency candidate rather than prove full-suite
+halving. The full benchmark must also include separate PostgreSQL/Qdrant
+instances, system tests, performance tests, and aggregate coverage. Evidence:
+`resource-isolated-throughput-summary.json` and the seven raw JSON/coverage
+reports in `/tmp/paid-testprof-audit/`.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or

@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe CloseoutVerifications::Evidence do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
   let(:maintainer) { create(:user, :owner, account: project.account) }
   let(:source_issue) { create(:issue, project:, body: "## Acceptance\n- Merged evidence") }
   let(:source_pr) { create(:issue, :pull_request, project:, github_number: 42, pr_review_phase: "merged", merged_commit_sha: "a" * 40) }

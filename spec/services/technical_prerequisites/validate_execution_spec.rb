@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe TechnicalPrerequisites::ValidateExecution do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
   let(:issue) { create(:issue, project:) }
   let(:source_run) { create(:agent_run, :completed, project:, issue:) }
   let(:agent_run) do
