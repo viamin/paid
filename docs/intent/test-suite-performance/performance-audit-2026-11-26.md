@@ -457,6 +457,96 @@ with no skips. A new full CI run remains required. The simplicity pass against
 schema-changing spec and preserves the query recorder's existing filtering and
 SQL-string contract; only callers needing binds use its payload API.
 
+## Follow-up: more configuration reuse and repeated execution checks
+
+Eight further specs repeat an ordinary project graph across agent execution,
+native prerequisite validation, closeout evidence and reconciliation, issue
+creation, token accounting, decision drafting, and proxy requests. They now
+reuse the existing `with stable project` context. Fresh instances and rollback
+isolate configuration changes; scenario issues, runs, actors, credentials, and
+responses remain per example. Factories retain their callbacks and validation.
+
+The controlled comparison uses revision
+`fb4f95183f28882e12f920166da98dd698d19393`, the private
+`paid_test_prof_stats_20261126_095239_after` database, seed 24680, and
+`COVERAGE=false FPROF=1 RD_PROF=1`. Profile copies keep the same paths and line
+positions in all modes. Both proxy copies explicitly preserve the request type
+normally inferred from their source path. Only the project binding changes.
+
+| Mode | Examples | Failures / pending | Seconds | Factory calls |
+| --- | ---: | ---: | ---: | ---: |
+| Per-example control before | 332 | 0 / 0 | 125.54 | 2,670 |
+| Shared configuration | 332 | 0 / 0 | 97.80 | 1,090 |
+| Per-example control after | 332 | 0 / 0 | 125.27 | 2,670 |
+
+Shared setup is 22.0% faster than the surrounding controls' mean. Projects fall
+from 326 to 10 and users from 694 to 62; all 407 runs and 358 issues remain.
+Before consolidating the same-input execution checks, the actual eight edited
+files plus the existing fixture-isolation checks pass all 348 examples without
+failures or skips, seed 97531, with coverage enabled.
+Their 10.83% partial coverage does not replace the full-suite coverage gate.
+Evidence: `late-configuration-inputs.json`, `late-configuration-controls-state.json`,
+the three `late-configuration-*.log` profiles, and
+`late-configuration-acceptance.{json,log}` in `/tmp/paid-testprof-audit/`.
+
+Four successful-execution examples also invoke the same mocked response with
+the same input. One aggregate example retains success, response identity,
+persisted completion/time/duration, token totals, and both summary/delta ledger
+rows. Two repeated token-total assertions are removed. Proxy-record, timeout,
+authorization, and failure scenarios remain distinct. The full execution file
+passes 43 examples before and 40 afterward, with exactly the same 6,973 covered
+application lines. Its observed full-file times are 14.98 and 19.68 seconds;
+these do not establish a full-file speedup.
+
+The isolated same-input old/combined/old workload passes in 3.56 / 1.82 / 3.27
+seconds, with four / one / four examples and 13 / 7 / 13 factory calls.
+Injected response, completion, and missing-delta defects produce respectively
+two, three, and three aggregate assertion failures in the combined example.
+This demonstrates that the retained check detects the removed examples'
+regressions. Reports: `execute-consolidation-{before,after}.{json,log}`,
+their raw coverage directories, `execute-same-input-state.json`, and
+`execute-consolidation-mutant-{response,completion,delta}.json`.
+
+### Global settings evaluated
+
+A larger coverage-enabled YJIT comparison passes all 599 examples in each
+mode: disabled 132.21 seconds, enabled 135.60, disabled 133.27, seed 24680.
+All three runs cover exactly the same 15,622 application lines. Peak RSS is
+505,244 / 515,944 / 515,568 KiB. There is no measured benefit to enabling YJIT
+for normal coverage-enabled tests, so the configuration remains unchanged.
+Evidence: `yjit-broad-coverage-{inputs,state}.json` and the three raw coverage
+directories.
+
+Fresh private databases restored from the same verified snapshot also compare
+normal / ANALYZE / normal startup in the count-cache example: 1.44 / 1.38 /
+1.15 seconds. Statistics initialization itself takes 0.25 seconds. Both modes
+retain the restricted paid role, prepared statements, and the unchanged JIT
+threshold. Fresh unknown statistics alone do not reproduce the earlier costly
+join plan. This sample does not justify adding a global ANALYZE hook.
+Evidence: `statistics-small-controls-state.json` and its database/statistics
+manifests. Restores target newly created empty databases and wait for all 245
+public tables to become observable after the atomic restore.
+
+### Complete prepared-statement checkpoint
+
+GitHub CI run `45794101356` succeeds for repaired head
+`620f831ad1447e291a79f55ffc096835458eafed`: 31,300 examples, zero failures,
+five existing pending cases, and 95% combined line coverage. System, security,
+and mutation workflows also succeed. All six downloaded timing/coverage
+artifacts match their published SHA-256 digests. Summed shard execution is
+5,844.01 seconds and the longest shard takes 1,451.98 seconds. This remains
+slower than the earlier observed 5,311.15-second checkpoint; runner conditions
+and example counts differ, so these CI samples do not isolate a causal
+performance change. The whole-suite 50% target remains unproven.
+Raw artifacts: `/tmp/paid-testprof-audit/ci-5475-620f831ad/`.
+
+The working-patch simplicity pass against
+`fb4f95183f28882e12f920166da98dd698d19393` reuses the existing fixture context
+and combines only identical execution inputs. It introduces no fixture
+registry, cleaning strategy, global aggregation, or runtime setting. LID remains
+Full, version 1.3.0, under TEST-SUITE-011/017. Full CI remains required for the
+new fixture and consolidation patch.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or

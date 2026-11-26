@@ -19,7 +19,8 @@ RSpec.describe Knowledge::Decisions::Draft do
     agent_run.log!("stdout", "Implemented JWT authentication for API endpoints")
   end
 
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) do
     create(:agent_run, :completed, project: project, issue: issue,

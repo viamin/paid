@@ -3,8 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Activities::CreateMultipleIssuesActivity do
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
   let(:agent_run) do
     create(:agent_run, :with_custom_prompt,
       project: project, goal: "create_issue", status: "running", started_at: 1.minute.ago,
