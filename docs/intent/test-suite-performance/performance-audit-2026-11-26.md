@@ -671,6 +671,24 @@ and green outputs are retained in `logging-default-acceptance.json`,
 Full native-suite acceptance is still required for the changed default.
 LID: Full, version 1.3.0; TEST-SUITE-028.
 
+The first full local attempt at `c5ea9cf85` was intentionally interrupted after
+baseline failure analysis exposed a hard-coded Qdrant stub in the clarification
+specs. All three partial shards report zero failures across 2,692 examples, but
+this interrupted run is not full acceptance or performance evidence. Its
+processes were reaped, its private database containers were stopped with data
+retained, and all 1,237 unconsumed private Temporal executions were terminated.
+The original run and stop reason remain in `bounded-full/` under the audit path.
+
+The existing five clarification examples reproduce five failures with an
+alternate Qdrant URL: their collections stub only matches the shared service
+hostname. Using `Paid.qdrant_url` for that same HTTP 503 stub makes all five
+pass, with coverage enabled and no pending cases, against an `.invalid` URL
+with real HTTP still blocked. Every assertion remains. This repairs the test
+boundary for FEATURE-CREATION-001/002; it does not change application behavior
+or permit live service requests. Evidence: `qdrant-fixture-{red,green}.json`
+and their logs/coverage. The replacement full run uses the corrected fixture
+and private temporary-directory permissions from setup onward.
+
 Separate per-database PostgreSQL statistics identify a remaining planning cost.
 One snapshot reports 60.34 seconds planning versus 7.33 seconds executing, with
 zero reported JIT functions. The stalled-closeout membership check accounts for

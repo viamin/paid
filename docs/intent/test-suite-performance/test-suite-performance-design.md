@@ -163,6 +163,9 @@ restores SQL diagnostics for investigation. This changes only test logging;
 callbacks, query execution, tenant policy, and coverage remain enabled.
 Validate the booted logger and actual SQL/application output in both modes,
 and measure runtime, CPU, query counts, and coverage before adopting the default.
+For isolated service workers, test stubs use the service's canonical configured
+URL. Preserve network blocking and the intended simulated response rather than
+contacting a shared development service.
 
 ## Open decisions
 

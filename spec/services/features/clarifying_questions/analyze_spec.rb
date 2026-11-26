@@ -4,10 +4,11 @@ require "rails_helper"
 
 # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002
 RSpec.describe Features::ClarifyingQuestions::Analyze do
-  before { configure_llm_routing(project: project)
-stub_request(:get, %r{http://qdrant:6333/collections}).to_return(status: 503)
+  before do
+    configure_llm_routing(project: project)
+    stub_request(:get, "#{Paid.qdrant_url.delete_suffix('/')}/collections").to_return(status: 503)
     allow(project).to receive(:client).and_return(nil)
-   }
+  end
 
   after { Current.user = nil }
 
