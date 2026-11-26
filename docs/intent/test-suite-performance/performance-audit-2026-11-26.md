@@ -665,10 +665,14 @@ emits SQL debug output. The changed default and explicit debug override then
 both pass: a real read-only `SELECT 1` executes, and actual captured info,
 warning, and error messages remain; SQL debug appears only in debug mode.
 The temporary acceptance check was removed from `.ephemeral-tests/` after
-verification, avoiding recurring suite cost. Its source, hashes, red failure,
+verification. Its source, hashes, red failure,
 and green outputs are retained in `logging-default-acceptance.json`,
 `test_logging_acceptance.rb`, and `logging-*-green.log` under the audit directory.
 Full native-suite acceptance is still required for the changed default.
+Permanent regressions in `spec/config/test_environment_logging_spec.rb`
+exercise both logger modes with real `SELECT 1` calls in separate Ruby
+processes. These add two Rails boots per suite run; whole-suite performance
+with this regression coverage remains unproven.
 LID: Full, version 1.3.0; TEST-SUITE-028.
 
 The first full local attempt at `c5ea9cf85` was intentionally interrupted after
