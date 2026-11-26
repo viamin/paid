@@ -178,29 +178,14 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   # @spec TEST-SUITE-023
-  it "stops a watchdog whose process group is not ready when setup succeeds" do
-    delayed_setsid_directory = Dir.mktmpdir("retry-with-process-group-setsid")
-    delayed_setsid = File.join(delayed_setsid_directory, "setsid")
-    File.write(delayed_setsid, <<~BASH)
-      #!/usr/bin/env bash
-      if [[ "$#" -eq 9 && "$1" == "bash" && "$2" == "-c" ]]; then
-        sleep 0.2
-      fi
-      exec #{Shellwords.escape(`which setsid`.strip)} "$@"
-    BASH
-    FileUtils.chmod("u+x", delayed_setsid)
-    environment = fast_supervision.merge(
-      "DEPENDENCY_SETUP_TIMEOUT" => "1s",
-      "PATH" => "#{delayed_setsid_directory}:#{ENV.fetch("PATH")}"
-    )
-    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  it "reaps a delayed-start watchdog after setup succeeds" do
+    with_unacknowledged_watchdog(command: "true") do |wrapper_pid, watchdog_pid, watchdog_gate|
+      watchdog_gate.puts("ready")
+      _pid, status = Timeout.timeout(5) { Process.wait2(wrapper_pid) }
 
-    _stdout, _stderr, status = Open3.capture3(environment, script_path, "bash", "-c", "true")
-
-    expect(status).to be_success
-    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 0.8
-  ensure
-    FileUtils.remove_entry(delayed_setsid_directory) if delayed_setsid_directory
+      expect(status).to be_success
+      expect { Process.kill(0, watchdog_pid) }.to raise_error(Errno::ESRCH)
+    end
   end
 
   # @spec TEST-SUITE-023
@@ -386,13 +371,14 @@ RSpec.describe RetryWithProcessGroup, :no_db do
     end
   end
 
-  def with_unacknowledged_watchdog
+  def with_unacknowledged_watchdog(command: "exec sleep 60")
     resources = startup_watchdog_resources
-    wrapper_pid = Process.spawn(resources.fetch(:environment), script_path, "bash", "-c", "exec sleep 60", close_others: false)
-    Timeout.timeout(2) { resources.fetch(:started_reader).gets }
+    wrapper_pid = Process.spawn(resources.fetch(:environment), script_path, "bash", "-c", command, close_others: false)
+    watchdog_pid = Integer(Timeout.timeout(2) { resources.fetch(:started_reader).gets }.strip)
 
-    yield wrapper_pid
+    yield wrapper_pid, watchdog_pid, resources.fetch(:gate_writer)
   ensure
+    terminate_and_reap(watchdog_pid)
     cleanup_startup_watchdog(wrapper_pid, resources)
   end
 
@@ -495,7 +481,10 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   def terminate_and_reap(pid)
-    Process.kill("KILL", pid) if pid
+    if pid
+      Process.kill("KILL", -pid) if Process.getpgid(pid) == pid
+      Process.kill("KILL", pid)
+    end
   rescue Errno::ESRCH
     nil
   ensure

@@ -9,16 +9,15 @@ RSpec.describe "Projects" do
   let_it_be(:account, refind: true) do
     TenantContext.with_system_access { create(:account) }
   end
-  let_it_be(:user, refind: true) do
+  let_it_be(:baseline_user, refind: true) do
     TenantContext.with_system_access { create(:user, account: account) }
   end
+  let(:user) { baseline_user.tap { |record| record.account = account } }
   let(:github_token) { create(:github_token, account: account) }
 
   let(:empty_screenshot_repo_config_result) do
     Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil)
   end
-
-  before { user.account = account }
 
   def empty_upstream_prefill
     Projects::ForkParentPrefill::Prefill.unavailable("not_stubbed")
@@ -401,6 +400,7 @@ RSpec.describe "Projects" do
   end
 
   describe "ignored-mode pull request controls" do
+    let(:account) { create(:account) }
     let(:user) { create(:user, :owner, account:) }
     let(:project) do
       create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
@@ -4402,6 +4402,7 @@ RSpec.describe "Projects" do
   end
 
   describe "POST /projects/:id/start_lid" do
+    let(:account) { create(:account) }
     let(:user) { create(:user, :owner, account: account) }
     let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
     let!(:runner) { create(:runner, user: project.effective_owner, enabled_for_agent_runs: true) }
