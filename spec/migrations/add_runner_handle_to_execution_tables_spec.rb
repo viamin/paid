@@ -10,16 +10,14 @@ RSpec.describe AddRunnerHandleToExecutionTables, :aggregate_failures do
   let(:connection) { ActiveRecord::Base.connection }
   let(:run_class) { Class.new(ActiveRecord::Base) { self.table_name = "agent_runs" } }
 
+  # @spec TEST-SUITE-027
   around do |example|
-    truncate_agent_run_data
-    example.run
+    ActiveRecord::Base.transaction(requires_new: true) do
+      example.run
+      raise ActiveRecord::Rollback
+    end
   ensure
-    # Ensure the migration is in the up state regardless of test outcome so
-    # the runner_handle column exists for the rest of the suite.
-    migration.migrate(:up)
-    run_class.reset_column_information
-    AgentRun.reset_column_information
-    truncate_agent_run_data
+    [ run_class, AgentRun, ContainerPoolEntry, ServiceContainer ].each(&:reset_column_information)
   end
 
   def create_test_run(container_id:, container_host: nil)
@@ -64,31 +62,5 @@ RSpec.describe AddRunnerHandleToExecutionTables, :aggregate_failures do
     expect(connection.column_exists?(:agent_runs, :runner_handle)).to be(true)
     expect(connection.column_exists?(:container_pool_entries, :runner_handle)).to be(true)
     expect(connection.column_exists?(:service_containers, :runner_handle)).to be(true)
-  end
-
-  private
-
-  # Deletes the full graph of records the +agent_run+ factory creates (runs,
-  # their issues and projects, and the account/runners backing them) so the
-  # non-transactional spec leaves the shared test database clean for later
-  # migration specs. Deletion order respects foreign keys (children first).
-  def truncate_agent_run_data
-    connection.execute("DELETE FROM agent_run_logs")
-    connection.execute("DELETE FROM provisioning_intents")
-    connection.execute("DELETE FROM agent_runs")
-    connection.execute("DELETE FROM project_service_containers")
-    connection.execute("DELETE FROM service_container_metrics")
-    connection.execute("DELETE FROM service_containers")
-    connection.execute("DELETE FROM feature_intents")
-    connection.execute("DELETE FROM issues")
-    connection.execute("DELETE FROM projects")
-    connection.execute("DELETE FROM runners")
-    connection.execute("DELETE FROM runner_states")
-    connection.execute("DELETE FROM github_tokens")
-    connection.execute("DELETE FROM user_settings")
-    connection.execute("DELETE FROM tenant_settings")
-    connection.execute("DELETE FROM account_memberships")
-    connection.execute("DELETE FROM users")
-    connection.execute("DELETE FROM accounts")
   end
 end

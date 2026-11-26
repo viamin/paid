@@ -288,6 +288,100 @@ keeps the status matrix local to one example. No fixture registry, global
 configuration change, or application abstraction is added. LID remains Full,
 version 1.3.0, under TEST-SUITE-011/017.
 
+## Candidate: restore prepared statements for normal tests
+
+The larger, controlled connection-mode experiment reuses the unchanged
+599-example workload on `0c721a6fae2855e3bc57d78e33ec584e27cc23f3`:
+
+| Mode | Examples | Failures / pending | Seconds |
+| --- | ---: | ---: | ---: |
+| Disabled control before | 599 | 0 / 0 | 161.30 |
+| Enabled | 599 | 0 / 0 | 125.00 |
+| Disabled control after | 599 | 0 / 0 | 152.16 |
+
+Enabled mode is 20.2% faster than the mean of the surrounding controls.
+Each run uses the same file snapshots, seed 24680, private database, and
+FactoryProf/RSpecDissect options; roles remain non-superuser without
+`BYPASSRLS`. The test connection now requests prepared statements by default.
+No production or development connection setting changes. Reports:
+`prepared-broad-state.json` and the three `prepared-broad-*.json` reports.
+
+Two new regression checks first fail on the old configuration: the configured
+flag is false and all eighteen observed tenant reads have no prepared-statement
+name. With the candidate default, both pass. The tenant check executes the same
+uncached client query six times in each A/B/A account context and verifies one
+server-side prepared statement is reused while each query returns only that
+account. The strengthened regression forces generic planning only within its
+test transaction and checks at least eighteen server-reported generic-plan
+executions; normal connection plan selection is unchanged.
+Reports: `prepared-default-red.json` and `prepared-default-green.json`.
+
+The schema-mutation slice runs on fresh copies of the audit database, not the
+operating development database. Each copy has a pre-run custom-format snapshot
+with a SHA-256 recorded in `schema-prepared-database.json`; the source database
+remains intact. Local PostgreSQL is 16.15. Early fail-fast attempts find two
+legacy cleanup helpers deleting the entire project graph and failing on a
+`workflow_states` foreign key. These are cleanup failures, not cached-plan
+failures. The runner-handle spec now rolls back its reversible DDL/data changes
+and resets affected model caches. The synthetic-run repair spec uses normal
+transactional fixtures. All original backfill, counter-repair and column checks
+remain. Their four examples pass, and a fresh complete migration run passes
+all 225 examples with no skips in 80.12 seconds. Reports:
+`prepared-migration-isolation.json` and `prepared-schema-suite-result.json`.
+
+With the actual new default and coverage enabled, the full model, tenant-policy,
+database-configuration and ERB slice completes 720 examples with zero failures
+and one existing DATABASE_URL-dependent skip. A separate run using an explicit
+URL for the same private database passes all four configuration examples and
+the strengthened generic-plan tenant regression, with no skips. Reports:
+`prepared-default-focused.json` and `prepared-explicit-url.json`.
+
+A temporary stale-tenant mutation makes the six B-context reads fail on A's
+account ID, demonstrating that the generic-plan regression checks visibility
+rather than only statement metadata. Report: `prepared-stale-tenant-mutant.json`.
+
+The final working-patch simplicity pass against HEAD
+`0c721a6fae2855e3bc57d78e33ec584e27cc23f3` keeps the single test-connection flag and existing
+transaction/cache APIs. No application query wrapper, schema-reset framework,
+new dependency, or global plan-selection override is introduced. LID remains
+Full, version 1.3.0; TEST-SUITE-027 records the cache/isolation contract.
+
+These changes are a candidate for full-suite verification. The measured
+599-example gain does not establish that the complete suite is twice as fast;
+the normal aggregate coverage and all full CI shards remain required.
+
+### Full-suite compatibility follow-up
+
+The first full CI run for `f72ad56662ce0d770a5fa3fc1404229dc865c275`,
+run `45789558929`, reports 21 failures across its five shards. Three query
+assertions assume literal SQL values; they now inspect the actual predicate
+and typed binds while retaining the named-issue, bootstrap-query-count, and
+crossed-repository exclusion checks. The shared query recorder exposes filtered
+payloads alongside its existing SQL-string API; it does not change executed SQL.
+
+The other 18 failures are prepared `SELECT issues.*` result-type errors. The
+25 affected closeout examples pass alone, but a 35-example reproduction with
+the preceding migration specs reproduces exactly the same 18 failures. The
+review-goal retry-reset migration removes and re-adds an issue column, changing
+column order during the example. Its final reload caches that temporary result
+shape. Clearing Issue's existing column/statement metadata in the migration
+spec's teardown prevents that plan from surviving fixture rollback. The same
+35-example reproduction then passes with no failures or skips. No connection
+retry, global cache flush, or prepared-statement suppression is added.
+
+The passing reproduction uses private database
+`paid_test_prof_repair_20261126_093644`, cloned from the earlier isolated schema
+test database. Its verified pre-run snapshot is 2,145,397 bytes with SHA-256
+`e0fa59ba07c358849a8ba00a823c7a9f21d2dfa38af0857e81f9f7bb03e03152`.
+Original databases remain intact. Reports: `prepared-closeout-repro.json`,
+`prepared-order-repro.json`, `prepared-order-green.json`, and
+`prepared-bound-query-green.json` in `/tmp/paid-testprof-audit/`.
+All 247 examples in the three changed query-spec files pass with seed 97531,
+with no skips. A new full CI run remains required. The simplicity pass against
+`f72ad56662ce0d770a5fa3fc1404229dc865c275` keeps cache cleanup local to the
+schema-changing spec and preserves the query recorder's existing filtering and
+SQL-string contract; only callers needing binds use its payload API.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or

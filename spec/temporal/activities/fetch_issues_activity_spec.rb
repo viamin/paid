@@ -298,11 +298,15 @@ RSpec.describe Activities::FetchIssuesActivity do
       github_issues = [ 96, 97, 98, 99, 100 ].map { |n| github_pr_issue(n) }
       stub_issues_by_label(nil => github_issues)
 
-      queries = capture_queries do
+      queries = capture_query_payloads do
         activity.execute(project_id: project.id)
       end
 
-      bootstrap_queries = queries.grep(/FROM "agent_runs".*"goal" = 'bootstrap_readiness'/)
+      bootstrap_queries = queries.select do |query|
+        query[:sql].include?('FROM "agent_runs"') && query[:binds].any? do |bind|
+          bind.respond_to?(:name) && bind.name == "goal" && bind.value_for_database == "bootstrap_readiness"
+        end
+      end
       expect(bootstrap_queries.size).to eq(1)
     end
   end

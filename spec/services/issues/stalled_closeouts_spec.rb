@@ -97,15 +97,12 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       merged_pr_row(number: 13, parent_issue_id: issue.id)
       other_issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
       merged_pr_row(number: 14, parent_issue_id: other_issue.id)
-      queries = []
-      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+      queries = capture_query_payloads { expect(described_class.candidate?(issue)).to be(true) }
 
-      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
-        expect(described_class.candidate?(issue)).to be(true)
-      end
-
-      candidate_query = queries.find { |query| query.include?("merged_prs") }
-      expect(candidate_query).to include(%("issues"."id" = #{issue.id}))
+      candidate_query = queries.find { |query| query[:sql].include?("merged_prs") }
+      expect(candidate_query.fetch(:sql)).to match(/"issues"\."id" = \$\d+/)
+      issue_ids = candidate_query.fetch(:binds).select { |bind| bind.name == "id" }.map(&:value_for_database)
+      expect(issue_ids).to eq([ issue.id ])
     end
   end
 

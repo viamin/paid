@@ -31,6 +31,13 @@ RSpec.describe ActiveRecord::DatabaseConfigurations, :no_db do # @spec RAILS-CON
     expect(development).to include(expected)
   end
 
+  # @spec TEST-SUITE-027
+  it "uses prepared statements for normal test queries" do
+    test = ActiveRecord::Base.configurations.configs_for(env_name: "test", name: "primary").configuration_hash
+
+    expect(test.fetch(:prepared_statements)).to be(true)
+  end
+
   it "leaves development cable available for CABLE_DATABASE_URL" do
     cable = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "cable").configuration_hash
 

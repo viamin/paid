@@ -350,8 +350,9 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     query_events = capture_query_events { described_class.perform_now(project.id) }
 
     issue_query = query_events.find { |event| event[:sql].include?("FROM \"issues\"") }
-    loaded_project_ids = issue_query.fetch(:sql)
-      .match(/"issues"\."project_id" IN \(([^)]+)\)/).captures.first.split(", ").map(&:to_i)
+    expect(issue_query.fetch(:sql)).to include('"issues"."project_id" IN (')
+    loaded_project_ids = issue_query.fetch(:binds)
+      .select { |bind| bind.name == "project_id" }.map(&:value_for_database)
     expect(loaded_project_ids).to contain_exactly(project.id, first_referenced_project.id, second_referenced_project.id)
     expect(loaded_project_ids).not_to include(crossed_project.id)
   end

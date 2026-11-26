@@ -90,9 +90,8 @@ test:
   <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
   url: <%= ENV["DATABASE_URL"] %> # @spec RAILS-CONTROL-PLANE-013
   <% end %>
-  # Disable prepared statements in tests to avoid cached-plan failures when
-  # order-dependent examples recreate or change schema objects mid-suite.
-  prepared_statements: false
+  # Reuse query plans; schema-mutating specs own their cache invalidation.
+  prepared_statements: true # @spec TEST-SUITE-027
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

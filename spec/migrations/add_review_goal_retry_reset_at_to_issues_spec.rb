@@ -6,6 +6,10 @@ require Rails.root.join("db/migrate/20260412165456_add_review_goal_retry_reset_a
 RSpec.describe AddReviewGoalRetryResetAtToIssues, :aggregate_failures do
   let(:migration) { described_class.new }
 
+  # @spec TEST-SUITE-027
+  # Drop SELECT * plans before fixture rollback restores the column order.
+  after { Issue.reset_column_information }
+
   it "is reversible and backfills existing issues on re-apply" do
     issue = create(:issue)
     issue.update_column(:review_goal_retry_reset_at, nil)
