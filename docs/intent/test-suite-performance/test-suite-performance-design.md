@@ -57,6 +57,17 @@ attempt. This absorbs transient registry
 and hosted-runner stalls without skipping setup or relaxing the shard's
 360-minute job boundary.
 
+Before the shard matrix starts, CI runs the complete MCP Registry contract in
+its own bounded preflight job. That focused job retains the literal,
+reviewed write-tool inventory and the read-only-definition exclusion check;
+it is not generated from production write flags. It records elapsed time in
+the job summary. Expensive shards depend on that job, so a failed contract
+leaves them skipped rather than consuming their database, service, dependency,
+and test budgets. The stable final test check reports a failed trusted
+preflight as a failure, while remaining skipped when the preflight is
+intentionally skipped for an untrusted pull request. Tool authors update the reviewed inventory whenever they
+add, remove, rename, or change the write classification of an MCP tool.
+
 The same shard paths install the pinned ast-grep binary before running specs.
 Each release-asset transfer has explicit connection and total-transfer bounds.
 The existing finite, process-group supervisor retries the complete install and

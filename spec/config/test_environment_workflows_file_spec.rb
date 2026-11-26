@@ -240,6 +240,24 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     expect(postgres.fetch("options")).to include("--shm-size=512m")
   end
 
+  # @spec TEST-SUITE-026
+  it "fails the stable test check when the trusted MCP write-tool preflight fails" do
+    jobs = workflow_config(".github/workflows/ci.yml").fetch("jobs")
+    aggregate_test = jobs.fetch("test")
+    preflight_requirement = aggregate_test.fetch("steps").find do |step|
+      step["name"] == "Require every test shard to succeed"
+    end
+
+    expect(aggregate_test.fetch("needs")).to include("mcp-write-tool-inventory")
+    expect(aggregate_test.fetch("if")).to include("needs.mcp-write-tool-inventory.result != 'skipped'")
+    expect(preflight_requirement.fetch("env")).to include(
+      "MCP_WRITE_TOOL_INVENTORY_RESULT" => "${{ needs.mcp-write-tool-inventory.result }}"
+    )
+    expect(preflight_requirement.fetch("run")).to include(
+      'MCP write-tool inventory preflight did not succeed'
+    )
+  end
+
   # @spec TEST-SUITE-023
   it "bounds and staggers JavaScript setup in test shards" do
     jobs = workflow_config(".github/workflows/ci.yml").fetch("jobs")

@@ -16,6 +16,9 @@ RSpec.describe Tools::Registry do
   let(:account) { create(:account) }
   let(:user) { create(:user, :member, account: account) }
   let(:write_tool_names) do
+    # This is a reviewed literal inventory, deliberately independent of
+    # production write_operation? declarations. Update it whenever an MCP
+    # tool is added, removed, renamed, or changes write classification.
     %w[
       trigger_agent_run
       start_maintenance_run
