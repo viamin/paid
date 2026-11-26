@@ -1479,6 +1479,24 @@ RSpec.describe Inbox::Queue do
       end
     end
 
+    # @spec OPERATOR-INBOX-022
+    it "preloads feature-decision inputs separately from authorized feature rows" do
+      project.update!(log_data: { "audit_history" => "x" * 100_000 })
+      feature = create_feature_decision_feature
+      entries = nil
+
+      queries = capture_queries do
+        entries = described_class.call(user:, kind: described_class::FEATURE_DECISION_KIND)
+      end
+      feature_query = queries.find { |sql| sql.start_with?('SELECT "feature_intents".') }
+
+      expect(entries.map(&:record)).to eq([ feature ])
+      expect(entries.sole.project).to eq(project)
+      expect(entries.sole.project.owner).to eq(project.owner)
+      expect(feature_query).to include('INNER JOIN "projects"')
+      expect(feature_query).not_to include('"projects"."log_data"', "LEFT OUTER JOIN")
+    end
+
     # @spec FEATURE-APPROVAL-013 @spec CONFIDENCE-DELIVERY-016
     it "batch-preloads feature-decision readiness inputs instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)

@@ -216,6 +216,13 @@ from being selected into every issue row. The optimization is representation
 only: lane membership, ordering, phase relevance, and personal-removal
 semantics remain unchanged.
 
+The feature-decision lane retains its project authorization join and separately
+preloads its project, approver, decisions, design PRs, and linked-task readiness
+inputs. Joining those collections together multiplies intermediate rows and
+widens the projection even when no feature is actionable. Separate batch loads
+preserve the complete readiness assessment without repeating project audit data
+or multiplying collection rows.
+
 ## Entry Kinds
 
 ### `traceability_gap`

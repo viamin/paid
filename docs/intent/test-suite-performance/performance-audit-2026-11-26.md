@@ -1,5 +1,80 @@
 # RSpec performance audit: 2026-11-26
 
+## Feature-decision query loading
+
+The 91 Inbox count and dashboard eligibility examples on prepared-statement
+revision `f72ad56662ce0d770a5fa3fc1404229dc865c275` passed in 343.13 seconds
+with `COVERAGE=false FPROF=1 RD_PROF=1`, seed `24680`, and the private audit
+database. FactoryProf attributed 45.64 seconds to 923 factory invocations;
+RSpecDissect attributed 18.36 seconds to setup. Fixture sharing alone would
+address only a small part of this workload.
+
+In the escalated-queue cache transition example, three feature-decision queries
+consumed 5.66 of 6.21 SQL seconds. A read-only `EXPLAIN ANALYZE` of that query
+returned no rows but compiled 1,702 JIT functions: 1,268.43 ms compilation out
+of 1,272.09 ms execution, plus 14.06 ms planning. Its projected row width was
+8,520 bytes. A diagnostic connection with JIT disabled reduced the example
+from 7.82 to 1.75 seconds. This identifies compilation cost, not a reason to
+change the global database policy.
+
+Replacing only the feature lane's `includes` with `preload` retains its
+existing project authorization join and all readiness associations. It avoids
+the large collection join and repeats no project audit payload in feature rows.
+The same 91 examples passed in 141.12 seconds, an observed 58.9% reduction,
+with exactly the same 923 factory invocations. Both runs used the same options,
+seed, database, application revision, and test sources; the candidate was
+injected into the test process before suite execution. This observed reduction
+cannot be attributed to the query change alone because the database's query
+estimates changed. It is not a repeatable whole-suite speedup claim.
+
+A later single-example old/new/old control passes in 1.43 / 0.99 / 1.07
+seconds. With JIT still enabled at its unchanged 100,000 cost threshold, the
+original query's estimated cost is now 3,789.65 rather than 126,589.27. Its
+current execution plan has no JIT compilation and takes 4.87 ms execution,
+plus 18.63 ms planning. The wide projection is unchanged. This estimate change
+explains why the earlier compilation penalty does not recur in these controls;
+the complete 91-example old/new/old comparison subsequently passes in
+60.89 / 59.78 / 59.89 seconds. The candidate is only 1.0% faster than the
+surrounding controls' mean under these estimates; that small difference does
+not establish a substantial runtime improvement. The change retains the
+narrower projection and prevents the observed joined-readiness compilation
+path, but the suite-wide investigation must address planning state as well.
+Reports: `inbox-preload-full-controls-state.json`, `inbox-preload-controls-state.json`,
+`inbox-explain-current.json`, and `inbox-current-database-statistics.txt`.
+
+The retained regression checks authorized feature and project identities,
+project display data, the authorization join, and exclusion of project audit
+columns and collection outer joins from feature rows. It fails against the
+original query and passes with separate preloads. The existing query-count
+regression also passes as readiness scenarios grow. No existing assertion or
+scenario was removed. The broader acceptance slice passes all 730 examples
+without failures or skips, seed 97531, with coverage enabled: all Inbox service
+specs plus dashboard eligibility, feature policy, tenant policy, web/API Inbox,
+MCP list/detail/chat context, serializer, and feature-decision view checks.
+Its partial-suite coverage is 16.18%; this does not replace the 80% full-suite
+gate. Reports: `inbox-preload-acceptance.{json,log}` and its copied raw coverage
+artifacts. A complete CI run is still required for the final patch.
+
+The simplicity pass against `f72ad56662ce0d770a5fa3fc1404229dc865c275`
+retains the existing policy scope and readiness loaders, changing only their
+association-loading strategy. It adds no cache, query wrapper, dependency, or
+fixture framework. LID remains Full, version 1.3.0; OPERATOR-INBOX-022 owns the
+projection boundary.
+
+Raw evidence: `/tmp/paid-testprof-audit/inbox-dashboard-before.{json,log}`,
+`inbox-dashboard-preload-probe.{json,log}`, `inbox-query{,-nojit}.json`,
+`inbox-query{,-nojit}-cost.json`, `inbox-explain.json`, and
+`inbox-preload-{red,green}.{json,log}`.
+
+The closest full-suite baseline is PR #5471 revision
+`0c721a6fae2855e3bc57d78e33ec584e27cc23f3`, CI run `45781530951`:
+31,279 examples, no failures, five existing pending cases, and 95% combined
+line coverage. Its five shard summaries total 5,311.15 execution seconds;
+the longest shard takes 1,436.19 seconds. All six downloaded timing/coverage
+artifacts match their published SHA-256 digests. This does not establish a
+whole-suite speedup over the earlier benchmark. Prepared-statement and query
+changes still need their own complete timing and coverage evidence.
+
 ## Scope and environment
 
 Audit base: `045bed8556c787f921ec539a51a5e617733051b7`.

@@ -933,6 +933,10 @@
   payloads. This applies to the clarifying-question, manual-review,
   retry-limited, test-review-pending, merge-approval, and intent-conformance
   lanes without changing their visibility, ordering, or admission rules.
+  The feature-decision lane SHALL retain its project authorization join and
+  separately batch-preload project records and readiness associations, without
+  joining the readiness collections into its feature rows or repeating project
+  audit payloads. Its visibility, ordering, and actionability SHALL remain unchanged.
   *Code:* `app/services/inbox/queue.rb`,
   `app/services/inbox/merge_approval.rb`,
   `app/services/inbox/intent_conformance.rb`.

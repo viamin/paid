@@ -793,6 +793,7 @@ module Inbox
     # assessments belong to background progress.
     # @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
     # @spec CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019
+    # @spec OPERATOR-INBOX-022
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where.not(status: FeatureIntent::TERMINAL_STATUSES)
@@ -800,7 +801,7 @@ module Inbox
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
-      only_record(scope).includes(
+      only_record(scope).preload(
         :project,
         :approved_by,
         { feature_intent_decisions: :intent_checkpoint },
