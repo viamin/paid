@@ -606,6 +606,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         )
       end
 
+      # @spec AUTO-MERGE-014
+      it "does not queue a CI-fix follow-up for an approval-waiting workflow" do
+        stub_github_for_pr(
+          checks: [ { name: "rspec", conclusion: "success" } ],
+          workflow_runs: [ { id: 11, name: "CI", status: "completed", conclusion: "action_required" } ]
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+        expect(decision_types(result)).not_to include("queue_create_pr_run")
+      end
+
       it "persists failed and not-evaluated auto-merge blockers with last_pr_scan_at" do
         project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
