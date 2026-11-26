@@ -45,6 +45,20 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
+  # @spec TEST-SUITE-025
+  it "runs the complete MCP write-tool inventory contract before expensive shards" do
+    preflight = workflow.fetch("jobs").fetch("mcp-write-tool-inventory")
+    contract_step = preflight.fetch("steps").find { |step| step["name"] == "Check MCP write-tool inventory" }
+
+    expect(preflight.fetch("timeout-minutes")).to be_between(1, 60)
+    expect(preflight.fetch("steps").first.fetch("uses")).to eq("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+    expect(contract_step.fetch("run")).to include("bin/rspec spec/mcp/tools/registry_spec.rb")
+    expect(contract_step.fetch("run")).to include("elapsed_seconds")
+    shards = workflow.fetch("jobs").fetch("test-shards")
+    expect(shards.fetch("needs")).to include("mcp-write-tool-inventory")
+    expect(shards.fetch("if")).not_to include("always()")
+  end
+
   # @spec TEST-SUITE-020
   it "bounds dependency installation to the external process-group supervisor in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|

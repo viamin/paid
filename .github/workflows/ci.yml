@@ -205,6 +205,72 @@ jobs:
           check_contains .github/workflows/pr-screenshots.yml "$workflow_client" ".github/workflows/pr-screenshots.yml must install $workflow_client"
           check_contains .github/workflows/ephemeral_tests.yml "$workflow_client" ".github/workflows/ephemeral_tests.yml must install $workflow_client"
 
+  # Run the reviewed MCP write-tool inventory before the shard matrix allocates
+  # its services and dependency budgets. A failure causes dependent shard jobs
+  # to be skipped, preserving their truthful GitHub Actions state.
+  # @spec TEST-SUITE-025
+  mcp-write-tool-inventory:
+    name: MCP write-tool inventory
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Check MCP write-tool inventory
+        run: |
+          started_at=$(date +%s)
+          bin/rspec spec/mcp/tools/registry_spec.rb
+          elapsed_seconds=$(( $(date +%s) - started_at ))
+          printf 'MCP write-tool inventory elapsed: %ss\n' "$elapsed_seconds" | tee -a "$GITHUB_STEP_SUMMARY"
+
   # @spec TEST-SUITE-003
   test-shards:
     name: test-shard (${{ matrix.shard }})
@@ -213,6 +279,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
+    needs: mcp-write-tool-inventory
     strategy:
       fail-fast: false
       matrix:
