@@ -35,7 +35,8 @@ profile = %w[activity_slots activity_task_polls local_activity_slots workflow_sl
 revision = ENV.fetch("FIXTURE_REVISION")
 roles = mode == "both" ? %w[poll agent] : [mode]
 admission = {protocol: 1, scope: "paid-workflow-and-remote-activity", pid: pid, process_start_ticks: ticks, workspace: Dir.pwd, revision: revision, boot_id: SecureRandom.uuid, profiles: roles.to_h { |role| [role, profile] }}
-path = File.join(ENV.fetch("TMPDIR"), "paid-worker-ready-temporal_worker#{"-#{mode}" unless mode == "both"}")
+suffix = ENV["TEMPORAL_WORKER_MODE"] ? "-#{ENV.fetch("TEMPORAL_WORKER_MODE")}" : ""
+path = File.join(ENV.fetch("TMPDIR"), "paid-worker-ready-temporal_worker#{suffix}")
 File.write(path, JSON.generate({pid: pid, revision: revision, admission: admission}))
 $stdout.sync = true
 puts pid
@@ -47,11 +48,13 @@ sleep 30
         (self.root / "bin/git").chmod(0o755)
         self.start_workers("a" * 40)
 
-    def start_workers(self, revision, both=False):
+    def start_workers(self, revision, both=False, explicit_both=False):
         current = []
         modes = ("both",) if both else ("poll", "agent")
         for role in modes:
             environment = dict(os.environ, TMPDIR=str(self.root / "tmp"), FIXTURE_REVISION=revision)
+            if not both or explicit_both:
+                environment["TEMPORAL_WORKER_MODE"] = role
             worker = subprocess.Popen(["ruby", "bin/temporal_worker", "--mode=" + role], cwd=self.root,
                                       env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.workers.append(worker)
@@ -125,7 +128,7 @@ assert not set(sys.argv[1:]).intersection(values)' "$reader" "$writer"
 
     def test_lost_post_ack_caller_preserves_generation_and_recovery_can_abort(self):
         self.finish(self.script("worker_admission_begin " + "b" * 40 + "\nWORKER_ADMISSION_STOPPING=1\nexit 7\n"), expected=7)
-        self.assertEqual(len(self.requests()), 3)
+        self.assertEqual(len(self.requests()), 4)
         self.finish(self.script("worker_admission_begin " + "b" * 40 + " recover\n"))
         self.assertFalse(self.requests())
 
@@ -157,7 +160,7 @@ WORKER_ADMISSION_STOPPING=1
             worker.wait(timeout=2)
         (self.root / "go").touch()
         self.finish(script)
-        self.assertEqual(len(self.requests()), 3)
+        self.assertEqual(len(self.requests()), 4)
 
     def test_reaper_refuses_reused_or_foreign_identity_without_signalling_bystander(self):
         worker = self.workers[0]
@@ -184,12 +187,12 @@ worker_admission_checkpoint setup
 worker_admission_checkpoint starting
 worker_admission_resume ''' + "b" * 40 + "\n")
         self.wait_ready()
-        self.assertEqual(len(self.requests()), 3)
+        self.assertEqual(len(self.requests()), 4)
         for worker in old:
             worker.terminate()
             worker.wait(timeout=2)
         self.start_workers("b" * 40)
-        self.assertEqual(len(self.requests()), 3)
+        self.assertEqual(len(self.requests()), 4)
         (self.root / "go").touch()
         self.finish(script)
         self.assertFalse(self.requests())
@@ -197,12 +200,12 @@ worker_admission_resume ''' + "b" * 40 + "\n")
         self.assertEqual(journal["phase"], "resumed")
         self.assertEqual(journal["update_phase"], "complete")
 
-    def replacement(self, before_both, after_both):
+    def replacement(self, before_both, after_both, before_explicit_both=False, after_explicit_both=False):
         if before_both:
             for worker in self.workers:
                 worker.terminate()
                 worker.wait(timeout=2)
-            self.start_workers("a" * 40, both=True)
+            self.start_workers("a" * 40, both=True, explicit_both=before_explicit_both)
         old = [worker for worker in self.workers if worker.poll() is None]
         script = self.script("worker_admission_begin " + "b" * 40 + '''
 worker_admission_before_stop
@@ -213,12 +216,12 @@ worker_admission_checkpoint setup
 worker_admission_checkpoint starting
 worker_admission_resume ''' + "b" * 40 + "\n")
         self.wait_ready()
-        self.assertEqual(len(self.requests()), 3)
+        self.assertEqual(len(self.requests()), 4)
         for worker in old:
             worker.terminate()
             worker.wait(timeout=2)
-        self.start_workers("b" * 40, both=after_both)
-        self.assertEqual(len(self.requests()), 3)
+        self.start_workers("b" * 40, both=after_both, explicit_both=after_explicit_both)
+        self.assertEqual(len(self.requests()), 4)
         (self.root / "go").touch()
         self.finish(script)
         self.assertFalse(self.requests())
@@ -228,6 +231,9 @@ worker_admission_resume ''' + "b" * 40 + "\n")
 
     def test_split_to_both_replacement_covers_target_launch_paths(self):
         self.replacement(False, True)
+
+    def test_explicit_both_replacement_uses_the_producer_marker_and_keeps_every_target_path_fenced(self):
+        self.replacement(True, True, before_explicit_both=True, after_explicit_both=True)
 
     def test_stopped_recovery_resumes_target_after_repeating_incomplete_setup(self):
         script = self.script("worker_admission_begin " + "b" * 40 + '''

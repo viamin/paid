@@ -4,6 +4,7 @@
 """
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -56,6 +57,28 @@ class CohortTest(unittest.TestCase):
         (self.proc / "21").rmdir()
         self.process(12, 11, 102, arguments=["ruby", "bin/temporal_worker"])
         self.assertEqual(self.discover(), {role: {"pid": 12, "start_ticks": 102} for role in ("poll", "agent")})
+
+    def test_both_mode_readiness_paths_match_the_actual_ruby_producer_for_default_and_explicit_launches(self):
+        source = Path(__file__).resolve().parents[2]
+        cohort_identity = {role: {"pid": 12, "start_ticks": 102} for role in ("poll", "agent")}
+        for configured_mode, expected in ((None, "paid-worker-ready-temporal_worker"),
+                                         ("both", "paid-worker-ready-temporal_worker-both")):
+            with self.subTest(configured_mode=configured_mode):
+                environment = dict(os.environ)
+                if configured_mode is None:
+                    environment.pop("TEMPORAL_WORKER_MODE", None)
+                else:
+                    environment["TEMPORAL_WORKER_MODE"] = configured_mode
+                producer_name = subprocess.check_output(
+                    ["bundle", "exec", "ruby", "-Ilib", "-ractive_support/core_ext/object/blank", "-rpaid/worker_readiness", "-e",
+                     '$PROGRAM_NAME = "bin/temporal_worker"; print Paid::WorkerReadiness.default_file_name'],
+                    cwd=source, env=environment, text=True
+                )
+                self.assertEqual(producer_name, expected)
+                (self.root / producer_name).touch()
+                paths = cohort.readiness_paths(cohort_identity, self.root)
+                self.assertEqual(paths, {role: str(self.root / producer_name) for role in ("poll", "agent")})
+                (self.root / producer_name).unlink()
 
     def test_conflicting_launch_mode_and_environment_are_unknown(self):
         self.process(12, 11, 102, mode="poll", environment_mode="agent")

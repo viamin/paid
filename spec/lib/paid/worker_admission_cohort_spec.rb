@@ -11,7 +11,7 @@ RSpec.describe Paid::WorkerAdmission do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-0
       { "PYTHONPATH" => File.join(root, "bin/lib"), "PYTHONDONTWRITEBYTECODE" => "1" },
       "python3", File.join(root, "spec/support/worker_admission_cohort_cases.py")
     )
-    expect(output).to include("Ran 8 tests")
+    expect(output).to include("Ran 9 tests")
     expect(status.success?).to be(true), output
   end
 end

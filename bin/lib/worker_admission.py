@@ -123,7 +123,7 @@ class Drain:
         self.original_roles = dict(self.roles)
         self.gate_paths = tuple(sorted({self.normalize_path(path) for path in
                                        (self.roles.values() if gate_paths is None else gate_paths)}))
-        if not 1 <= len(self.gate_paths) <= 3 or not set(self.roles.values()).issubset(self.gate_paths):
+        if not 1 <= len(self.gate_paths) <= 4 or not set(self.roles.values()).issubset(self.gate_paths):
             raise AdmissionError("launch-path gate coverage is incomplete")
         if not re.fullmatch(r"[0-9a-f]{40}", target_revision):
             raise AdmissionError("target revision is unknown")

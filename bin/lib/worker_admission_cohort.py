@@ -192,9 +192,14 @@ def readiness_paths(cohort, directory):
     directory = Path(directory).resolve(strict=True)
     if any(ord(character) < 32 for character in str(directory)):
         raise AdmissionError("readiness directory contains control characters")
-    both = cohort["agent"] == cohort["poll"]
-    return {role: str(directory / ("paid-worker-ready-temporal_worker" + ("" if both else "-" + role)))
-            for role in cohort}
+    if cohort["agent"] != cohort["poll"]:
+        return {role: str(directory / f"paid-worker-ready-temporal_worker-{role}") for role in cohort}
+    candidates = [directory / "paid-worker-ready-temporal_worker",
+                  directory / "paid-worker-ready-temporal_worker-both"]
+    present = [path for path in candidates if path.is_file()]
+    if len(present) != 1:
+        raise AdmissionError("both-mode worker readiness marker is ambiguous or unavailable")
+    return {role: str(present[0]) for role in cohort}
 
 
 def journal_context(workspace):
@@ -214,6 +219,7 @@ def journal_context(workspace):
         raise AdmissionError("recorded readiness directory contains control characters")
     expected = {
         directory / "paid-worker-ready-temporal_worker",
+        directory / "paid-worker-ready-temporal_worker-both",
         directory / "paid-worker-ready-temporal_worker-poll",
         directory / "paid-worker-ready-temporal_worker-agent"
     }
