@@ -18,6 +18,12 @@ class RunCollectorsJob < ApplicationJob
     job.notify_terminal_failure(error)
     raise error
   end
+  # @spec KNOWLEDGE-017
+  retry_on Knowledge::ContainerizedRunner::ProvisionError, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.mark_terminal_collection_failure
+    job.notify_terminal_failure(error)
+    raise error
+  end
   # @spec KNOWLEDGE-015
   retry_on ActiveRecord::ConnectionNotEstablished, wait: :polynomially_longer, attempts: 5 do |job, error|
     job.mark_terminal_collection_failure
@@ -87,6 +93,8 @@ class RunCollectorsJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
   rescue Knowledge::ArtifactStore::LockUnavailable
+    raise # Keep the project collecting while retry_on schedules a new attempt.
+  rescue Knowledge::ContainerizedRunner::ProvisionError
     raise # Keep the project collecting while retry_on schedules a new attempt.
   rescue ActiveRecord::ConnectionNotEstablished
     raise # Keep the project collecting while retry_on schedules a new attempt.

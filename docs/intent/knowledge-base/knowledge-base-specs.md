@@ -34,6 +34,17 @@
   *Code:* `app/services/knowledge/containerized_runner.rb`.
   *Test:* `spec/services/knowledge/containerized_runner_spec.rb`.
 
+- [x] **KNOWLEDGE-017** — When Docker fails while provisioning an isolated
+  knowledge collector container, the collector SHALL classify the failure as a
+  provisioning failure and retry it through the bounded collector-job retry
+  policy, retaining the project's `collecting` status while a retry remains.
+  After that policy is exhausted, it SHALL mark the collection failed and
+  report the terminal failure through the exception-notification path.
+  *Code:* `app/services/knowledge/containerized_runner.rb`,
+  `app/jobs/run_collectors_job.rb`.
+  *Test:* `spec/services/knowledge/containerized_runner_spec.rb`,
+  `spec/jobs/run_collectors_job_spec.rb`.
+
 - [x] **KNOWLEDGE-015** — When import-time knowledge collection or collector
   execution encounters a transient PostgreSQL connection failure, it SHALL
   retry through its bounded job retry policy, retain the project's

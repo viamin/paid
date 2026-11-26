@@ -40,6 +40,9 @@ exhaustion is best-effort: if the project lookup still cannot reach the
 database, the skipped status write is logged and the original collection error
 is still notified and re-raised. Each collector releases its container before the
 next starts; Ruby heap memory remains subject to garbage collection. The
+collector execution job also retries a Docker failure while provisioning its
+isolated collector container with the same bounded backoff, retaining the
+project's collecting status until the retry policy is exhausted.
 tree-sitter and symbol-index collectors scan at most 25 source files per
 continuation. Their stable relative-path cursor is persisted on the unique
 collector run for a project version and collector type only after that shard's
