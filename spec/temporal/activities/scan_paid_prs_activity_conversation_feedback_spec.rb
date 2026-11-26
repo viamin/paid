@@ -12,6 +12,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
 
   let(:comment) do
     OpenStruct.new(
+      id: 7157569292,
       user: OpenStruct.new(login: "viamin"),
       body: "Please fix the error handling in the parser module",
       created_at: 30.minutes.ago
@@ -81,6 +82,35 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
   end
 
   describe "conversation feedback consumption after no-change follow-ups" do
+    let(:operator) { create(:user, :owner, account: project.account) }
+
+    it "records an explicitly selected current operator report without queueing coding work" do # @spec FOCUSED-RUN-015
+      pull_request = project.issues.find_by!(github_number: 42)
+      event = PullRequests::RecordOperatorAcceptanceReport.call(
+        pull_request:, actor: operator, comment_id: comment.id,
+        environment: "devcontainer", results: "63/0 source acceptance", unrun_capabilities: [ "CI" ]
+      ).event
+
+      result = activity.execute(project_id: project.id)
+
+      expect(result.fetch(:prs_to_trigger)).to eq([])
+      expect(event.metadata).to include("revision" => "abc123", "comment_id" => comment.id.to_s)
+      expect(AgentRun.where(project:, source_pull_request_number: 42, status: "queued")).to be_empty
+    end
+
+    it "keeps a later actionable comment distinct from a recorded operator report" do # @spec FOCUSED-RUN-015
+      pull_request = project.issues.find_by!(github_number: 42)
+      PullRequests::RecordOperatorAcceptanceReport.call(
+        pull_request:, actor: operator, comment_id: comment.id,
+        environment: "devcontainer", results: "63/0 source acceptance"
+      )
+      later_comment = OpenStruct.new(id: 7157569293, user: OpenStruct.new(login: "viamin"),
+        body: "Please correct the remaining regression", created_at: 5.minutes.ago)
+      stub_pr_signals(comments: [ comment, later_comment ])
+
+      expect(trigger_types(activity.execute(project_id: project.id))).to include("conversation_comments")
+    end
+
     it "retains comments arriving after prompt preparation but before no-change completion" do
       run = create_no_change_run!
       record_prompt_preparation(run, started_at: 40.minutes.ago, finished_at: 35.minutes.ago)

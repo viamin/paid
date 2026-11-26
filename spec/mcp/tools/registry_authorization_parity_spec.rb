@@ -161,6 +161,21 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "record_operator_acceptance_report",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> {
+          { project_id: project.id, pull_request_id: pull_request.id, comment_id: 1,
+            environment: "devcontainer", results: "reported", confirmed: true }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "update_technical_merge_blocker",
         denied_user: -> {
           project

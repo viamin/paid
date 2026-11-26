@@ -70,6 +70,23 @@
 
 ## Conversation feedback consumption
 
+- [x] **FOCUSED-RUN-015** — When an actor authorized to manage a project
+  explicitly records a trusted, non-Paid-status PR comment as an operator
+  acceptance report, Paid SHALL fetch and bind the project/PR, actor, exact
+  comment identity and body digest, current head revision, environment,
+  results, and unrun capabilities in the existing account activity audit trail
+  without creating an `AgentRun`, changing a feedback watermark, or consuming
+  a repair allowance. The normal PR scanner SHALL suppress only that exact
+  current receipt; a stale revision, replay with changed body, untrusted or
+  status comment, and adjacent later actionable comment SHALL retain normal
+  admission. The recorder SHALL select report-only purpose explicitly and
+  SHALL NOT infer it from prose.
+  *Code:* `PullRequests::RecordOperatorAcceptanceReport`,
+  `Tools::RecordOperatorAcceptanceReport`,
+  `ScanPaidPrsActivity#recorded_operator_acceptance_report?`.
+  *Test:* `spec/services/pull_requests/record_operator_acceptance_report_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_conversation_feedback_spec.rb`.
+
 - [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
   completes or terminates `no_output` with the `no_changes` reason, the PR
   scanner SHALL use a cutoff immediately before the start second of the newest

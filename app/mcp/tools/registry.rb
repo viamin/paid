@@ -27,6 +27,7 @@ module Tools
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
       "Tools::ManageSharedDeliveryEvidence",
+      "Tools::RecordOperatorAcceptanceReport",
       "Tools::ListLayeredVerificationReviewPackages",
       "Tools::GetLayeredVerificationReviewPackage",
       "Tools::ApproveLayeredVerificationReviewPackage",

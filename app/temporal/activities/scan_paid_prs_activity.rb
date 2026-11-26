@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module Activities
   # Scans open pull requests with the automation label for signals
   # that require follow-up agent work. Runs after FetchIssuesActivity in
@@ -3300,6 +3302,7 @@ module Activities
         next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
+        next false if recorded_operator_acceptance_report?(client, project, issue, c)
 
         true
       end
@@ -3307,6 +3310,24 @@ module Activities
       return [] if relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
+    end
+
+    # An operator selects the report purpose through the authorized recorder;
+    # Ruby never guesses it from comment prose. A changed body or head invalidates
+    # that receipt, leaving the comment eligible for normal feedback admission.
+    # @spec FOCUSED-RUN-015
+    def recorded_operator_acceptance_report?(client, project, issue, comment)
+      identity = operator_report_identity(client, project, issue, comment)
+      project.account.account_activity_events.where(
+        action: PullRequests::RecordOperatorAcceptanceReport::ACTION, subject: issue
+      ).where("metadata ->> 'report_identity' = ?", identity).exists?
+    end
+
+    def operator_report_identity(client, project, issue, comment)
+      revision = fetch_pr_data(client, project, issue)&.head&.sha
+      return "" if revision.blank?
+
+      [ issue.id, comment.id, Digest::SHA256.hexdigest(comment.body.to_s), revision ].join(":")
     end
 
     # Completion cannot acknowledge feedback arriving after prompt preparation.
