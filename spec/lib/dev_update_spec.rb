@@ -618,8 +618,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
 
       updater_log = read_updater_log(dir)
-      expect(updater_log).to include("does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind.")
-      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-019")
+      expect(updater_log).to include("does not support task-safe worker quiescence")
+      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-021")
       expect(updater_log).not_to include("Full restart update complete.")
     end
   end
@@ -1471,6 +1471,9 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(script_source, script_path)
     FileUtils.chmod("+x", script_path)
     FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
+    %w[dev_worker_admission.sh worker_admission.py worker_admission_cohort.py].each do |name|
+      FileUtils.cp(File.expand_path("../../bin/lib/#{name}", __dir__), File.join(dir, "bin", "lib", name))
+    end
 
     # Models the real Temporal workers' readiness flags: when a stub worker
     # boots it publishes its boot revision so bin/dev-update can verify
