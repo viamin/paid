@@ -23,10 +23,9 @@ module CiStatusVerification
   end
 
   # Reached when the Checks API is forbidden (e.g., fine-grained tokens have
-  # no Checks permission). Verifies CI via the Actions API instead. If Actions
-  # is also unavailable or empty, only an explicit "success" combined status
-  # passes — "pending + 0 contexts" is not safe here because we never confirmed
-  # the absence of check runs from non-Actions GitHub Apps.
+  # no Checks permission). Verifies CI via the Actions API instead. A missing
+  # Actions inventory blocks merging; a combined status cannot establish that
+  # no approval-blocked workflow runs exist for the current HEAD.
   def workflow_runs_or_status_green?(client, project, sha)
     workflow_runs_or_status_green_internal(client, project, sha, raise_on_github_error: false)
   end
@@ -116,7 +115,7 @@ module CiStatusVerification
       project_id: project.id,
       error: e.message
     )
-    combined_status_ok_internal(client, project, sha, strict:, raise_on_github_error:)
+    false
   rescue GithubClient::Error => e
     handle_github_error(e, project, "#{ci_log_component}.workflow_runs_failed", raise_on_github_error:)
   end
