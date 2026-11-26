@@ -119,12 +119,14 @@ actual worker descendants of the live supervisor entries, with PID/start-time,
 workspace and launch-mode checks. Another genuine worker's marker cannot cover
 the supervised process. Missing, uncovered, duplicate or changing workers defer.
 One both-mode worker can cover both logical roles without double-locking its
-physical admission inode. Its default readiness marker is the unsuffixed
-`paid-worker-ready-temporal_worker` path; an explicitly configured
-`TEMPORAL_WORKER_MODE=both` worker publishes
-`paid-worker-ready-temporal_worker-both`. The controller selects the one live
-producer path for the current cohort, while fencing both paths before a target
-can start, and coalesces that physical path for both logical roles.
+physical admission inode. The worker binds its resolved CLI/environment mode
+before publishing readiness, so new both-mode launches use
+`paid-worker-ready-temporal_worker-both`. The consumer also recognizes the prior
+unsuffixed `paid-worker-ready-temporal_worker` alias when it is the sole marker
+for a verified capable cohort. Its outer presence check covers both aliases;
+unknown or unsupported metadata cannot authorize a worker-free stop. The
+controller selects one unambiguous producer path, fences both aliases plus the
+split role paths before a target can start, and coalesces shared ownership.
 
 The standalone controller closes renewal on every role before waiting for
 reservation-to-release shared ownership, including unused poll and eager

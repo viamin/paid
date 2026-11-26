@@ -718,6 +718,23 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   # @spec TEMPORAL-ORCHESTRATION-019
+  { "an unsuffixed legacy marker" => "paid-worker-ready-temporal_worker",
+    "an explicit both marker" => "paid-worker-ready-temporal_worker-both" }.each do |label, basename|
+    it "defers #{label} even when supervisor rows look worker-free" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+      Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+        File.write(File.join(ENV.fetch("TMPDIR"), basename), { pid: 12_345, revision: "unverified" }.to_json)
+        _stdout, _stderr, status = run_lightweight_with_pull(dir,
+          pull_diff_files: %w[app/services/llm/request.rb],
+          changed_files: "app/services/llm/request.rb",
+          start_overmind_running: true, with_stale_socket: true)
+
+        expect(status.success?).to be(false)
+        expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+        expect(File.read(File.join(dir, "calls.log"))).not_to include("overmind quit")
+      end
+    end
+  end
+
   it "proceeds without worker quiescence when a running Overmind reports no Temporal worker processes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,

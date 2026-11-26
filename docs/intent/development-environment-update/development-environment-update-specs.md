@@ -82,11 +82,10 @@
   uncovered or changing workers, and obtain complete two-stage public-SDK
   quiescence for both roles within the existing drain budget. It SHALL retain
   the controller's exclusive locks through stop, setup and target boot
-  verification, coalesce both-mode roles through the readiness marker selected
-  by the actual launch form (the default unsuffixed
-  `paid-worker-ready-temporal_worker` marker or the explicit
-  `paid-worker-ready-temporal_worker-both` marker) without double-locking,
-  fence every supported target marker path, and prevent
+  verification, bind readiness to the effective CLI/environment mode, coalesce
+  both-mode roles without double-locking, and recognize the unambiguous
+  unsuffixed and `-both` marker aliases at both presence and admission boundaries.
+  It SHALL fence all four supported target marker paths and prevent
   controller lock/control-pipe descriptors from reaching restarted services.
   It SHALL reopen only its owned generation after proving target boots and
   every original process instance has exited. Interrupted acknowledged updates
