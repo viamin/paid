@@ -249,6 +249,9 @@ module Automation
             infeasible_tiers = tier_feasibility.infeasible_tiers(project.effective_owner)
             return [] if infeasible_tiers.empty?
 
+            # Avoid planning the nested candidate relation when this project has no history.
+            return [] unless ModelSelection.joins(:agent_run).where(agent_runs: { project_id: project.id }).exists?
+
             tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
             tiers_by_issue.select { |_issue_id, tier| infeasible_tiers.include?(tier) }.keys
           end

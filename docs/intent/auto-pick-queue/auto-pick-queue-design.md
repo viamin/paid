@@ -244,6 +244,13 @@ inspect the same underlying cycle group the web Inbox renders.
 
 ## Tier-infeasibility gating
 
+Before joining model-selection history to the full candidate relation, check
+whether the project has any model selections. Without history, no candidate
+can have an infeasible pinned tier; avoid planning the nested eligibility
+query. Scope this check through the run's project and repeat it on every call.
+Projects with history retain the existing candidate-restricted latest-tier
+lookup. The final eligibility relation and dequeue guards remain unchanged.
+
 Issues whose most recent model selection pins a tier no enabled runner can
 satisfy stay out of the candidate pool (#4093). The latest selection predicts
 the tier the next run would pin — selection inputs are deterministic per
