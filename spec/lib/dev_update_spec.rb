@@ -664,28 +664,27 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers a full update when Overmind status cannot inspect a present control socket" do
+  it "defers a full update when a stale control socket leaves a worker-bearing orphaned tmux session" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      # A stale socket does not authorize force-killing its worker-bearing orphan.
       script_path = prepare_script_fixture(
         dir,
         start_overmind_running: true,
+        tmux: :same_workspace,
         overmind_status_exit_status: 1,
         pull_diff_files: %w[app/services/llm/request.rb]
       )
-      env = poll_env.merge(
-        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-        "OVERMIND_SOCKET" => ".overmind.sock",
-        "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb"
-      )
+      create_overmind_tmux_socket(dir)
+      create_stale_socket(dir)
+      env = stale_socket_worker_orphan_env(dir)
 
-      with_active_overmind_socket(dir) do
-        _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
 
-        expect(status.success?).to be(false)
-        expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
-        expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
-        expect(read_updater_log(dir)).to include("no safe no-worker supervisor state was verified")
-      end
+      expect(status.success?).to be(false)
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+      expect(File.read(File.join(dir, "calls.log"))).not_to include("tmux kill-session")
+      expect(read_updater_log(dir)).to include("no safe no-worker supervisor state was verified")
     end
   end
 
@@ -1802,6 +1801,15 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     socket = File.join(socket_dir, "overmind-#{File.basename(dir)}-orphan")
     UNIXServer.open(socket) { |server| server.close }
     socket
+  end
+
+  def stale_socket_worker_orphan_env(dir)
+    poll_env.merge(
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "OVERMIND_SOCKET" => ".overmind.sock",
+      "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux"),
+      "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb"
+    )
   end
 
   def create_stale_socket(dir)

@@ -58,6 +58,15 @@ worker_admission_markers() {
     --marker-roles "$1" --readiness-directory "$WORKER_ADMISSION_READINESS_DIRECTORY"
 }
 
+worker_admission_readiness_file() {
+  local role="$1"
+  if [ "$role" = both ]; then
+    printf '%s/paid-worker-ready-temporal_worker' "$WORKER_ADMISSION_READINESS_DIRECTORY"
+  else
+    printf '%s/paid-worker-ready-temporal_worker-%s' "$WORKER_ADMISSION_READINESS_DIRECTORY" "$role"
+  fi
+}
+
 worker_admission_recovery_cohort() {
   printf '%s\n' "$WORKER_ADMISSION_RECOVERY_COHORT"
 }
@@ -96,7 +105,7 @@ worker_admission_begin() {
   fi
   local role
   for role in agent poll both; do
-    arguments+=(--gate "$WORKER_ADMISSION_READINESS_DIRECTORY/paid-worker-ready-temporal_worker-${role}")
+    arguments+=(--gate "$(worker_admission_readiness_file "$role")")
   done
   identities="$(python3 -c 'import json,sys; value=json.loads(sys.argv[1]); print("\n".join(role+"="+value[role] for role in ("agent","poll")))' "$markers")" || return 1
   while IFS= read -r entry; do

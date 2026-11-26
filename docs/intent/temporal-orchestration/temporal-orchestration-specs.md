@@ -69,7 +69,8 @@
   Temporal worker will be stopped (the configured Unix control socket is absent
   and no same-workspace orphaned supervisor tmux session the stop path would
   kill hosts a Temporal worker window, a present socket positively refuses a
-  local connection as stale, or a successful running-Overmind inspection reports
+  local connection as stale and no such orphaned worker-bearing session exists,
+  or a successful running-Overmind inspection reports
   no Temporal worker processes). An inspection counts as successful only when
   its output matches the supervisor's process-status grammar; a zero exit
   status with unparseable output SHALL be treated as a failed inspection, not
@@ -81,8 +82,9 @@
   (#5326).
   *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
   running Overmind that still reports Temporal workers whose readiness metadata
-  is missing, and for a socket-less same-workspace orphaned supervisor session
-  whose tmux windows host a Temporal worker that the stop path would force-kill.
+  is missing, and for a socket-less or stale-socket same-workspace orphaned
+  supervisor session whose tmux windows host a Temporal worker that the stop
+  path would force-kill.
   *Protocol and rollout:*
   `decisions/task-safe-worker-quiescence.md`.
   *Required tests:* `spec/lib/paid/worker_admission_spec.rb`,

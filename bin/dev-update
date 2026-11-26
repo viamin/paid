@@ -611,7 +611,11 @@ wait_for_overmind_health() {
 
 worker_readiness_file() {
   local mode="$1"
-  printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
+  if [ "$mode" = both ]; then
+    printf '%s/paid-worker-ready-temporal_worker' "${TMPDIR:-/tmp}"
+  else
+    printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
+  fi
 }
 
 # Extract the revision identity from a worker readiness JSON payload. The
@@ -636,9 +640,10 @@ worker_reports_revision() {
 # Overmind can be quit gracefully, but stop_overmind still force-kills any
 # same-workspace orphaned Overmind tmux session, so an absent socket is safe
 # only when no such session positively hosts a Temporal worker (see
-# workspace_tmux_hosts_temporal_worker). If the socket exists, only a
-# successful `overmind status` with no Temporal worker process is safe:
-# command failure is an unknown supervisor state, not proof of absence.
+# workspace_tmux_hosts_temporal_worker). A refused present socket follows the
+# same stop path after stale-socket cleanup, so it has the same qualifier. A
+# successful `overmind status` with no Temporal worker process is also safe;
+# every other command failure is unknown, not proof of absence.
 # Readiness metadata missing against any other state is not evidence of safety
 # — a worker that failed before mark_ready! (or whose flag was removed) still
 # owns or has reserved work under a running supervisor.
@@ -686,8 +691,10 @@ verified_no_temporal_worker() {
   fi
 
   if ! status_output="$(dev_supervisor_overmind_status_output)"; then
-    overmind_control_socket_has_no_listener
-    return
+    if ! overmind_control_socket_has_no_listener || workspace_tmux_hosts_temporal_worker; then
+      return 1
+    fi
+    return 0
   fi
 
   # A zero exit status does not prove the output parsed as status rows: a

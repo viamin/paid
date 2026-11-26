@@ -193,7 +193,7 @@ def readiness_paths(cohort, directory):
     if any(ord(character) < 32 for character in str(directory)):
         raise AdmissionError("readiness directory contains control characters")
     both = cohort["agent"] == cohort["poll"]
-    return {role: str(directory / ("paid-worker-ready-temporal_worker-" + ("both" if both else role)))
+    return {role: str(directory / ("paid-worker-ready-temporal_worker" + ("" if both else "-" + role)))
             for role in cohort}
 
 
@@ -212,7 +212,11 @@ def journal_context(workspace):
     directory = parents.pop()
     if any(ord(character) < 32 for character in str(directory)):
         raise AdmissionError("recorded readiness directory contains control characters")
-    expected = {directory / ("paid-worker-ready-temporal_worker-" + role) for role in ("poll", "agent", "both")}
+    expected = {
+        directory / "paid-worker-ready-temporal_worker",
+        directory / "paid-worker-ready-temporal_worker-poll",
+        directory / "paid-worker-ready-temporal_worker-agent"
+    }
     if gates != expected or not set(roles.values()).issubset(gates):
         raise AdmissionError("recorded generation lacks complete launch-path coverage")
     return {"target_revision": target, "readiness_directory": str(directory),

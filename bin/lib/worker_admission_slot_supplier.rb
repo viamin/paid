@@ -23,7 +23,7 @@ module Paid
     # A separate request must stop reader renewal before an updater can drain.
     # @spec TEMPORAL-ORCHESTRATION-021
     class SlotSupplier < Temporalio::Worker::Tuner::SlotSupplier::Custom
-      Permit = Struct.new(:lock, :used)
+      Permit = Struct.new(:lock)
 
       def initialize(slots:, readiness_file:)
         @available_slots = Integer(slots)
@@ -56,9 +56,7 @@ module Paid
         acquire_permit
       end
 
-      def mark_slot_used(context)
-        context.permit.used = true
-      end
+      def mark_slot_used(_context); end
 
       def release_slot(context)
         context.permit.lock.close
@@ -78,7 +76,7 @@ module Paid
           return if draining?
 
           transferred = true
-          Permit.new(lock, false)
+          Permit.new(lock)
         ensure
           unless transferred
             lock&.close

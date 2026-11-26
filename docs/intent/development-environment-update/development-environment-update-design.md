@@ -119,7 +119,9 @@ actual worker descendants of the live supervisor entries, with PID/start-time,
 workspace and launch-mode checks. Another genuine worker's marker cannot cover
 the supervised process. Missing, uncovered, duplicate or changing workers defer.
 One both-mode worker can cover both logical roles without double-locking its
-physical admission inode.
+physical admission inode. Its default readiness marker is the unsuffixed
+`paid-worker-ready-temporal_worker` path; the controller coalesces that one
+physical path for both logical roles.
 
 The standalone controller closes renewal on every role before waiting for
 reservation-to-release shared ownership, including unused poll and eager
@@ -156,8 +158,9 @@ The update proceeds without quiescence only when the supervisor state verifies
 no Temporal worker will be stopped (the configured Overmind Unix control socket
 is absent and no such orphaned worker-bearing session exists, or a successful
 status inspection reports no `worker_poll`/`worker_agent` processes). When
-status fails, a present socket must also positively reject a local connection as
-stale; any other failure is unknown, not proof that no worker is running. An
+status fails, a present socket must positively reject a local connection as
+stale and no such orphaned worker-bearing session may exist; any other failure
+is unknown, not proof that no worker is running. An
 orphaned session that cannot be inspected is not drained: the stop path fails
 before setup on it (`RAILS-CONTROL-PLANE-019`) rather than force-killing it.
 
