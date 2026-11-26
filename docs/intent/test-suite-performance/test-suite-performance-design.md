@@ -259,6 +259,11 @@ Effective-provider value tests instantiate a run directly because they only
 exercise attribute normalization; the legacy alias integration retains a
 persisted run and verifies its effective provider after reloading.
 
+Prometheus status-matrix specs reuse seven distinct project/account graphs,
+refinding each project per example. Runs, issues and scenario-specific terminal
+records remain per example, preserving aggregation across accounts and mutation
+rollback. Cache clearing and real collector queries remain enabled.
+
 Git operations, partial-closeout analysis, dependency parsing, issue creation,
 existing-PR completion, and issue enhancement reuse uncustomized project
 configuration through the stable project context. Auto-pick service specs use
