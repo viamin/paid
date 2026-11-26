@@ -426,7 +426,7 @@
   `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-064** — When an authorized operator's waiting
+- [x] **PARTIAL-CLOSEOUT-065** — When an authorized operator's waiting
   source-closure recovery request is accepted through either the run-detail or
   confirmed MCP boundary, Paid SHALL persist an account-scoped
   `agent_run.source_closure_recovery_requested` audit event through the

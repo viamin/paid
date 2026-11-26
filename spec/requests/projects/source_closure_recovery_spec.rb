@@ -7,7 +7,7 @@ RSpec.describe "Source-closure recovery" do
   let(:project) { create(:project, account: user.account, created_by: user) }
   let(:run) { create(:agent_run, project:, status: "waiting_recovery") }
 
-  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-065
   it "loads the run, queues recovery, and records the accepted request for an authorized operator" do
     sign_in user
 
@@ -37,7 +37,7 @@ RSpec.describe "Source-closure recovery" do
     expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
   end
 
-  # @spec PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-065
   it "reports a queued but unaudited request without a duplicate enqueue" do
     sign_in user
     allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))

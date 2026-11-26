@@ -19,7 +19,7 @@ RSpec.describe Tools::RetrySourceClosure do
     expect(klass.input_schema[:required]).to include("confirmed")
   end
 
-  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-065
   it "queues only post-processing for the same run and audits the accepted request" do
     expect { tool.call(agent_run_id: run.id, confirmed: true) }
       .to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_id: user.id)
@@ -67,7 +67,7 @@ RSpec.describe Tools::RetrySourceClosure do
     expect { tool.call(agent_run_id: run.id, confirmed: true) }.to raise_error(ArgumentError, /could not be queued/)
   end
 
-  # @spec PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-065
   it "reports an accepted but unaudited request without retrying the job" do
     allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
 
