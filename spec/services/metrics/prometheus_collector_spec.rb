@@ -67,14 +67,20 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
     end
 
     context "with agent runs in various statuses" do
+      let_it_be(:status_projects, refind: true) do
+        TenantContext.with_system_access { create_list(:project, 7) }
+      end
+
       before do
-        create(:agent_run, :running, container_id: "ctr-1")
-        create(:agent_run, :running, container_id: "ctr-2")
-        create(:agent_run, :queued)
-        create(:agent_run, :queued, temporal_workflow_id: "wf-123")
-        create(:agent_run, :completed, :with_metrics, duration_seconds: 120)
-        create(:agent_run, :failed, tokens_input: 30, tokens_output: 10, cost_cents: 7, duration_seconds: 300)
-        create(:agent_run, :cancelled, tokens_input: 20, tokens_output: 0, cost_cents: 0, duration_seconds: 90)
+        create(:agent_run, :running, project: status_projects.fetch(0), container_id: "ctr-1")
+        create(:agent_run, :running, project: status_projects.fetch(1), container_id: "ctr-2")
+        create(:agent_run, :queued, project: status_projects.fetch(2))
+        create(:agent_run, :queued, project: status_projects.fetch(3), temporal_workflow_id: "wf-123")
+        create(:agent_run, :completed, :with_metrics, project: status_projects.fetch(4), duration_seconds: 120)
+        create(:agent_run, :failed, project: status_projects.fetch(5),
+          tokens_input: 30, tokens_output: 10, cost_cents: 7, duration_seconds: 300)
+        create(:agent_run, :cancelled, project: status_projects.fetch(6),
+          tokens_input: 20, tokens_output: 0, cost_cents: 0, duration_seconds: 90)
       end
 
       it "reports correct active count" do
