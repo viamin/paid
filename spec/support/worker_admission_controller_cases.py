@@ -430,6 +430,16 @@ class ControllerTest(unittest.TestCase):
         with self.assertRaises(AdmissionError):
             self.drain().recover(1)
         self.requests()[0].unlink()
+        journal = read_json(original.journal)
+        journal["target_revision"] = "c" * 40
+        write_json(original.journal, journal)
+        wrong_target = Drain(self.root, self.paths, "c" * 40, self.expected_processes,
+                             identity_reader=lambda pid: self.processes[pid], original_process_reader=self.start_ticks)
+        self.drains.append(wrong_target)
+        with self.assertRaises(AdmissionError):
+            wrong_target.recover(1)
+        journal["target_revision"] = "b" * 40
+        write_json(original.journal, journal)
         self.marker("agent", 21, revision="b" * 40)
         with self.assertRaises(AdmissionError):
             self.drain().recover(1)
@@ -514,11 +524,14 @@ class ControllerTest(unittest.TestCase):
         original.acquire(1)
         original.close()
         journal = read_json(original.journal)
-        journal["snapshots"] = {}
-        write_json(original.journal, journal)
-        with self.assertRaises(AdmissionError):
-            self.drain().recover(1)
-        self.assertTrue(all(path.exists() for path in self.requests()))
+        for field, value in (("snapshots", {}), ("protocol", 2)):
+            with self.subTest(field=field):
+                broken = dict(journal)
+                broken[field] = value
+                write_json(original.journal, broken)
+                with self.assertRaises(AdmissionError):
+                    self.drain().recover(1)
+                self.assertTrue(all(path.exists() for path in self.requests()))
 
     def test_recovery_refuses_unknown_update_phase_without_removing_requests(self):
         original = self.drain()
@@ -530,6 +543,56 @@ class ControllerTest(unittest.TestCase):
         with self.assertRaises(AdmissionError):
             self.drain().recover(1)
         self.assertTrue(all(path.exists() for path in self.requests()))
+
+    def test_interrupted_resume_recovers_partial_request_removal_without_losing_generation(self):
+        drain = self.drain()
+        drain.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        blocked = drain.requests[1]
+        unlink = Path.unlink
+
+        def interrupted(path, *args, **kwargs):
+            if path == blocked:
+                raise OSError("injected unlink interruption")
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", interrupted):
+            with self.assertRaises(OSError):
+                drain.resume("b" * 40, self.expected_processes)
+        drain.close()
+        self.assertEqual(read_json(drain.journal)["phase"], "resuming")
+        self.assertEqual(sum(path.exists() for path in self.requests()), 1)
+        recovery = self.drain()
+        self.assertEqual(recovery.recover(1)["cohort"], "target")
+        self.assertEqual(recovery.generation, drain.generation)
+        self.assertTrue(all(path.exists() for path in self.requests()))
+        recovery.resume("b" * 40, self.expected_processes)
+        self.assertFalse(any(path.exists() for path in self.requests()))
+
+    def test_failed_final_resume_record_can_be_recovered_without_another_stop(self):
+        drain = self.drain()
+        drain.acquire(1)
+        self.replace("agent", 21)
+        self.replace("poll", 22)
+        record = drain.record
+
+        def interrupted(phase):
+            if phase == "resumed":
+                raise OSError("injected final-record failure")
+            record(phase)
+
+        with patch.object(drain, "record", side_effect=interrupted):
+            with self.assertRaises(OSError):
+                drain.resume("b" * 40, self.expected_processes)
+        drain.close()
+        self.assertEqual(read_json(drain.journal)["phase"], "resuming")
+        self.assertFalse(any(path.exists() for path in self.requests()))
+        recovery = self.drain()
+        self.assertEqual(recovery.recover(1)["next_action"], "verify-and-resume-target")
+        self.assertTrue(all(path.exists() for path in self.requests()))
+        recovery.resume("b" * 40, self.expected_processes)
+        self.assertEqual(read_json(recovery.journal)["phase"], "resumed")
 
     def test_real_controller_eof_preserves_generation_and_explicit_recovery_can_abort(self):
         # These processes exercise only kernel process identity and pipe

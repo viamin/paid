@@ -89,7 +89,10 @@ not attempt to acquire the same exclusive inode twice.
    visibility defers reopening. Abort before any stop may reopen only the
    unchanged workers before any stop checkpoint. Once a quit may be in flight,
    unchanged PIDs do not authorize abort. Repeated resume is
-   idempotent. No request may remove another controller's generation.
+   idempotent. Persist verified target boots and resume intent before unlinking
+   requests. Recovery after interrupted opening recloses missing owned gates,
+   waits for any admitted target owners, then completes without another stop.
+   No request may remove another controller's generation.
 
 Normal timeout before acknowledgement removes only the caller's requests,
 releases its locks and defers adoption without stopping a worker. An unknown
