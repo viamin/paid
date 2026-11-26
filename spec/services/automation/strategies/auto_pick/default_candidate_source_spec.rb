@@ -349,6 +349,31 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       end
 
       # @spec AUTO-PICK-QUEUE-011
+      it "skips the candidate-history query when only another project has selections" do
+        issue = create(:issue, project: project, github_state: "open")
+        other_project = create(:project, account: project.account)
+        other_issue = create(:issue, project: other_project, github_state: "open")
+        other_run = create(:agent_run, project: other_project, issue: other_issue, status: "failed")
+        create(:model_selection, agent_run: other_run, tier: "high")
+
+        queries = capture_queries do
+          expect(described_class.eligible_scope(project).pluck(:id)).to eq([ issue.id ])
+        end
+
+        expect(queries).not_to include(a_string_matching(/SELECT "agent_runs"\."issue_id", "model_selections"\."tier"/))
+      end
+
+      # @spec AUTO-PICK-QUEUE-011
+      it "observes newly pinned history after an empty-history lookup" do
+        issue = create(:issue, project: project, github_state: "open")
+        expect(described_class.eligible_scope(project).pluck(:id)).to eq([ issue.id ])
+
+        pin_tier(issue: issue, tier: "high", created_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+      end
+
+      # @spec AUTO-PICK-QUEUE-011
       it "skips model-selection lookup when every tier is feasible" do
         issue = create(:issue, project: project, github_state: "open")
         pin_tier(issue: issue, tier: "high", created_at: 2.hours.ago)

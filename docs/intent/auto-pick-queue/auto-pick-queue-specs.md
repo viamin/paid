@@ -393,6 +393,10 @@
   outlive the pass.
   Issues with no model selection, or whose latest selection pins a
   satisfiable tier, remain eligible.
+  When the project has no model-selection history, selection SHALL skip the
+  history query containing the full candidate relation. The empty-history
+  check SHALL be project-scoped, SHALL NOT be cached across calls, and SHALL
+  leave all candidate and dequeue eligibility guards intact.
   *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
   `spec/services/runners/tier_feasibility_spec.rb`,
   `spec/models/model_selection_spec.rb`.
