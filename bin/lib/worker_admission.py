@@ -117,14 +117,14 @@ class Drain:
     """One serialized, persistent generation for every affected worker role."""
 
     def __init__(self, workspace, roles, target_revision, expected_processes, *, identity_reader=process_identity,
-                 original_process_reader=process_start_ticks, stopped=False):
+                 original_process_reader=process_start_ticks, stopped=False, gate_paths=None):
         self.workspace = str(Path(workspace).resolve(strict=True))
-        if sorted(roles) != ["agent", "poll"]:
-            raise AdmissionError("both worker roles are required")
-        self.roles = {
-            role: Path(path).absolute().parent.resolve(strict=True) / Path(path).name
-            for role, path in roles.items()
-        }
+        self.roles = self.normalize_roles(roles)
+        self.original_roles = dict(self.roles)
+        self.gate_paths = tuple(sorted({self.normalize_path(path) for path in
+                                       (self.roles.values() if gate_paths is None else gate_paths)}))
+        if not 1 <= len(self.gate_paths) <= 3 or not set(self.roles.values()).issubset(self.gate_paths):
+            raise AdmissionError("launch-path gate coverage is incomplete")
         if not re.fullmatch(r"[0-9a-f]{40}", target_revision):
             raise AdmissionError("target revision is unknown")
         self.target_revision = target_revision
@@ -134,6 +134,7 @@ class Drain:
         self.stopped = stopped
         self.completed = False
         self.target_snapshots = {}
+        self.target_paths = {}
         self.update_phase = "draining"
         self.identity_reader = identity_reader
         self.original_process_reader = original_process_reader
@@ -148,6 +149,20 @@ class Drain:
         self.preserve_requests = False
         self.parent_pid = os.getppid()
 
+    @staticmethod
+    def normalize_path(path):
+        path = Path(path).absolute()
+        return path.parent.resolve(strict=True) / path.name
+
+    @classmethod
+    def normalize_roles(cls, roles):
+        if not isinstance(roles, dict) or set(roles) != {"agent", "poll"}:
+            raise AdmissionError("both worker roles are required")
+        return {role: cls.normalize_path(path) for role, path in roles.items()}
+
+    def request_paths(self):
+        return [Path(str(path) + ".admission.request") for path in self.gate_paths]
+
     def validate_processes(self, processes):
         if not isinstance(processes, dict) or set(processes) != set(self.roles):
             raise AdmissionError("complete supervisor-owned process cohort is required")
@@ -156,8 +171,8 @@ class Drain:
                 raise AdmissionError("invalid supervisor-owned process identity")
         return {role: dict(identity) for role, identity in processes.items()}
 
-    def snapshot(self, role, expected_processes=None):
-        marker = read_json(self.roles[role])
+    def snapshot(self, role, expected_processes=None, roles=None):
+        marker = read_json((roles or self.roles)[role])
         admission = marker.get("admission", {})
         if not isinstance(admission, dict) or type(admission.get("protocol")) is not int or admission.get("protocol") != 1 or admission.get("scope") != "paid-workflow-and-remote-activity":
             raise AdmissionError("worker lacks supported admission capability")
@@ -189,7 +204,9 @@ class Drain:
     def record(self, phase):
         write_json(self.journal, {
             "protocol": 1, "generation": self.generation, "phase": phase,
-            "workspace": self.workspace, "roles": {key: str(value) for key, value in self.roles.items()},
+            "workspace": self.workspace, "roles": {key: str(value) for key, value in self.original_roles.items()},
+            "gates": [str(path) for path in self.gate_paths],
+            "target_roles": {key: str(value) for key, value in self.target_paths.items()},
             "snapshots": self.snapshots, "target_revision": self.target_revision,
             "expected_processes": self.expected_processes, "update_phase": self.update_phase,
             "target_snapshots": self.target_snapshots,
@@ -208,7 +225,7 @@ class Drain:
         self.controller = descriptor
 
     def publish_requests(self):
-        paths = sorted({Path(str(path) + ".admission.request") for path in self.roles.values()})
+        paths = self.request_paths()
         for path in paths:
             if path in self.requests:
                 continue
@@ -222,7 +239,7 @@ class Drain:
 
     def acquire_locks(self, deadline):
         inodes = set()
-        for path in sorted({Path(str(value) + ".admission.lock") for value in self.roles.values()}):
+        for path in (Path(str(value) + ".admission.lock") for value in self.gate_paths):
             descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
             self.locks.append(descriptor)
             info = os.fstat(descriptor)
@@ -272,10 +289,16 @@ class Drain:
         deadline = time.monotonic() + timeout
         try:
             self.serialize()
+            # Malformed recovery metadata must never reopen a closed generation.
+            self.preserve_requests = True
             previous = read_json(self.journal)
-            expected_roles = {key: str(value) for key, value in self.roles.items()}
-            if previous.get("workspace") != self.workspace or previous.get("roles") != expected_roles or previous.get("target_revision") != self.target_revision:
+            if previous.get("workspace") != self.workspace or previous.get("target_revision") != self.target_revision:
                 raise AdmissionError("recovery workspace, cohort or target disagrees")
+            original_roles = self.normalize_roles(previous.get("roles"))
+            previous_gates = {self.normalize_path(path) for path in previous.get("gates", original_roles.values())}
+            if previous_gates != set(self.gate_paths) or not set(original_roles.values()).issubset(previous_gates):
+                raise AdmissionError("recorded launch-path gate coverage disagrees")
+            self.original_roles = original_roles
             if previous.get("phase") not in ("requested", "acknowledged", "resumed"):
                 raise AdmissionError("generation does not require recovery")
             uuid.UUID(previous["generation"])
@@ -284,10 +307,14 @@ class Drain:
             if not isinstance(self.snapshots, dict) or set(self.snapshots) != set(self.roles):
                 raise AdmissionError("recovery snapshots are incomplete")
             self.update_phase = previous.get("update_phase", "draining")
+            if self.update_phase not in ("draining", "stopping", "stopped", "setup", "starting", "complete"):
+                raise AdmissionError("recorded update phase is unknown")
             self.target_snapshots = previous.get("target_snapshots", {})
-            self.preserve_requests = True
             if previous["phase"] == "resumed":
                 self.completed = True
+                self.target_paths = self.normalize_roles(previous.get("target_roles") or previous["roles"])
+                if self.roles != self.target_paths:
+                    raise AdmissionError("completed target launch paths disagree")
                 self.verify_completed()
                 self.check_deadline(deadline)
                 return {"generation": self.generation, "roles": sorted(self.roles), "completed": True,
@@ -307,7 +334,11 @@ class Drain:
             if not self.stopped and not unchanged and not (previous["phase"] == "acknowledged" and known):
                 raise AdmissionError("mixed or unknown worker boots require investigation before stop")
             self.verify_original_instances_gone(target_roles)
-            for path in sorted({Path(str(value) + ".admission.request") for value in self.roles.values()}):
+            if self.update_phase in ("stopped", "setup", "starting"):
+                self.verify_original_instances_gone(self.roles)
+            elif self.update_phase == "complete":
+                raise AdmissionError("active generation cannot claim completed phase")
+            for path in self.request_paths():
                 try:
                     value = read_json(path)
                 except FileNotFoundError:
@@ -328,7 +359,8 @@ class Drain:
             self.check_deadline(deadline)
             self.acknowledged = True
             cohort = "stopped" if self.stopped else "unchanged" if unchanged else "target" if len(target_roles) == len(self.roles) else "mixed"
-            actions = {"stopped": "setup-and-start-target", "unchanged": "stop-original-cohort",
+            stopped_action = "start-target" if self.update_phase == "starting" else "setup-and-start-target"
+            actions = {"stopped": stopped_action, "unchanged": "stop-original-cohort",
                        "mixed": "finish-target-replacement", "target": "verify-and-resume-target"}
             return {"generation": self.generation, "roles": sorted(self.roles), "acknowledged": True,
                     "cohort": cohort, "next_action": actions[cohort], "update_phase": self.update_phase}
@@ -366,7 +398,7 @@ class Drain:
         if current != self.target_snapshots:
             raise AdmissionError("completed target boot changed")
         self.verify_original_instances_gone(self.roles)
-        if any(os.path.lexists(str(value) + ".admission.request") for value in self.roles.values()):
+        if any(os.path.lexists(path) for path in self.request_paths()):
             raise AdmissionError("another admission request requires investigation")
 
     def remove_requests(self):
@@ -382,6 +414,8 @@ class Drain:
         self.requests = []
 
     def abort(self):
+        if not self.acknowledged or self.controller is None or self.update_phase != "draining":
+            raise AdmissionError("only the serialized pre-stop owner can abort")
         self.verify_old_cohort()
         self.remove_requests()
         self.record("aborted")
@@ -406,10 +440,13 @@ class Drain:
             if current_ticks == original["process_start_ticks"]:
                 raise AdmissionError("original worker process instance remains alive")
 
-    def resume(self, revision, expected_processes):
+    def resume(self, revision, expected_processes, roles=None):
+        target_paths = self.roles if roles is None else self.normalize_roles(roles)
+        if not set(target_paths.values()).issubset(self.gate_paths):
+            raise AdmissionError("target launch paths were not fenced")
         if self.completed:
             expected_processes = self.validate_processes(expected_processes)
-            if revision != self.target_revision or expected_processes != self.expected_processes:
+            if revision != self.target_revision or expected_processes != self.expected_processes or target_paths != self.target_paths:
                 raise AdmissionError("completed target cohort disagrees")
             if self.controller is None:
                 self.serialize()
@@ -426,13 +463,15 @@ class Drain:
         expected_processes = self.validate_processes(expected_processes)
         target = {}
         for role in self.roles:
-            current = self.snapshot(role, expected_processes)
+            current = self.snapshot(role, expected_processes, roles=target_paths)
             target[role] = current
             old = self.snapshots[role]
             if current["revision"] != revision or current["boot_id"] == old["boot_id"] or (current["pid"], current["process_start_ticks"]) == (old["pid"], old["process_start_ticks"]):
                 raise AdmissionError("target worker boot is not verified")
         self.verify_original_instances_gone(self.roles)
         self.expected_processes = expected_processes
+        self.roles = dict(target_paths)
+        self.target_paths = dict(target_paths)
         self.target_snapshots = target
         self.update_phase = "complete"
         self.remove_requests()
@@ -451,7 +490,7 @@ class Drain:
                 # A link syscall can finish before its caller observes success.
                 # Discover our complete generation while still serialized; never
                 # infer ownership merely from a request path's existence.
-                for path in {Path(str(value) + ".admission.request") for value in self.roles.values()}:
+                for path in self.request_paths():
                     try:
                         value = read_json(path)
                     except (FileNotFoundError, ValueError, OSError):
@@ -508,6 +547,7 @@ def main():
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--role", action="append", required=True, help="agent=PATH or poll=PATH")
     parser.add_argument("--process", action="append", default=[], help="supervisor-discovered agent=PID:START_TICKS or poll=PID:START_TICKS")
+    parser.add_argument("--gate", action="append", help="old or target launch path to fence before acknowledgement")
     parser.add_argument("--target-revision", required=True)
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--mode", choices=("drain", "recover"), default="drain")
@@ -520,6 +560,8 @@ def main():
                 "--target-revision", arguments.target_revision, "--timeout", str(arguments.timeout), "--mode", "recover"]
     if arguments.stopped:
         recovery.append("--stopped")
+    for gate in arguments.gate or []:
+        recovery.extend(["--gate", gate])
     for role in arguments.role:
         recovery.extend(["--role", role])
     for process in arguments.process:
@@ -546,7 +588,8 @@ def main():
                 raise AdmissionError("duplicate or invalid supervisor process argument")
             pid, start_ticks = identity.split(":")
             processes[role] = {"pid": int(pid), "start_ticks": int(start_ticks)}
-        drain = Drain(arguments.workspace, roles, arguments.target_revision, processes, stopped=arguments.stopped)
+        drain = Drain(arguments.workspace, roles, arguments.target_revision, processes,
+                      stopped=arguments.stopped, gate_paths=arguments.gate)
         acknowledgement = drain.recover(arguments.timeout) if arguments.mode == "recover" else drain.acquire(arguments.timeout)
         print(json.dumps({"status": "acknowledged", **acknowledgement}), flush=True)
         command = read_command(drain.parent_pid)
@@ -564,7 +607,7 @@ def main():
             value = json.loads(command)
             if not isinstance(value, dict) or value.get("action") != "resume":
                 raise AdmissionError("caller outcome unknown; admission remains closed")
-            drain.resume(arguments.target_revision, value.get("processes"))
+            drain.resume(arguments.target_revision, value.get("processes"), roles=value.get("roles"))
             print(json.dumps({"status": "resumed"}), flush=True)
         if arguments.finish_handshake:
             drain.close()

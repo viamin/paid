@@ -78,13 +78,17 @@ not attempt to acquire the same exclusive inode twice.
    is not acknowledgement.
 4. Keep the acknowledged generation and locks alive through the existing
    stop/start and trusted target-revision verification. Controller descriptors
-   are not inherited by restarted services. Closing a parent shell's own
+   are not inherited by restarted services. Gate every supported target launch
+   path before acknowledgement, including a transition between one both-mode
+   process and split role processes. New metadata paths do not remove the old
+   generation's gates. Closing a parent shell's own
    descriptors alone is insufficient protection against inheritance.
 5. Resume only the owned generation after successful target verification and
    typed proof that every original PID/start-time instance has exited. A fresh
    target marker does not prove the old worker stopped; unknown process
    visibility defers reopening. Abort before any stop may reopen only the
-   unchanged workers. Repeated resume is
+   unchanged workers before any stop checkpoint. Once a quit may be in flight,
+   unchanged PIDs do not authorize abort. Repeated resume is
    idempotent. No request may remove another controller's generation.
 
 Normal timeout before acknowledgement removes only the caller's requests,
