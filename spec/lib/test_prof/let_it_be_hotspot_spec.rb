@@ -62,4 +62,29 @@ RSpec.describe TestProf::LetItBe do
       end
     end
   end
+
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  context "with stable candidate and dashboard configuration" do
+    [ "with stable auto-pick project", "with stable dashboard project" ].each do |name|
+      context name do
+        include_context name
+
+        2.times do |index|
+          it "isolates project, owner settings and scenario rows for example #{index + 1}" do
+            expect(project.name).not_to eq("changed in an example")
+            expect(project.created_by.name).not_to eq("changed in an example")
+            expect(Array(project.created_by.settings.auto_pick_skip_labels)).not_to include("changed-in-an-example")
+            expect(project.issues).to be_empty
+            expect(project.agent_runs).to be_empty
+            expect(project.auto_pick_enabled?).to be(true) if name == "with stable auto-pick project"
+
+            project.update!(name: "changed in an example", auto_pick_enabled: false)
+            project.created_by.update!(name: "changed in an example")
+            project.created_by.settings.update!(auto_pick_skip_labels: [ "changed-in-an-example" ])
+            create(:agent_run, project: project)
+          end
+        end
+      end
+    end
+  end
 end

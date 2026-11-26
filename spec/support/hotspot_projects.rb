@@ -2,6 +2,23 @@
 
 require "test_prof/recipes/rspec/let_it_be"
 
+# @spec TEST-SUITE-011, TEST-SUITE-017
+RSpec.shared_context "with stable auto-pick project" do
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access { create(:project, auto_pick_enabled: true) }
+  end
+end
+
+# @spec TEST-SUITE-011, TEST-SUITE-017
+RSpec.shared_context "with stable dashboard project" do
+  let_it_be(:account, refind: true) do
+    TenantContext.with_system_access { create(:account) }
+  end
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access { create(:project, account: account) }
+  end
+end
+
 # @spec TEST-SUITE-011
 # Keep only stable project graphs in the group transaction; issues and runs
 # remain per-example so overrides preserve active-run uniqueness constraints.

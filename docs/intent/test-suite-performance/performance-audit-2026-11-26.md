@@ -51,6 +51,53 @@ to the hosted reports. The benchmark reported eight non-system example failures
 across three shards; those are not evidence of a passing full suite. Its owning
 session retains responsibility for that benchmark and its failure diagnosis.
 
+## Follow-up: shared configuration and focused dashboard sections
+
+Measured against commit `90f5c341a159bfdfb745bf74530b14a6ca4a989f`, the candidate-source
+and dashboard specs reuse stable configuration through existing TestProf group
+transactions. Dashboard component examples request their asserted sections using
+its public `only:` interface; full-response and cross-account integration cases
+retain complete assembly. All 243 examples and all 224 dashboard expectation
+lines remain in this follow-up.
+
+The same absolute profile paths, private database, seed 24680, `COVERAGE=false`,
+`FPROF=1`, and `RD_PROF=1` were used for each comparison:
+
+| Workload | Seconds | Examples | Failures | Factory records |
+| --- | ---: | ---: | ---: | ---: |
+| Before follow-up | 360.73 | 243 | 0 | 2,320 |
+| Shared configuration | 314.01 | 243 | 0 | 1,169 |
+| Shared configuration and section selection | 272.72 | 243 | 0 | 1,169 |
+
+This is a 24.4% observed reduction for two files, not a whole-suite result.
+Scenario agent runs and issues remain per example. The shared-configuration
+comparison retains 361 runs and 548 issues while reducing projects from 265 to
+37, users from 534 to 78, and accounts from 248 to nine. Normal factory callbacks,
+validations, ownership relationships, and tenant enforcement remain enabled.
+Raw reports are `shared-config-before.json`, `shared-config-after.json`, and
+`section-scoped-after.json` under `/tmp/paid-testprof-audit/`.
+
+The complete shared-fixture isolation file passes all 16 examples with seed
+97531. Disabling `refind` for the two added contexts makes two of the four new
+examples fail; this diagnostic checks that mutated Ruby objects cannot leak
+between examples. The diagnostic changes only temporary test registration.
+
+With coverage enabled and seed 97531, both dashboard versions pass all 101
+examples. Both cover the same 289 lines in `app/services/dashboard/stats.rb`,
+with no lost or gained lines. This focused comparison does not replace the
+normal whole-suite 80% coverage gate. Reports: `dashboard-coverage-before.json`,
+`dashboard-coverage-after.json`, and `dashboard-coverage-comparison.json`.
+
+A read-only logging microprobe ran the same eligibility query 100 times in each
+of four alternating debug/warn batches. Times were 5.05, 2.74, 2.80, and 1.84
+seconds. Warm-up and changing system load confound that downward trend; this
+does not establish a suite-level logging benefit. No logging policy changed.
+
+The follow-up passes `bin/lint --changed`, `git diff --check`, and the LID
+coherence command. Coherence still emits existing repository-wide warnings.
+The simplicity review retains explicit shared contexts and the existing public
+dashboard interface without a new fixture framework or global defaults.
+
 ## First changes and measured effect
 
 The prerequisite-ranking boundary examples created 500 irrelevant issues or
