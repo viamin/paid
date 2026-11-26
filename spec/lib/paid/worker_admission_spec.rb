@@ -153,7 +153,7 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
   end
 
   it "tracks independent workflow and activity capacities on one admission inode" do
-    activity = described_class.new(slots: 1, readiness_file:)
+    activity = Paid::WorkerAdmission::SlotSupplier.new(slots: 1, readiness_file:)
     workflow_permit = reserve
     activity_permit = activity.try_reserve_slot(nil)
     expect(activity_permit).not_to be_nil
@@ -167,8 +167,8 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
   end
 
   it "rejects nonpositive capacity" do
-    expect { described_class.new(slots: 0, readiness_file:) }.to raise_error(ArgumentError)
-    expect { described_class.new(slots: -1, readiness_file:) }.to raise_error(ArgumentError)
+    expect { Paid::WorkerAdmission::SlotSupplier.new(slots: 0, readiness_file:) }.to raise_error(ArgumentError)
+    expect { Paid::WorkerAdmission::SlotSupplier.new(slots: -1, readiness_file:) }.to raise_error(ArgumentError)
   end
 
   it "preserves the fixed local supplier and independent configured remote capacities" do

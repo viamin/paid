@@ -80,8 +80,11 @@ not attempt to acquire the same exclusive inode twice.
    stop/start and trusted target-revision verification. Controller descriptors
    are not inherited by restarted services. Closing a parent shell's own
    descriptors alone is insufficient protection against inheritance.
-5. Resume only the owned generation after successful target verification, or
-   abort before any stop and reopen the unchanged workers. Repeated resume is
+5. Resume only the owned generation after successful target verification and
+   typed proof that every original PID/start-time instance has exited. A fresh
+   target marker does not prove the old worker stopped; unknown process
+   visibility defers reopening. Abort before any stop may reopen only the
+   unchanged workers. Repeated resume is
    idempotent. No request may remove another controller's generation.
 
 Normal timeout before acknowledgement removes only the caller's requests,
@@ -90,7 +93,11 @@ parent outcome after acknowledgement leaves a persistent closed generation
 and a bounded diagnostic containing its exact recovery command. A recovery
 invocation must acquire the controller lock, validate supported role identity
 and reacquire all exclusive locks before continuing the existing restart.
-It must not silently resume a mixed or unverifiable worker set. Ordinary
+It must classify unchanged, known mixed old/target, and fully verified target
+cohorts. A known mixed cohort remains fenced for completion of replacement;
+only a fully verified target cohort can reopen, with the original instances
+proved gone. Unknown boots or process visibility defer with the persistent
+generation intact. It must not silently resume a mixed or unverifiable worker set. Ordinary
 recovery does not renew task retries, deadlines, runner allowances or grants.
 
 ## Legacy first adoption
