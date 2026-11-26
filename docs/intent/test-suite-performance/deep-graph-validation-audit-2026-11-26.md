@@ -50,5 +50,9 @@ unlocked competing session. Dropping the distinct-target condition makes the
 external-self-reference regression fail. Both temporary mutations are outside
 the repository; no unsafe variant is retained.
 
+Feature-completion integration checks one preflight graph load, verifies real
+cycle validation for each new edge, and confirms both persisted dependencies.
+All 13 examples in that caller's spec pass (CONFIDENCE-DELIVERY-011).
+
 A complete passing local comparison proving the requested 50% suite-runtime
 reduction remains outstanding. No production deployment exists.
