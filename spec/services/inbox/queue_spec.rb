@@ -3,21 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Inbox::Queue do
-  let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
-  let(:project) do
-    create(
-      :project,
-      account: account,
-      created_by: user,
-      auto_pick_enabled: true,
-      active: true,
-      auto_merge_mode: "all",
-      owner_reviewer_login: "viamin",
-      owner: "acme",
-      repo: "alpha"
-    )
-  end
+  include_context "with stable inbox project"
+
   let(:questions_body) do
     <<~BODY
       <!-- paid:enhance-issue -->

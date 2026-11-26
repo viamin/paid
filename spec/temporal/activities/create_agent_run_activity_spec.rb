@@ -4,8 +4,11 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::CreateAgentRunActivity do
+  # @spec TEST-SUITE-017
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access { create(:project, primary_language: "Ruby") }
+  end
   let(:activity) { described_class.new }
-  let(:project) { create(:project, primary_language: "Ruby") }
   let(:issue) { create(:issue, project: project) }
   let(:claude_runner) { project.created_by.runners.find_by!(runner_key: "claude") }
   let(:codex_runner) { create(:runner, user: project.created_by, runner_key: "codex") }

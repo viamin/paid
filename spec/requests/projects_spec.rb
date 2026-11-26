@@ -5,9 +5,16 @@ require "temporalio/client"
 require "ostruct"
 
 RSpec.describe "Projects" do
-  let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
+  # @spec TEST-SUITE-017
+  let_it_be(:account, refind: true) do
+    TenantContext.with_system_access { create(:account) }
+  end
+  let_it_be(:baseline_user, refind: true) do
+    TenantContext.with_system_access { create(:user, account: account) }
+  end
+  let(:user) { baseline_user.tap { |record| record.account = account } }
   let(:github_token) { create(:github_token, account: account) }
+
   let(:empty_screenshot_repo_config_result) do
     Projects::Screenshots::RepoConfig::Result.new(config: {}, content: nil, error: nil)
   end
@@ -393,6 +400,7 @@ RSpec.describe "Projects" do
   end
 
   describe "ignored-mode pull request controls" do
+    let(:account) { create(:account) }
     let(:user) { create(:user, :owner, account:) }
     let(:project) do
       create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
@@ -467,41 +475,25 @@ RSpec.describe "Projects" do
     context "when authenticated" do
       before { sign_in user }
 
-      it "renders the new project form" do
+      it "renders the new project page with a warning when no tokens are available" do
         get new_project_path
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Add Project")
-      end
-
-      it "shows warning when no tokens are available" do
-        get new_project_path
         expect(response.body).to include("No GitHub Tokens Available")
       end
 
-      it "shows the form when tokens are available" do
-        github_token # create the token
+      # @spec PROJECT-CREATION-001, PROJECT-CREATION-013
+      it "offers both creation modes and a disabled repository combobox when a token is available", :aggregate_failures do
+        github_token
         get new_project_path
+
         expect(response.body).to include("Repository")
         expect(response.body).to include("Select a token or installation first...")
-      end
-
-      # @spec PROJECT-CREATION-001
-      it "offers both connecting an existing repository and creating a new one" do
-        github_token # create the token
-        get new_project_path
-
         expect(response.body).to include("Connect existing repository")
         expect(response.body).to include("Create new repository")
         expect(response.body).to include("Repository name")
         expect(response.body).to include("Visibility")
         expect(response.body).to include('data-controller="repository-selector project-creation-mode"')
-      end
-
-      # @spec PROJECT-CREATION-013
-      it "renders the repository picker as a disabled typable combobox initially" do
-        github_token # create the token
-        get new_project_path
-
         document = Nokogiri::HTML(response.body)
         picker = document.at_css('[data-repository-selector-target="repoSelect"]')
 
@@ -2470,15 +2462,10 @@ RSpec.describe "Projects" do
         expect(event.metadata.fetch("pr_escalation_limits_suspended_until")).to be_nil
       end
 
-      it "updates the project" do
+      it "updates the project and redirects with a success message" do
         project = create(:project, account: account, github_token: github_token, name: "Old Name")
         patch project_path(project), params: { project: { name: "New Name" } }
         expect(project.reload.name).to eq("New Name")
-      end
-
-      it "redirects to the project with success message" do
-        project = create(:project, account: account, github_token: github_token)
-        patch project_path(project), params: { project: { name: "Updated Name" } }
         expect(response).to redirect_to(project_path(project))
         expect(flash[:notice]).to include("successfully updated")
       end
@@ -4415,6 +4402,7 @@ RSpec.describe "Projects" do
   end
 
   describe "POST /projects/:id/start_lid" do
+    let(:account) { create(:account) }
     let(:user) { create(:user, :owner, account: account) }
     let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
     let!(:runner) { create(:runner, user: project.effective_owner, enabled_for_agent_runs: true) }

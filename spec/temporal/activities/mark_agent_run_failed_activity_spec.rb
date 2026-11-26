@@ -484,15 +484,17 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
     # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004
     context "with a failed manual run that has no issue/PR attachment (#4222)" do
       it "schedules a retry for a failed manual run with no issue/PR attachment and no observable work" do
-        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+        freeze_time do
+          agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
 
-        expect {
-          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
-        }.to have_enqueued_job(RetryFailedManualRunJob)
-          .with(agent_run.id, 1)
-          .at(a_value_within(1.second).of(RetryFailedManualRunJob.retry_delay(1).from_now))
+          expect {
+            activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+          }.to have_enqueued_job(RetryFailedManualRunJob)
+            .with(agent_run.id, 1)
+            .at(RetryFailedManualRunJob.retry_delay(1).from_now)
 
-        expect(agent_run.reload.status).to eq("failed")
+          expect(agent_run.reload.status).to eq("failed")
+        end
       end
 
       it "does not schedule a retry when the run is attached to an issue" do

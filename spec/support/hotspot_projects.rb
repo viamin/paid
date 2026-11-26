@@ -42,6 +42,28 @@ RSpec.shared_context "with stable project" do
   end
 end
 
+# @spec TEST-SUITE-017
+RSpec.shared_context "with stable inbox project" do
+  let_it_be(:account, refind: true) do
+    TenantContext.with_system_access { create(:account) }
+  end
+  let_it_be(:user, refind: true) do
+    TenantContext.with_system_access { create(:user, account: account) }
+  end
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access do
+      create(:project, account: account, created_by: user, auto_pick_enabled: true,
+        active: true, auto_merge_mode: "all", owner_reviewer_login: "viamin", owner: "acme", repo: "alpha")
+    end
+  end
+
+  before do
+    user.account = account
+    project.account = account
+    project.created_by = user
+  end
+end
+
 # @spec TEST-SUITE-011, TEST-SUITE-013
 RSpec.shared_context "with stable PR scanner project" do
   let_it_be(:project, refind: true) do
