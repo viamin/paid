@@ -113,13 +113,24 @@ application-level behavior.
 ## Temporal Worker Quiescence Before Restart
 
 Activity-body counts are observability only: a Temporal task can already be
-reserved by a long poll before Ruby enters an activity body. The installed Ruby
-SDK does not expose a public worker operation that closes new poll and eager
-admission, accounts for already-reserved work, and acknowledges that boundary
-without beginning shutdown. Therefore `bin/dev-update` defers before stopping
-any ready Temporal worker and reports the missing capability. It does not infer
-safety from `active_activities`, block an SDK notification callback, cancel an
-owner, reset an attempt, enlarge a deadline, or alter control queue routing.
+reserved by a long poll before Ruby enters an activity body. The updater consumes
+the public slot-supplier protocol in `TEMPORAL-ORCHESTRATION-021`. It resolves
+actual worker descendants of the live supervisor entries, with PID/start-time,
+workspace and launch-mode checks. Another genuine worker's marker cannot cover
+the supervised process. Missing, uncovered, duplicate or changing workers defer.
+One both-mode worker can cover both logical roles without double-locking its
+physical admission inode.
+
+The standalone controller closes renewal on every role before waiting for
+reservation-to-release shared ownership, including unused poll and eager
+reservations. Only complete exclusive ownership and an unchanged actual cohort
+authorize stop. Controller lock and control-pipe descriptors never reach
+restarted services. The generation remains fenced through stop, setup and new
+target boot verification. Every original PID/start-time instance must be proved
+gone before reopening; unknown visibility is not absence. Interrupted
+acknowledged updates keep persistent requests closed and expose an explicit
+recovery action for unchanged, known mixed, stopped or verified target phases.
+Mixed or unknown cohorts never silently reopen.
 
 Missing readiness metadata is not itself evidence that no worker is running: a
 worker can fail before it marks ready, or its flag can be removed, while the
@@ -138,12 +149,13 @@ stale; any other failure is unknown, not proof that no worker is running. An
 orphaned session that cannot be inspected is not drained: the stop path fails
 before setup on it (`RAILS-CONTROL-PLANE-019`) rather than force-killing it.
 
-`TEMPORAL-ORCHESTRATION-019` owns the required SDK contract and rollout. Once a
-released SDK implements that contract, the updater may use its acknowledged
-quiescence result for both poll and agent roles, retain it through the stop
-boundary, and resume normal update adoption on a timeout or abort. Until then,
-the deferral is bounded and recoverable, not a claim that an idle legacy worker
-is safe to stop.
+`TEMPORAL-ORCHESTRATION-021` owns the SDK contract and real verification.
+Unsupported legacy workers still defer automatically. Their initial adoption
+requires the separate closed-producer, naturally completed owner and pinned-run
+idle-control maintenance procedure in the quiescence decision. This updater
+does not create that authorization, cancel an owner, reset attempts, enlarge
+task or shutdown budgets, or change control queues. Pre-ACK timeout removes only
+the caller's generation; pre-stop abort reopens only unchanged workers.
 
 ## Decisions & Alternatives
 
@@ -155,7 +167,7 @@ is safe to stop.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
-| Temporal worker quiescence | Defer before stop when a Temporal worker is ready, when a running Overmind reports one without readiness metadata, or when a socket-less orphaned same-workspace session hosts a worker window the stop path would force-kill; consume a released public SDK quiescence capability when available | Activity-body file locks; sequential idle snapshots; shutdown; custom-slot callback blocking; treating missing readiness metadata or an absent control socket as a verified cold state | A body count cannot include a task returned by an already-reserved long poll, missing metadata cannot prove no worker owns work, and an absent control socket does not stop the tmux cleanup from killing an orphaned session's workers. Shutdown eventually cancels live owners, and custom callbacks cannot block. See `TEMPORAL-ORCHESTRATION-019`. |
+| Temporal worker quiescence | Consume the verified two-stage public SDK protocol for the actual supervisor cohort, retaining controller ownership through target boot verification; defer unsupported legacy workers | Activity-body file locks; sequential idle snapshots; shutdown as an admission fence; blocking notification callbacks; treating missing metadata as absence | Outstanding poll/eager reservations must settle before stop. Unknown identities cannot authorize replacement, and fresh target markers cannot prove the old process exited. See `TEMPORAL-ORCHESTRATION-021`. |
 | Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
 | Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
 
