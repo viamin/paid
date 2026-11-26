@@ -59,10 +59,13 @@ session reuse is deferred until it has a separately specified recovery and
 credential contract.
 
 The invocation receives a bounded rendering of the persisted transcript: the
-system prompt plus the most recent 20 non-system messages, truncated to a
-64 KiB UTF-8 prompt budget after structural message framing. The current user
-message is always included; if it alone exceeds the budget, the turn is
-rejected before execution with an actionable error. Earlier history remains
+complete system prompt and current user message, then as many of the newest
+non-system messages as fit, up to 20 non-system messages including the current
+message, within a 64 KiB UTF-8 prompt budget after structural message framing.
+If the system prompt, current user message, and their required framing together
+exceed that budget, the turn is rejected before invocation with an actionable
+error. Required content is never truncated; older optional messages are omitted
+oldest first to meet both bounds. Earlier history remains
 readable in Paid and is not silently discarded. This is a conversation-context
 bound, not an authorization or tool-result replay mechanism.
 

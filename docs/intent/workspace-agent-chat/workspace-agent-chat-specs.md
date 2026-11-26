@@ -22,11 +22,16 @@
   native-CLI evidence per enabled runner.
 
 - [ ] **WORKSPACE-AGENT-CHAT-003** — When building a workspace-agent turn, the
-  system SHALL send the system prompt and most recent 20 non-system messages
-  within a 64 KiB UTF-8 framed budget, always include the current user message,
-  and reject an oversized current message before invocation while retaining the
-  complete readable transcript.
-  *Planned tests:* focused context-rendering service spec.
+  system SHALL retain the complete system prompt and current user message,
+  include at most 20 non-system messages including the current message, and
+  omit older optional messages oldest first to fit a 64 KiB UTF-8 framed budget.
+  If the complete required system prompt, current user message, and required
+  framing together exceed that budget, it SHALL reject the turn before
+  invocation without truncating required content or changing the readable
+  transcript.
+  *Planned tests:* focused context-rendering service specs for combined required
+  content overflow even when each message individually fits, required framing,
+  exact 64 KiB acceptance, UTF-8 byte boundaries, and optional-history omission.
 
 - [ ] **WORKSPACE-AGENT-CHAT-004** — When a native CLI turn reports progress,
   completion, usage, cancellation, or failure, the system SHALL stream supported

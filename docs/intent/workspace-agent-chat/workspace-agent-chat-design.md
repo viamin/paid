@@ -23,8 +23,13 @@ mode. Container provisioning/reopen continues to own workspace lifecycle.
 sessions. `workspace_agent_chat` sessions require a ready workspace and a
 runner/model that passes the mode, credential, project-policy, privacy, and
 availability gates. Each turn creates a Paid-owned request record before a
-stateless native CLI invocation. The invoker uses the current system prompt and
-last 20 non-system messages within a 64 KiB UTF-8 framed budget, receives
+stateless native CLI invocation. The invoker keeps the complete system prompt
+and current user message, then includes the newest optional history within
+20 non-system messages total and a 64 KiB UTF-8 framed budget. Required system
+content, current input, and their framing must fit together; otherwise the
+turn fails before invocation without truncating them. Older optional history
+is omitted oldest first, while the full readable transcript remains persisted.
+The invoker receives
 streamed progress, enforces a 60-second no-progress read deadline and a
 10-minute monotonic whole-turn deadline, and persists only final assistant
 content plus sanitized provenance and reported usage.
@@ -56,7 +61,7 @@ the system never changes a session mode implicitly.
 | --- | --- | --- | --- |
 | Execution-mode lifetime | Persist the selected execution mode on `ChatSession` for the life of a started session. | Infer the mode from the runner for each turn; switch modes during fallback. | A session's mode determines its authentication and billing intent, execution and native-tool authority, privacy behavior, and transcript interpretation. Persisting it makes those properties explicit and prevents a retry or fallback from silently changing them. See [RDR-064](../../rdrs/RDR-064-container-agent-chat-mode.md#recommendation). |
 | CLI invocation lifetime | Run one stateless native CLI invocation per turn. | Reuse a persistent provider CLI session in V1. | Stateless turns reuse the existing workspace lifecycle while avoiding unspecified provider-session, credential-renewal, cancellation, and recovery state. A persistent CLI session needs a separate design unless it can preserve the same authority and recovery contract. See [RDR-064](../../rdrs/RDR-064-container-agent-chat-mode.md#recommendation). |
-| Conversation context | Render the system prompt and newest 20 non-system messages within a 64 KiB UTF-8 framed budget; always include the current user message and retain the full readable transcript. | Send the entire transcript; truncate the current message; retain an unbounded prompt cache. | The bound constrains invocation size predictably without deleting user-visible history. Rejecting an oversized current message before invocation prevents a turn whose essential input would be silently omitted. |
+| Conversation context | Keep the complete system prompt and current message; omit older optional history oldest first to fit at most 20 non-system messages and 64 KiB including UTF-8 framing. Reject before invocation if required content and framing together exceed the budget; retain the full readable transcript. | Send the entire transcript; truncate required content; retain an unbounded prompt cache. | Required content must fit as a whole even when its individual messages fit separately. The bound constrains invocation size without changing essential input or deleting user-visible history. |
 | Native-tool authority | Let the selected runner's native CLI tools operate under its existing workspace-container permissions, separately labeled from Paid structured tools. | Parse CLI output into `Tools::Registry` calls; apply Paid structured-tool confirmation to native tools. | Native CLI output is not a safe authority boundary, and parsing it would duplicate provider behavior. Preserving the distinction leaves API-mode structured confirmation unchanged and makes workspace mutation authority clear before session creation. See [RDR-064](../../rdrs/RDR-064-container-agent-chat-mode.md#capabilities-authority-and-fallback). |
 | Fallback behavior | Allow only candidates compatible with the persisted mode, effective privacy, credential/billing intent, and execution authority; otherwise fail before prompt transmission. | Cross-mode fallback to API chat; silently relax privacy or credentials to complete a turn. | A compatible fallback can restore availability without changing what the user authorized. When none exists, an actionable failure is safer and more truthful than silently changing the runner, model, billing/authentication, privacy, or tool semantics. See [RDR-064](../../rdrs/RDR-064-container-agent-chat-mode.md#capabilities-authority-and-fallback). |
 
