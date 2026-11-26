@@ -21,6 +21,11 @@ module Issues
       return Result.new(path: nil) if parent_reference?
 
       lock_account!
+      # A distinct target with no outgoing edges cannot lead back to this issue.
+      if target_issue.id != dependency.issue_id && !IssueDependency.where(issue_id: target_issue.id).exists?
+        return Result.new(path: nil)
+      end
+
       adjacency = IssueDependency.account_adjacency(dependency.issue.project.account)
       resolved_external_edges.each { |from_id, to_id| (adjacency[from_id] ||= []) << to_id }
       adjacency[dependency.issue_id] = proposed_targets

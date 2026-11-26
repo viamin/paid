@@ -54,6 +54,46 @@ RSpec.describe IssueDependency do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-008
+    it "keeps the account lock while validating a leaf target without loading the account graph" do
+      project = create(:project)
+      dependent = create(:issue, project: project)
+      target = create(:issue, project: project)
+      dependency = build(:issue_dependency, issue: dependent, depends_on_issue: target)
+
+      queries, lock_result = described_class.transaction do
+        validation_queries = TenantContext.with(project.account) do
+          capture_queries { expect(dependency).to be_valid }
+        end
+        config = ActiveRecord::Base.connection_db_config.configuration_hash
+        # Advisory locks are reentrant; inspect ownership from a distinct PostgreSQL session.
+        contender_result = PG.connect(host: config[:host], port: config[:port], dbname: config[:database],
+          user: config[:username], password: config[:password]) do |connection|
+          connection.exec_params("SELECT pg_try_advisory_xact_lock($1, $2)", [ 4756, project.account_id ]).getvalue(0, 0)
+        end
+        [ validation_queries, contender_result ]
+      end
+
+      aggregate_failures do
+        expect(lock_result).to eq("f")
+        expect(queries).to include(a_string_including("pg_advisory_xact_lock"))
+        expect(queries).not_to include(a_string_matching(/FROM "issue_dependencies".*JOIN/m))
+      end
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects a resolved external self reference even when the issue has no outgoing declarations" do
+      project = create(:project, owner: "acme", repo: "paid")
+      issue = create(:issue, project: project, github_number: 731)
+      dependency = build(:issue_dependency, issue: issue, depends_on_issue: nil,
+        depends_on_owner: "acme", depends_on_repo: "paid", depends_on_number: 731)
+
+      expect(dependency).not_to be_valid
+      expect(dependency.errors[:depends_on_issue]).to include(
+        "creates a blocking dependency cycle: #731 -> #731 (source: direct_write)"
+      )
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
     it "rejects a two-node blocking cycle with its exact path" do
       project = create(:project)
       issue_a = create(:issue, project: project, github_number: 701)

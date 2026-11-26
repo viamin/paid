@@ -88,6 +88,13 @@ contextual relationship and is excluded from that graph. Parser batches update
 their shared adjacency after each accepted edge, so a later item in the same
 batch is evaluated against earlier additions.
 
+Take the account transaction lock before checking a target's outgoing edges.
+A distinct target with no persisted dependency rows cannot lead back to the
+dependent, so that case needs no account-wide graph load. Self references and
+targets with any outgoing declaration retain the full cycle check, including
+resolved external edges. The lock remains held through the write so opposing
+concurrent declarations cannot both use an empty-target result.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
