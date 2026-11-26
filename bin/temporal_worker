@@ -28,6 +28,7 @@ begin
 ensure
   $VERBOSE = original_verbose
 end
+require_relative "lib/worker_admission_slot_supplier"
 
 # Eagerly load routes before spawning worker threads to avoid a race condition
 # with Rails 8.1's lazy route loading (LazyRouteSet). Turbo broadcasts triggered
@@ -49,7 +50,7 @@ workflows = Workflows.constants.map { |c| Workflows.const_get(c) }
 poll_workflows = workflows.select { |w| w == Workflows::GitHubPollWorkflow }
 agent_workflows = workflows.reject { |w| w == Workflows::GitHubPollWorkflow }
 begin
-  worker_mode = Paid::TemporalWorkerConfig.launch_mode(ARGV)
+  worker_mode = Paid::TemporalWorkerConfig.bind_launch_mode!(ARGV)
 rescue ArgumentError => error
   warn error.message
   exit 1
@@ -153,6 +154,25 @@ forced_exit_buffer = ENV.fetch("TEMPORAL_FORCE_EXIT_BUFFER_SECONDS", "10").to_i
 forced_exit_timeout = graceful_shutdown + forced_exit_buffer
 
 activity_instances = activities.map(&:new)
+readiness_file = Paid::WorkerReadiness.file_path
+admission_profiles = {}
+unless worker_mode == "agent"
+  admission_profiles["poll"] = {
+    "workflow_slots" => poll_workflow_slots, "activity_slots" => poll_activity_slots,
+    "local_activity_slots" => poll_local_activity_slots,
+    "workflow_task_polls" => poll_workflow_task_polls, "activity_task_polls" => poll_activity_task_polls
+  }
+end
+unless worker_mode == "poll"
+  admission_profiles["agent"] = {
+    "workflow_slots" => agent_workflow_slots, "activity_slots" => agent_activity_slots,
+    "local_activity_slots" => agent_local_activity_slots,
+    "workflow_task_polls" => agent_workflow_task_polls, "activity_task_polls" => agent_activity_task_polls
+  }
+end
+admission_identity = Paid::WorkerAdmission.boot_identity(
+  workspace: startup_root, revision: startup_boot_revision, profiles: admission_profiles
+)
 
 workers = case worker_mode
 when "poll"
@@ -164,11 +184,13 @@ when "poll"
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: Paid::WorkerAdmission.tuner(
         workflow_slots: poll_workflow_slots,
         activity_slots: poll_activity_slots,
-        local_activity_slots: poll_local_activity_slots
+        local_activity_slots: poll_local_activity_slots,
+        workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls, readiness_file:
       ),
+      **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
       max_concurrent_activity_task_polls: poll_activity_task_polls,
       max_concurrent_workflow_task_polls: poll_workflow_task_polls,
       graceful_shutdown_period: graceful_shutdown
@@ -183,11 +205,13 @@ when "agent"
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: Paid::WorkerAdmission.tuner(
         workflow_slots: agent_workflow_slots,
         activity_slots: agent_activity_slots,
-        local_activity_slots: agent_local_activity_slots
+        local_activity_slots: agent_local_activity_slots,
+        workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls, readiness_file:
       ),
+      **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
       max_concurrent_activity_task_polls: agent_activity_task_polls,
       max_concurrent_workflow_task_polls: agent_workflow_task_polls,
       graceful_shutdown_period: graceful_shutdown
@@ -202,11 +226,13 @@ else
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: Paid::WorkerAdmission.tuner(
         workflow_slots: poll_workflow_slots,
         activity_slots: poll_activity_slots,
-        local_activity_slots: poll_local_activity_slots
+        local_activity_slots: poll_local_activity_slots,
+        workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls, readiness_file:
       ),
+      **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
       max_concurrent_activity_task_polls: poll_activity_task_polls,
       max_concurrent_workflow_task_polls: poll_workflow_task_polls,
       graceful_shutdown_period: graceful_shutdown
@@ -218,11 +244,13 @@ else
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,
-      tuner: Temporalio::Worker::Tuner.create_fixed(
+      tuner: Paid::WorkerAdmission.tuner(
         workflow_slots: agent_workflow_slots,
         activity_slots: agent_activity_slots,
-        local_activity_slots: agent_local_activity_slots
+        local_activity_slots: agent_local_activity_slots,
+        workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls, readiness_file:
       ),
+      **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
       max_concurrent_activity_task_polls: agent_activity_task_polls,
       max_concurrent_workflow_task_polls: agent_workflow_task_polls,
       graceful_shutdown_period: graceful_shutdown
@@ -276,7 +304,7 @@ at_exit do
   readiness_heartbeat.stop
   Paid::WorkerReadiness.mark_not_ready!
 end
-Paid::WorkerReadiness.mark_ready!
+Paid::WorkerReadiness.mark_ready_with_admission!(admission_identity)
 puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, " \
      "heartbeat roles: #{readiness_roles.join(", ")}, revision: #{startup_boot_revision})"
 Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)

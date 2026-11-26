@@ -47,6 +47,12 @@
   *Code:* `bin/dev-update`, `lib/paid/worker_readiness.rb`, `bin/temporal_worker`.
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
 
+- [D] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Task-safe Temporal worker
+  quiescence is deferred to `TEMPORAL-ORCHESTRATION-021`. Activity-body counts
+  remain observability only and SHALL NOT be used to authorize a worker stop,
+  and missing readiness metadata SHALL NOT be treated as a verified
+  no-Temporal-worker state. A failed supervisor inspection SHALL be treated as
+  unknown rather than proof that no worker is running.
 - [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-005** — When a recorder-owned trusted
   measurement consumes Temporal worker readiness, it SHALL consume only the
   durable `poll` and `agent` role observations the worker processes publish
@@ -69,21 +75,29 @@
   *Test:* `spec/models/worker_readiness_observation_spec.rb`,
   `spec/lib/paid/worker_readiness/heartbeat_spec.rb`,
   `spec/lib/paid/worker_readiness/startup_identity_spec.rb`.
-- [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Before a full development
-  update stops Overmind, the updater SHALL acquire and retain an exclusive
-  activity-admission barrier for each ready Temporal worker within a bounded
-  poll budget, and SHALL hold both barriers through the stop request. Each
-  activity SHALL hold shared ownership of its worker's barrier for its full
-  execution, so a role that reaches idle while another role drains cannot
-  admit new work before the stop boundary. Worker metadata SHALL expose only
-  the active count and existing trusted boot identity, never activity input,
-  credential payloads, secret-bearing process arguments, or environment. If a
-  worker remains active or its count is unknown within the budget, the updater
-  SHALL fail before requesting a stop and SHALL report deferred adoption; it
-  SHALL NOT force-restart the owner, reset its attempt, enlarge shutdown/activity
-  deadlines, or change control-queue routing. Once both workers are idle, the
-  updater SHALL retain the existing one-time graceful stop, restart, and
-  effective-adoption verification path.
-  *Code:* `bin/dev-update`, `lib/paid/worker_readiness.rb`,
-  `app/temporal/activities/base_activity.rb`.
-  *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
+
+- [ ] **DEVELOPMENT-ENVIRONMENT-UPDATE-006** — Before stopping a supported
+  Temporal worker cohort, the standalone updater SHALL resolve the actual
+  supervisor descendants' PID/start-time, workspace and launch mode, reject
+  uncovered or changing workers, and obtain complete two-stage public-SDK
+  quiescence for both roles within the existing drain budget. It SHALL retain
+  the controller's exclusive locks through stop, setup and target boot
+  verification, bind an effective mode before readiness publication, coalesce
+  both-mode roles through the canonical
+  `paid-worker-ready-temporal_worker-both` marker without double-locking,
+  treat an old unsuffixed `paid-worker-ready-temporal_worker` marker as
+  legacy evidence that defers admission,
+  fence every supported target marker path, and prevent
+  controller lock/control-pipe descriptors from reaching restarted services.
+  It SHALL reopen only its owned generation after proving target boots and
+  every original process instance has exited. Interrupted acknowledged updates
+  SHALL remain closed with actionable phase-aware recovery for unchanged,
+  known mixed, stopped and verified target cohorts; unknown visibility SHALL
+  NOT authorize stop or reopening. Pre-stop abort SHALL reopen only unchanged
+  workers, and unsupported legacy workers SHALL defer automatically without
+  cancelling owners or changing queues, task attempts, deadlines, concurrency
+  or shutdown budgets. Process discovery SHALL emit only role PID/start-time
+  identities, never raw process arguments, environment or credentials.
+  *Required tests:* `spec/lib/dev_update_spec.rb`,
+  `spec/lib/paid/worker_admission_cohort_spec.rb`, the protocol's supplier and
+  controller tests, and real unchanged-budget SDK/server adoption evidence.

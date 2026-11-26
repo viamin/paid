@@ -42,7 +42,7 @@ module Inbox
 
     # @spec PROJECT-DELEGATION-002
     def checkpoints
-      questions = feature_intent.feature_intent_decisions.to_a
+      questions = feature_intent.feature_intent_decisions.to_a.sort_by(&:id)
       ActiveRecord::Associations::Preloader.new(records: questions, associations: :intent_checkpoint).call
       questions.group_by(&:intent_checkpoint_id).filter_map do |id, questions|
         next if id.nil?

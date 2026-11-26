@@ -39,6 +39,68 @@
   *Tests:* `spec/lib/paid/temporal_worker_config_spec.rb`.
   *Code:* `Paid::TemporalWorkerConfig`.
 
+- [x] **TEMPORAL-ORCHESTRATION-020** — Temporal activity execution SHALL publish
+  coarse worker-ownership observations without exposing activity data or claiming
+  to control task admission. The updater SHALL NOT use those observations to
+  authorize a worker stop.
+  *Tests:* `spec/temporal/activities/base_activity_spec.rb`,
+  `spec/lib/paid/worker_readiness_spec.rb`.
+  *Code:* `Activities::BaseActivity`, `Paid::WorkerReadiness`.
+
+- [ ] **TEMPORAL-ORCHESTRATION-021** — Before an updater stops a ready Temporal
+  worker, it SHALL obtain a quiescence acknowledgement through released public SDK
+  slot-supplier contracts that closes
+  new poll and eager task admission, includes every outstanding unused poll or
+  eager reservation, and identifies each admitted task as either safely queued
+  with its original attempt/deadline unspent or a tracked owner that finishes
+  before the stop boundary. Outstanding unused poll permits SHALL NOT exceed
+  their configured fixed poller capacity, separately for sticky workflow,
+  nonsticky workflow and activity polls. Task-used notification SHALL return
+  only that poll budget, retaining the execution slot and admission lock until
+  SDK release. Eager reservations SHALL retain their execution-slot policy
+  independently of the poll budget. Before reopening after replacement, it SHALL prove
+  every original PID/start-time instance has exited; fresh target metadata or
+  unknown process visibility SHALL NOT substitute for that proof.
+  The acknowledgement and resume operations SHALL be
+  non-blocking with respect to SDK notification callbacks. The acknowledgement
+  deadline SHALL preserve `DEV_UPDATE_WORKER_DRAIN_POLL_COUNT` multiplied by
+  `DEV_UPDATE_OVERMIND_POLL_INTERVAL`, including discovery and startup time;
+  invalid or nonpositive budgets SHALL defer before admission requests. A requested final
+  transport handshake SHALL be bounded and SHALL NOT retain admission locks
+  after durable completion. On timeout, unknown
+  state, abort, replacement, or a worker that lacks the capability, the updater
+  SHALL defer adoption before stop and leave admission recoverable; it SHALL
+  NOT infer safety from an activity-body count, force-cancel an owner, change
+  queues, retries, deadlines, concurrency, or budgets. Missing worker readiness
+  metadata SHALL NOT be treated as evidence that no Temporal worker is running:
+  the updater SHALL defer unless the supervisor state itself verifies that no
+  Temporal worker will be stopped (the configured Unix control socket is absent
+  and no same-workspace orphaned supervisor tmux session the stop path would
+  kill hosts a Temporal worker window, a present socket positively refuses a
+  local connection as stale and no such orphaned worker-bearing session exists,
+  or a successful running-Overmind inspection reports
+  no Temporal worker processes). An inspection counts as successful only when
+  its output matches the supervisor's process-status grammar; a zero exit
+  status with unparseable output SHALL be treated as a failed inspection, not
+  as a report of no Temporal worker processes. Any other failed inspection
+  SHALL be treated as unknown; when an orphaned session cannot be inspected,
+  the updater SHALL not drain it but SHALL leave the stop path to fail before
+  setup with the session identity rather than force-killing it. The
+  capability SHALL cover both poll and agent roles and every enabled eager path
+  (#5326). A separately authorized legacy cancellation SHALL first verify the
+  workflow's first-execution identity read-only, then address only the exact
+  recorded `run_id` while omitting `first_execution_run_id`; RPC success SHALL
+  NOT substitute for verified terminal execution.
+  *Current code:* `bin/dev-update` defers safely for ready legacy workers, for a
+  running Overmind that still reports Temporal workers whose readiness metadata
+  is missing, and for a socket-less or stale-socket same-workspace orphaned
+  supervisor session whose tmux windows host a Temporal worker that the stop
+  path would force-kill.
+  *Protocol and rollout:*
+  `decisions/task-safe-worker-quiescence.md`.
+  *Required tests:* `spec/lib/paid/worker_admission_spec.rb`,
+  `spec/lib/paid/worker_admission_controller_spec.rb`, `spec/lib/dev_update_spec.rb`.
+
 ## Durable Workflow Boundary
 
 - [x] **TEMPORAL-ORCHESTRATION-003** — Durable multi-step automation SHALL run

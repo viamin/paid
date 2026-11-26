@@ -46,6 +46,7 @@ module Paid
     @activity_count = 0
     @activity_count_lock = Mutex.new
     @boot_revisions = {}
+    @admission_profiles = {}
 
     module_function
 
@@ -73,12 +74,26 @@ module Paid
     # Write the ready flag. Safe to call repeatedly (overwrites).
     def mark_ready!(env = ENV)
       path = file_path(env)
-      revision = boot_revision(env)
+      profile = @admission_profiles[path]
+      revision = profile ? profile.fetch("revision") : boot_revision(env)
       FileUtils.mkdir_p(File.dirname(path))
-      @activity_count_lock.synchronize { @boot_revisions[path] = revision }
+      @activity_count_lock.synchronize do
+        @boot_revisions[path] = revision
+      end
       write_payload(path, ready_payload(env, revision:))
     rescue StandardError => error
       warn "Failed to write worker readiness file: #{error.class}: #{error.message}"
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-021
+    def mark_ready_with_admission!(admission, env = ENV)
+      path = file_path(env)
+      @activity_count_lock.synchronize do
+        raise ArgumentError, "admission identity already registered" if @admission_profiles.key?(path)
+
+        @admission_profiles[path] = admission
+      end
+      mark_ready!(env)
     end
 
     # Records a fresh, bounded operational heartbeat without rewriting the
@@ -90,7 +105,7 @@ module Paid
 
       payload = JSON.parse(File.read(path)).merge(
         "heartbeat_at" => Time.now.utc.iso8601,
-        **metadata.stringify_keys
+        **metadata.stringify_keys.except("pid", "ready_at", "revision", "admission", "heartbeat_at")
       )
       write_payload(path, payload.to_json)
     rescue StandardError => error
@@ -108,6 +123,16 @@ module Paid
     # Whether the worker has marked itself ready.
     def ready?(env = ENV)
       File.exist?(file_path(env))
+    end
+
+    # This is observability, not admission control. An activity body starts
+    # only after the SDK has accepted a task, so a file lock here cannot close
+    # an already-reserved long poll safely.
+    def with_activity_observation(env = ENV)
+      activity_started!(env)
+      yield
+    ensure
+      activity_finished!(env)
     end
 
     # The file flag above is an orchestrator-local contract: it cannot cross
@@ -128,42 +153,28 @@ module Paid
       false
     end
 
-    # The updater takes this lock exclusively before stopping workers. Each
-    # activity holds shared ownership for its entire execution, making idle
-    # observation and admission closure one atomic boundary.
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    def admission_lock_path(env = ENV)
-      "#{file_path(env)}.admission.lock"
-    end
-
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    def with_activity(env = ENV)
-      FileUtils.mkdir_p(File.dirname(admission_lock_path(env)))
-      File.open(admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        lock.flock(File::LOCK_SH)
-        activity_started!(env)
-        yield
-      ensure
-        activity_finished!(env)
-      end
-    end
-
-    # Activity counts are deliberately coarse, process-local readiness metadata:
-    # the updater needs only to know whether stopping this worker would interrupt
-    # an owner. It never contains activity inputs or customer data.
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # Activity counts are coarse observations, not authority to stop a worker.
+    # SDK reservations are covered by the separate admission protocol. Neither
+    # payload contains activity inputs or customer data.
+    # @spec TEMPORAL-ORCHESTRATION-020
     def activity_started!(env = ENV)
       update_activity_count!(env, 1)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-020
     def activity_finished!(env = ENV)
       update_activity_count!(env, -1)
     end
 
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
     def ready_payload(env = ENV, revision: boot_revision(env))
-      { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision:, active_activities: @activity_count }.to_json
+      payload = { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision:, active_activities: @activity_count }
+      profile = @admission_profiles[file_path(env)]
+      if profile
+        payload[:admission] = profile
+        payload[:revision] = profile.fetch("revision")
+      end
+      payload.to_json
     end
 
     # The revision identity of the code this worker process booted from:
