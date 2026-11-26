@@ -111,9 +111,19 @@
   prompt SHALL permit only a limited static/diff review. Its required body
   SHALL name the bounded limitation, state that no local tests ran, and state
   that it is not clean-review or merge authorization. It SHALL submit one
-  `COMMENT` review without the clean marker; if the diff is unavailable, it
-  SHALL instead expose an actionable unavailable stop. External CI and source
-  acceptance remain distinct evidence.
-  *Code:* `app/services/prompts/goal_review_pull_request.rb` (`TEMPLATE`).
+`COMMENT` review without the clean marker and with the exact terminal
+limited-environment marker that `ScanPaidPrsActivity` recognizes without
+emitting review-feedback triggers or ready advancement; it SHALL emit the
+terminal environment stop without scheduling a coding or review run. If the
+diff is unavailable, it SHALL instead expose an actionable unavailable stop.
+External CI and source acceptance remain distinct evidence.
+  *Code:* `app/services/prompts/goal_review_pull_request.rb` (`TEMPLATE`),
+  `app/temporal/activities/scan_paid_prs_activity.rb`
+  (`#check_review_bot_status`), and
+  `app/services/automation/strategies/auto_review.rb` (`#compose_decisions`).
   *Tests:* `spec/services/prompts/goal_review_pull_request_spec.rb`
-  ("limited review publication").
+  ("limited review publication"),
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`
+  ("terminal environment stop"), and
+  `spec/services/automation/strategies/auto_review_spec.rb`
+  ("terminal review environment limitation").

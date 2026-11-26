@@ -122,6 +122,11 @@ agent's output to the rest of the review loop:
   audit signal `ScanPaidPrsActivity::PAID_REVIEW_CLEAN_MARKER`. If
   either matcher changes, update the shared source together or the
   clean-review loop will silently fail to terminate.
+- **Limited-environment signal.** A Case C review must include the exact
+  HTML marker `<!-- paid-review-environment-unavailable -->`. It is distinct
+  from the clean-review marker and tells `ScanPaidPrsActivity` that the review
+  is a terminal `review_environment_unavailable` stop, not body-only feedback
+  that can start another coding or review round or advance the PR as ready.
 - **`event: COMMENT` only.** The reviewer must use `"event": "COMMENT"`
   and never `"event": "REQUEST_CHANGES"` or `"event": "APPROVE"`.
   Change requests are expressed through inline comments in the
@@ -159,7 +164,9 @@ attempt times out, or if it fails (including an unavailable git dependency),
 the reviewer continues only with the existing static/diff review path. Its
 one submitted GitHub review states the bounded reason, that local tests did
 not run, and that the review is limited; it must not include the clean-review
-marker or claim merge authorization. If the diff itself cannot be obtained,
+marker or claim merge authorization. The review includes the terminal
+limited-environment marker so the PR scanner does not treat it as ordinary
+body-only feedback. If the diff itself cannot be obtained,
 the reviewer records an actionable unavailable stop rather than inventing a
 clean or complete review. Review bodies retain only the concise failure
 category and terminal outcome, never raw dependency output or credentials.

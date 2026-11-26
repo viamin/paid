@@ -148,6 +148,7 @@ RSpec.describe Prompts::GoalReviewPullRequest, :no_db do
       expect(limited_review).to include('"event": "COMMENT"')
       expect(limited_review).to include('"comments": []')
       expect(limited_review).not_to include("<!-- paid-review-clean -->")
+      expect(limited_review).to include("<!-- paid-review-environment-unavailable -->")
       expect(limited_review).to include("not a clean review or merge authorization")
       expect(limited_review).to include("matching the observed terminal outcome")
       expect(limited_review).to match(/Never post the sample's\s+#\s+unavailable-git-dependency reason when it is not true/)

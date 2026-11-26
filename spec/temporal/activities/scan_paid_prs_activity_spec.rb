@@ -3763,6 +3763,33 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent posted a limited review because its environment was unavailable" do
+      before do
+        enable_paid_agent_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success", status: "completed" } ],
+          reviews: [ { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                     body: "Limited static review. <!-- paid-review-environment-unavailable -->",
+                     submitted_at: 1.hour.ago } ],
+          review_threads: []
+        )
+      end
+
+      # @spec REVIEW-PR-009
+      it "publishes a terminal environment stop instead of requeueing review feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |trigger| trigger[:triggers].map { |entry| entry[:type] } }
+        expect(trigger_types).to include("review_environment_unavailable")
+        expect(trigger_types).not_to include("review_bot_comments", "review_bot_review_pending", "paid_agent_review_pending")
+      end
+    end
+
     context "when paid_agent posted a body-only review before the last agent run completed" do
       before do
         enable_paid_agent_review!

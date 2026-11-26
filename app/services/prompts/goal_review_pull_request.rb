@@ -274,11 +274,13 @@ module Prompts
       # out", or "insufficient remaining time for bounded setup"); do not include
       # raw command output. Replace the sample reason below with the concise
       # category matching the observed terminal outcome. Never post the sample's
-      # unavailable-git-dependency reason when it is not true.
+      # unavailable-git-dependency reason when it is not true. Include the exact
+      # terminal environment marker below so Paid does not requeue this limited
+      # result as ordinary body-only review feedback.
       tmpfile=$(mktemp)
       cat > "$tmpfile" <<'REVIEW_JSON'
       {
-        "body": "Limited static review: unavailable git dependency after one bounded dependency-preparation attempt. No local tests were run. This is not a clean review or merge authorization.",
+        "body": "Limited static review: unavailable git dependency after one bounded dependency-preparation attempt. No local tests were run. This is not a clean review or merge authorization. <!-- paid-review-environment-unavailable -->",
         "event": "COMMENT",
         "comments": []
       }

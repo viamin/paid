@@ -27,6 +27,18 @@ RSpec.describe Automation::Strategies::AutoReview do
   end
 
   describe "trigger routing" do
+    # @spec REVIEW-PR-009
+    it "does not queue a follow-up for a terminal review environment limitation" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        triggers: [ { type: "review_environment_unavailable" } ]
+      })
+
+      expect(result.to_h).to eq(decisions: [ { type: "noop" } ])
+    end
+
     it "routes paid_agent_review_pending to a queue_review_run decision" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
