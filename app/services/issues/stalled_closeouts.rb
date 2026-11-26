@@ -60,6 +60,7 @@ module Issues
     # blocker checks run per candidate in CloseoutStatus. Includes both
     # merged-evidence sources (parent-linked and run-recorded) so the
     # prefilter only ever over-includes, never drops, real stalls.
+    # @spec TEST-SUITE-027, PARTIAL-CLOSEOUT-037
     def self.candidates_for(project)
       blocking_issue_ids = AgentRun.where(project: project)
         .where("agent_runs.status IN (?)", AgentRun::AUTO_PICK_BLOCKING_STATUSES)
@@ -72,22 +73,25 @@ module Issues
         .where(runner_retry_abandoned_at: nil)
         .where.not(id: blocking_issue_ids)
         .where.not(id: IssueContinuationRequest.open.where(project: project).select(:issue_id))
-        .where("(#{closeout_evidence_sql}) AND issues.github_state = ?", "open")
+        .where(closeout_evidence_sql, "open")
     end
 
     def self.closeout_evidence_sql
       <<~SQL.squish
-        issues.no_code_required_at IS NOT NULL
-        OR EXISTS (
-          SELECT 1 FROM issues merged_prs
-          WHERE merged_prs.project_id = issues.project_id
-            AND merged_prs.parent_issue_id = issues.id
-            AND merged_prs.is_pull_request = TRUE
-            AND merged_prs.pr_review_phase = 'merged'
+        (
+          issues.no_code_required_at IS NOT NULL
+          OR EXISTS (
+            SELECT 1 FROM issues merged_prs
+            WHERE merged_prs.project_id = issues.project_id
+              AND merged_prs.parent_issue_id = issues.id
+              AND merged_prs.is_pull_request = TRUE
+              AND merged_prs.pr_review_phase = 'merged'
+          )
+          OR EXISTS (
+            #{Issue::AUTO_PICK_MERGED_PR_CORRELATED_SUBQUERY}
+          )
         )
-        OR EXISTS (
-          #{Issue::AUTO_PICK_MERGED_PR_CORRELATED_SUBQUERY}
-        )
+        AND issues.github_state = ?
       SQL
     end
   end

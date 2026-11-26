@@ -266,6 +266,8 @@ predicate so ActiveRecord can prepare the statement. Retain the original open
 state, evidence, project, hold and in-flight-work filters. A restricted-role
 regression reuses the actual candidate statement across tenant A/B/A under a
 generic plan; normal execution keeps PostgreSQL's automatic plan selection.
+Pass the complete predicate template with bound state values; avoid SQL
+interpolation at the query call site.
 
 The default PostgreSQL test connection uses prepared statements, matching normal
 Rails connection behavior. Reusing query plans avoids repeating planning work
