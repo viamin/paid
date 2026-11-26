@@ -10,7 +10,7 @@ import re
 import sys
 import time
 
-from worker_admission import AdmissionError, supervisor_cohort
+from worker_admission import AdmissionError, Drain, supervisor_cohort
 
 
 def bounded_bytes(path, limit=131072):
@@ -123,10 +123,23 @@ def discover_cohort(workspace, status, *, proc_root=Path("/proc")):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
+    parser.add_argument("--ready-target")
+    parser.add_argument("--readiness-directory")
     arguments = parser.parse_args()
     try:
         status = sys.stdin.read(65537)
-        print(json.dumps(discover_cohort(arguments.workspace, status), sort_keys=True))
+        cohort = discover_cohort(arguments.workspace, status)
+        if arguments.ready_target:
+            if not arguments.readiness_directory:
+                raise AdmissionError("target readiness directory is required")
+            directory = Path(arguments.readiness_directory)
+            both = cohort["agent"] == cohort["poll"]
+            roles = {role: directory / ("paid-worker-ready-temporal_worker-" + ("both" if both else role))
+                     for role in cohort}
+            reader = Drain(arguments.workspace, roles, arguments.ready_target, cohort)
+            if any(reader.snapshot(role)["revision"] != arguments.ready_target for role in roles):
+                raise AdmissionError("target boot revision is not verified")
+        print(json.dumps(cohort, sort_keys=True))
         return 0
     except (AdmissionError, OSError, ValueError, KeyError, IndexError) as error:
         print(json.dumps({"status": "deferred", "reason": str(error) if isinstance(error, AdmissionError) else type(error).__name__}))
