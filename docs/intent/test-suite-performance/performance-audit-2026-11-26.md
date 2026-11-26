@@ -813,3 +813,56 @@ hotspot. Raw evidence: `deep-sample.json` and `deep-sample.log`.
 The first changes reduce avoidable work; they do not establish that the complete
 suite now meets a runtime target. Full-suite timing and aggregate coverage still
 need the normal CI execution after integration.
+
+## Request and inbox fixture reuse
+
+Base: `1c808859b3e2adb2e5ebd9831d9768953f039e03`, ARM64 devcontainer,
+Ruby 3.4.13 and PostgreSQL 16.15. Compare project requests, inbox requests,
+`Inbox::Queue` and `CreateAgentRunActivity` with seed 8463, coverage enabled,
+FactoryProf and RSpecDissect. Each run uses a fresh private database restored
+only after verifying it is empty; application roles remain NOSUPERUSER and
+NOBYPASSRLS, with prepared statements enabled. Temporal uses the unavailable
+`localhost:7233` endpoint, matching the original full-benchmark recipe.
+
+The inbox specs share their matching account/user/project graph. Project
+requests share only account/user setup; credentials, projects and nested actor
+overrides remain per example. The creation activity shares its Ruby project.
+Each example refinds records and rebinds its account/actor associations.
+
+Four same-operation project-request examples are consolidated: the tokenless
+page heading/warning, token-enabled creation form and combobox, and successful
+name update/redirect/flash. All 1,795 expectation statements remain. Empty and
+populated index scenarios remain separate.
+
+| Measurement | Original | Candidate |
+| --- | ---: | ---: |
+| Examples / failures / pending | 728 / 0 / 0 | 724 / 0 / 0 |
+| Example execution | 1,087.42s | 772.15s |
+| Process including boot/finalization | 1,196.94s | 828.90s |
+| User CPU | 570.27s | 386.31s |
+| Factory calls | 5,423 | 2,897 |
+| Projects / users / accounts | 745 / 1,847 / 755 | 372 / 786 / 38 |
+| RSpecDissect setup | 286.76s | 106.61s |
+| Covered application lines | 51,126 | 51,126 |
+
+The application line sets match exactly, with none gained or lost. The first
+pair reduces process time by 30.75% and user CPU by 32.26%; these are scoped
+measurements, not a whole-suite claim. Other Paid workloads remain active.
+The repeated original-setup control is still running, so host variability has
+not yet been bounded by the surrounding controls.
+
+A separate two-example acceptance check mutates persisted names/mappings,
+creates scenario issue/run rows and loads associations, then verifies the same
+record IDs, original attributes, empty scenario associations and exact
+account/actor object identity in the next example. Both examples pass. The
+one-off file was removed after verification; normal callbacks, transactional
+fixtures, validations and tenant enforcement remain enabled.
+
+Raw records, input hashes, original spec copies, candidate patch, profiler logs
+and line-set comparisons are in `/tmp/paid-testprof-audit/request-setup/`.
+The first repeat-control invocation used absolute temporary paths, which the
+runner does not classify as focused; it was deliberately interrupted after
+240 passing examples when the resulting whole-suite coverage-gate mismatch
+was confirmed. Its partial time is not a complete control. The replacement
+uses the same four original files with an empty `--example` filter matching
+all examples, preserving coverage instrumentation and the full-suite 80% gate.

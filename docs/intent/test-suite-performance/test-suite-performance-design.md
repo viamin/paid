@@ -232,6 +232,14 @@ issues, runs, role changes, owner settings, and secondary projects remain local
 to each example; isolation checks mutate configuration and create scenario rows
 to verify that the next example starts clean.
 
+Inbox queue and request specs share their matching baseline account, user and
+project configuration. Project requests share only the baseline account and
+user; request-created projects, credentials and nested actor overrides remain
+per example. Agent-run creation activities share their Ruby project, retaining
+per-example issues, runs, routing changes and owner settings. Fresh instances
+and explicit association rebinding preserve each example's account and actor
+identity.
+
 Failure marking, pull-request creation, and issue-analysis activity specs reuse
 an uncustomized project through the existing stable project context. Customized
 nested project and owner overrides remain per example. The context also serves
