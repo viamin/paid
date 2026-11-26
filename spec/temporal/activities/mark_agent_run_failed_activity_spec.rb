@@ -3,27 +3,22 @@
 require "rails_helper"
 
 RSpec.describe Activities::MarkAgentRunFailedActivity do
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
 
   describe "#execute" do
-    it "marks the agent run as failed with error message" do
-      agent_run = create(:agent_run, :running, project: project)
-
-      activity.execute(agent_run_id: agent_run.id, error: "Container crashed")
-
-      agent_run.reload
-      expect(agent_run.status).to eq("failed")
-      expect(agent_run.error_message).to eq("Container crashed")
-    end
-
-    it "logs the failure" do
+    it "marks the agent run as failed and logs the error", :aggregate_failures do
       agent_run = create(:agent_run, :running, project: project)
 
       expect {
         activity.execute(agent_run_id: agent_run.id, error: "Container crashed")
       }.to change(AgentRunLog, :count).by(1)
 
+      agent_run.reload
+      expect(agent_run.status).to eq("failed")
+      expect(agent_run.error_message).to eq("Container crashed")
       log = agent_run.agent_run_logs.last
       expect(log.content).to include("Container crashed")
     end

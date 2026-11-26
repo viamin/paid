@@ -221,3 +221,30 @@ and projects retain their original factory ownership relationships. Scenario
 issues, runs, role changes, owner settings, and secondary projects remain local
 to each example; isolation checks mutate configuration and create scenario rows
 to verify that the next example starts clean.
+
+Failure marking, pull-request creation, and issue-analysis activity specs reuse
+an uncustomized project through the existing stable project context. Customized
+nested project and owner overrides remain per example. The context also serves
+provisioning scenarios; its generic name reflects the shared factory contract.
+All business callbacks and rendering remain enabled in these measurements.
+
+Anomaly-detection checks for the same token outlier can inspect persistence,
+classification, logging, and notification from one detection. Keep cost, duration,
+severity boundaries, stale baselines, and guardrail scenarios independent. The
+historical runs still use normal factories in each retained example.
+Effective-provider value tests instantiate a run directly because they only
+exercise attribute normalization; the legacy alias integration retains a
+persisted run and verifies its effective provider after reloading.
+
+Git operations, partial-closeout analysis, dependency parsing, issue creation,
+existing-PR completion, and issue enhancement reuse uncustomized project
+configuration through the stable project context. Auto-pick service specs use
+the enabled project variant. Installation, upstream-target, owner, and other
+customized nested project overrides remain per example. Issues, runs, routing
+credentials, comments, and scenario settings retain their per-example lifetime.
+
+Simple status-scope checks use one persisted matrix across two projects and
+accounts. Each named scope is checked against competing statuses, and by_status
+is checked for every matrix entry. Active and finished membership use explicit
+expected sets. Specialized claim, recovery, timeout, synthetic-run, and tenant
+cases remain independent; all matrix rows use normal status factory traits.

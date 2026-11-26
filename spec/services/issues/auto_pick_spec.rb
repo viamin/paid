@@ -3,7 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Issues::AutoPick do
-  let(:project) { create(:project, auto_pick_enabled: true) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable auto-pick project"
+
 
   describe "#call" do
     it "selects the auto-pick strategy through Automation::Strategies::Select" do

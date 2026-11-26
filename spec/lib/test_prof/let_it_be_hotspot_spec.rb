@@ -5,7 +5,7 @@ require "test_prof/recipes/rspec/let_it_be"
 
 # @spec TEST-SUITE-011
 RSpec.describe TestProf::LetItBe do
-  [ "with stable agent execution project", "with stable provisioning project", "with stable PR scanner project",
+  [ "with stable agent execution project", "with stable PR scanner project",
     "with stable agent run request project" ].each do |name|
     context name do
       include_context name
@@ -64,8 +64,8 @@ RSpec.describe TestProf::LetItBe do
   end
 
   # @spec TEST-SUITE-011, TEST-SUITE-017
-  context "with stable candidate and dashboard configuration" do
-    [ "with stable auto-pick project", "with stable dashboard project" ].each do |name|
+  context "with stable project configuration" do
+    [ "with stable project", "with stable auto-pick project", "with stable dashboard project" ].each do |name|
       context name do
         include_context name
 
@@ -73,6 +73,8 @@ RSpec.describe TestProf::LetItBe do
           it "isolates project, owner settings and scenario rows for example #{index + 1}" do
             expect(project.name).not_to eq("changed in an example")
             expect(project.created_by.name).not_to eq("changed in an example")
+            expect(project.created_by.account).to eq(project.account)
+            expect(project.github_token.validation_status).to eq("validated")
             expect(Array(project.created_by.settings.auto_pick_skip_labels)).not_to include("changed-in-an-example")
             expect(project.issues).to be_empty
             expect(project.agent_runs).to be_empty
@@ -80,6 +82,7 @@ RSpec.describe TestProf::LetItBe do
 
             project.update!(name: "changed in an example", auto_pick_enabled: false)
             project.created_by.update!(name: "changed in an example")
+            project.github_token.update!(validation_status: "failed")
             project.created_by.settings.update!(auto_pick_skip_labels: [ "changed-in-an-example" ])
             create(:agent_run, project: project)
           end

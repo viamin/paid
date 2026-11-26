@@ -3,7 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Issues::ParseDependencies do
-  let(:project) { create(:project) }
+  # @spec TEST-SUITE-011, TEST-SUITE-017
+  include_context "with stable project"
+
 
   # Use high github_numbers (9000+) for dependency targets to avoid collisions
   # with FactoryBot's global github_number sequence (which starts at 1 and

@@ -36,7 +36,7 @@ RSpec.shared_context "with stable agent execution project" do
   end
 end
 
-RSpec.shared_context "with stable provisioning project" do
+RSpec.shared_context "with stable project" do
   let_it_be(:project, refind: true) do
     TenantContext.with_system_access { create(:project) }
   end
