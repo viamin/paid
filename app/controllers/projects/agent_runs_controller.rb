@@ -771,7 +771,7 @@ module Projects
         alert: "Another agent run is already queued or in progress for this target."
     end
 
-    def retry_source_closure # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-064
+    def retry_source_closure # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-065
       authorize @agent_run, :retry?
       unless @agent_run.waiting_recovery?
         redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not waiting for source-closure recovery."

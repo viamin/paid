@@ -8,7 +8,7 @@ RSpec.describe PartialCloseouts::RequestSourceClosureRecovery do
   let(:project) { create(:project, account:) }
   let(:run) { create(:agent_run, project:, status: "waiting_recovery", branch_name: "paid/source-closure", result_commit_sha: "a" * 40) }
 
-  # @spec PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-065
   it "records the accepted request with pinned source identity and queue provenance" do
     result = described_class.call(agent_run: run, actor: user, boundary: "mcp")
 
@@ -32,7 +32,7 @@ RSpec.describe PartialCloseouts::RequestSourceClosureRecovery do
     expect(event.metadata.fetch("queue_job_id")).to be_present
   end
 
-  # @spec PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-065
   it "reports an audit persistence failure without enqueueing a duplicate job" do
     allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
 
@@ -44,7 +44,7 @@ RSpec.describe PartialCloseouts::RequestSourceClosureRecovery do
     expect(AccountActivityEvent.where(action: "agent_run.source_closure_recovery_requested")).to be_empty
   end
 
-  # @spec PARTIAL-CLOSEOUT-064
+  # @spec PARTIAL-CLOSEOUT-065
   it "does not record an accepted request when enqueueing is refused" do
     allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_id: user.id).and_return(false)
 

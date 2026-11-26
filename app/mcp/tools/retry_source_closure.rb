@@ -24,7 +24,7 @@ module Tools
       }
     end
 
-    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-064
+    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-065
     def perform(agent_run_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to retry source closure" unless confirmed
 
