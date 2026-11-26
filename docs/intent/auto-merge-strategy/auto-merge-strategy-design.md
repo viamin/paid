@@ -76,6 +76,24 @@ the synced issue row alongside `last_pr_scan_at`, so UI and chat surfaces can
 report the same blockers the merge path used without making fresh GitHub API
 calls or re-implementing the policy.
 
+GitHub's Checks API and its Actions workflow-runs API are independent CI
+inventories. A green check-run list is not complete evidence that an Actions
+workflow ran: an Actions run can be waiting for approval, unavailable to the
+token, or absent for the observed head while the check list remains green.
+Before Paid reports CI as green for an Actions-backed automatic merge path, it
+therefore reads the current-head workflow-run inventory as well as check runs.
+An `action_required` workflow conclusion is an approval wait, not a test
+failure or a rerunnable transient failure. Unavailable workflow inventory
+fails closed, preserving the exact observed head as the boundary for a later
+operator reconciliation. An available empty Actions inventory preserves
+successful third-party-only check runs; it is not evidence that an Actions
+workflow was expected.
+Paid does not infer why GitHub requires approval or alter repository Actions
+policy, contributor trust, secrets, permissions, or required checks. The
+provider's supported approval operation remains an authorized operator action,
+and must be revalidated against the current PR head, source repository, and
+changed-file trust boundary before it is invoked.
+
 Human-authored PRs take the stricter path. They require owner approval,
 successful checks, mergeability, fresh reviews for the current head, no
 outstanding blocking review feedback, and resolved dependencies before a merge

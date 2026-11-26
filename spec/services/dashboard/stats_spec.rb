@@ -30,14 +30,11 @@ RSpec.describe Dashboard::Stats do
     subject(:stats) { described_class.call(account: account) }
 
     context "with no agent runs" do
-      it "returns zero counts" do
+      it "returns zero counts and failure rate", :aggregate_failures do
         expect(stats[:run_volume][:total]).to eq(0)
         expect(stats[:run_volume][:last_7_days]).to eq(0)
         expect(stats[:run_volume][:last_30_days]).to eq(0)
         expect(stats[:run_volume][:active]).to eq(0)
-      end
-
-      it "returns zero failure rate" do
         expect(stats[:run_volume][:failure_rate]).to eq(0.0)
       end
 
@@ -58,18 +55,12 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:duration_percentiles][:avg]).to eq(0)
       end
 
-      it "returns zero cost and tokens" do
+      it "returns zero cost and tokens with empty execution breakdowns", :aggregate_failures do
         expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(0)
         expect(stats[:cost_and_tokens][:total_tokens]).to eq(0)
-      end
-
-      it "returns empty agent type, runner, and project breakdowns" do
         expect(stats[:runs_by_agent_type]).to be_empty
         expect(stats[:runs_by_runner]).to be_empty
         expect(stats[:runs_by_project]).to be_empty
-      end
-
-      it "returns zero runner fallback stats" do
         fs = stats[:runner_fallback_stats]
         expect(fs[:total_runs]).to eq(0)
         expect(fs[:fallback_count]).to eq(0)
@@ -132,26 +123,14 @@ RSpec.describe Dashboard::Stats do
           created_at: 1.hour.ago)
       end
 
-      it "counts total runs" do
+      it "counts runs by time window and status with their failure rate", :aggregate_failures do
         expect(stats[:run_volume][:total]).to eq(5)
-      end
-
-      it "counts runs in time windows" do
         expect(stats[:run_volume][:last_7_days]).to eq(4)
         expect(stats[:run_volume][:last_30_days]).to eq(5)
-      end
-
-      it "counts active runs" do
         expect(stats[:run_volume][:active]).to eq(1)
-      end
-
-      it "groups runs by status" do
         expect(stats[:run_volume][:by_status]["completed"]).to eq(3)
         expect(stats[:run_volume][:by_status]["failed"]).to eq(1)
         expect(stats[:run_volume][:by_status]["running"]).to eq(1)
-      end
-
-      it "calculates failure rate" do
         # 1 failed / (3 completed + 1 failed) = 25.0%
         expect(stats[:run_volume][:failure_rate]).to eq(25.0)
       end
@@ -200,16 +179,10 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:phase_breakdown]["queue"][:sample_size]).to eq(1)
       end
 
-      it "calculates cost totals" do
+      it "calculates cost and token totals and per-run averages", :aggregate_failures do
         expect(stats[:cost_and_tokens][:total_cost_cents]).to eq(400)
-      end
-
-      it "calculates token totals" do
         # (1000+500) + (2000+1000) + (5000+2500) = 12000
         expect(stats[:cost_and_tokens][:total_tokens]).to eq(12_000)
-      end
-
-      it "calculates per-run averages for completed runs" do
         # 400 cents / 3 completed = 133
         expect(stats[:cost_and_tokens][:avg_cost_per_run_cents]).to eq(133)
         # 12000 tokens / 3 completed = 4000

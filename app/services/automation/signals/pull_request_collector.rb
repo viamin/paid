@@ -52,11 +52,18 @@ module Automation
       # Returns the raw check-run hashes the scanner already consumes
       # (preserving +output_text+, +job_id+ and the raw status/conclusion
       # strings the transient-failure detector relies on). See the class
-      # docs for why this signal stays client-backed.
+      # docs for why this signal stays client-backed. The Checks API can omit
+      # Actions runs waiting for approval, so include workflow runs in the
+      # signal rather than presenting a partial check list as complete CI.
+      # @spec AUTO-MERGE-014
       def fetch_check_runs(pr_data:)
         return [] unless pr_data
 
-        client.check_runs_for_ref(providers.repo, pr_data.head.sha)
+        sha = pr_data.head.sha
+        checks = client.check_runs_for_ref(providers.repo, sha)
+        workflow_runs = client.workflow_runs_for_sha(providers.repo, sha)
+
+        checks + workflow_runs.map { |run| workflow_run_check(run) }
       rescue GithubClient::AuthenticationError
         raise
       rescue GithubClient::Error => e
@@ -353,6 +360,21 @@ module Automation
       end
 
       private
+
+      def workflow_run_check(run)
+        conclusion = run[:conclusion].to_s
+        prefix = conclusion == "action_required" ? "Workflow approval required" : "Workflow"
+
+        {
+          id: "workflow-run-#{run[:id]}",
+          workflow_run_id: run[:id],
+          name: "#{prefix}: #{run[:name]}",
+          status: run[:status],
+          conclusion: run[:conclusion],
+          details_url: run[:html_url],
+          workflow_run: true
+        }
+      end
 
       def pull_request_merged?(pr_data)
         dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?

@@ -32,6 +32,7 @@ RSpec.describe DependabotAutoMergeJob do
       pull_requests: [ dependabot_pr ],
       pull_request: dependabot_pr,
       check_runs_for_ref: green_checks,
+      workflow_runs_for_sha: [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success", head_sha: "def456" } ],
       combined_status: { state: "success", total_count: 1 },
       recent_issue_comments: []
     )
@@ -530,6 +531,7 @@ RSpec.describe DependabotAutoMergeJob do
           pull_requests: [ dependabot_pr ],
           pull_request: dependabot_pr,
           check_runs_for_ref: green_checks,
+          workflow_runs_for_sha: [ { id: 1, workflow_id: 1, name: "CI", status: "completed", conclusion: "success", head_sha: "def456" } ],
           combined_status: { state: "success", total_count: 1 },
           recent_issue_comments: []
         )
@@ -866,7 +868,7 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
-    it "merges when both check_runs and workflow_runs are forbidden but combined_status reports success" do
+    it "skips when both check_runs and workflow_runs are forbidden despite a successful combined status" do
       allow(client).to receive(:check_runs_for_ref).and_raise(
         GithubClient::ApiError.new("Forbidden", status: 403)
       )
@@ -877,7 +879,7 @@ RSpec.describe DependabotAutoMergeJob do
 
       described_class.perform_now(project.id)
 
-      expect(client).to have_received(:merge_pull_request)
+      expect(client).not_to have_received(:merge_pull_request)
     end
 
     it "skips when check_runs fails with a non-403 error" do

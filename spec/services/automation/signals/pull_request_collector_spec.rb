@@ -111,6 +111,9 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       allow(client).to receive(:check_runs_for_ref)
         .with("acme/widgets", "abc123")
         .and_return(checks)
+      allow(client).to receive(:workflow_runs_for_sha)
+        .with("acme/widgets", "abc123")
+        .and_return([])
 
       # Regression: the check-run signal stays client-backed so the
       # client-computed output_text (and raw status/conclusion strings)
@@ -122,6 +125,22 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(result).to eq(checks)
       expect(result.first[:output_text]).to include("ENOTFOUND")
       expect(result.first[:status]).to eq("completed")
+    end
+
+    # @spec AUTO-MERGE-014
+    it "includes an approval-waiting Actions run that the Checks API omitted" do
+      allow(client).to receive(:check_runs_for_ref).with("acme/widgets", "abc123").and_return([
+        { id: 1, name: "CodeQL", status: "completed", conclusion: "success" }
+      ])
+      allow(client).to receive(:workflow_runs_for_sha).with("acme/widgets", "abc123").and_return([
+        { id: 11, workflow_id: 1, name: "CI", status: "completed", conclusion: "action_required", head_sha: "abc123" }
+      ])
+
+      result = collector.fetch_check_runs(pr_data: pr_snapshot)
+
+      expect(result).to include(
+        hash_including(name: "Workflow approval required: CI", conclusion: "action_required", workflow_run_id: 11)
+      )
     end
 
     it "returns nil and logs a warning when the client raises" do

@@ -138,6 +138,7 @@ class GithubClient
     def remove_label_from_issue(...) = write_or_suppressed { __getobj__.remove_label_from_issue(...) }
     def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
     def pull_request_reviews(...) = __getobj__.pull_request_reviews(...)
+    def workflow_runs_for_sha(...) = __getobj__.workflow_runs_for_sha(...)
 
     # Issue creation is not itself a label write, so it must survive
     # suppression — but the create request's `labels:` argument adds labels

@@ -220,7 +220,8 @@ RSpec.describe Issues::RootPrerequisiteRanking do
 
   # @spec PARTIAL-CLOSEOUT-048
   it "seeds bounded graph loading from visible queue work" do
-    500.times { |number| issue(number + 10) }
+    stub_const("#{described_class}::MAX_NODES", 5)
+    described_class::MAX_NODES.times { |number| issue(number + 10) }
     root = issue(1_000)
     blocked = issue(1_001)
     depends(blocked, root)
@@ -232,8 +233,9 @@ RSpec.describe Issues::RootPrerequisiteRanking do
 
   # @spec PARTIAL-CLOSEOUT-048
   it "reports unavailable coverage instead of ranking a truncated relevant graph" do
+    stub_const("#{described_class}::MAX_NODES", 5)
     blocked = issue(1)
-    500.times { |number| depends(blocked, issue(number + 10)) }
+    described_class::MAX_NODES.times { |number| depends(blocked, issue(number + 10)) }
 
     result = described_class.call(account:, queue_issue_ids: [ blocked.id ])
 
@@ -347,7 +349,7 @@ RSpec.describe Issues::RootPrerequisiteRanking do
 
   # @spec PARTIAL-CLOSEOUT-048
   it "evaluates admission only for roots that can appear in the bounded ranking" do
-    queue_issue_ids = 12.times.flat_map do |project_number|
+    queue_issue_ids = (described_class::MAX_RANKED_ROOTS + 1).times.flat_map do |project_number|
       candidate_project = create(:project, account:, auto_pick_enabled: true, active: true)
       root = issue((project_number * 100) + 1, project: candidate_project)
       (project_number + 1).times.map do |reach_number|
@@ -370,7 +372,8 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   # @spec PARTIAL-CLOSEOUT-048
   it "loads a maximum-depth linear graph in a bounded number of queries" do
     chain = 500.times.map { |number| issue(number + 1) }
-    chain.each_cons(2) { |prerequisite, dependent| depends(dependent, prerequisite) }
+    # Leaf-first construction avoids walking a growing ancestor chain during cycle validation.
+    chain.each_cons(2).reverse_each { |prerequisite, dependent| depends(dependent, prerequisite) }
     queries = []
     subscriber = lambda do |*args|
       payload = ActiveSupport::Notifications::Event.new(*args).payload

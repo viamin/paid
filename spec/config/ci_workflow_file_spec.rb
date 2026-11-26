@@ -45,6 +45,24 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
+  # @spec TEST-SUITE-026
+  it "runs the complete MCP write-tool inventory contract before expensive shards" do
+    preflight = workflow.fetch("jobs").fetch("mcp-write-tool-inventory")
+    normalize_key_step = preflight.fetch("steps").find { |step| step["name"] == "Normalize test master key" }
+    contract_step = preflight.fetch("steps").find { |step| step["name"] == "Check MCP write-tool inventory" }
+
+    expect(preflight.fetch("timeout-minutes")).to be_between(1, 60)
+    expect(preflight.fetch("steps").first.fetch("uses")).to eq("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+    expect(normalize_key_step).to include("if" => "env.RAILS_TEST_KEY == ''")
+    expect(normalize_key_step.fetch("env")).to include("RAILS_MASTER_KEY_FALLBACK" => "${{ secrets.RAILS_MASTER_KEY }}")
+    expect(normalize_key_step.fetch("run")).to include('printf \'%s\\n\' "$RAILS_MASTER_KEY_FALLBACK"')
+    expect(contract_step.fetch("run")).to include("bin/rspec spec/mcp/tools/registry_spec.rb")
+    expect(contract_step.fetch("run")).to include("elapsed_seconds")
+    shards = workflow.fetch("jobs").fetch("test-shards")
+    expect(shards.fetch("needs")).to include("mcp-write-tool-inventory")
+    expect(shards.fetch("if")).not_to include("always()")
+  end
+
   # @spec TEST-SUITE-020
   it "bounds dependency installation to the external process-group supervisor in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
@@ -58,12 +76,29 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
-    expect(job.fetch("needs")).to eq([ "test-shards", "shard-status", "shard-recovery" ])
+    expect(job.fetch("needs")).to eq([ "mcp-write-tool-inventory", "test-shards", "shard-status", "shard-recovery" ])
     expect(job.fetch("if")).to include("always()")
     gate = job.fetch("steps").first.fetch("run")
     %w[success failure cancelled skipped].each do |result|
-      _stdout, _stderr, status = Open3.capture3({ "SHARD_RESULT" => result }, "sh", "-c", gate)
+      _stdout, _stderr, status = Open3.capture3(
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => result },
+        "sh", "-c", gate
+      )
       expect(status.success?).to eq(result == "success")
+    end
+  end
+
+  # @spec TEST-SUITE-026
+  it "fails the stable test check when a trusted preflight fails" do
+    job = workflow.fetch("jobs").fetch("test")
+    gate = job.fetch("steps").first.fetch("run")
+
+    [ "failure", "cancelled" ].each do |result|
+      _stdout, _stderr, status = Open3.capture3(
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => result, "SHARD_RESULT" => "skipped" },
+        "sh", "-c", gate
+      )
+      expect(status).not_to be_success
     end
   end
 
@@ -82,7 +117,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     ]
 
     expectations.each do |shards, classification, recovery, failing, expected|
-      env = { "SHARD_RESULT" => shards }
+      env = { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => shards }
       env["SHARD_STATUS_RESULT"] = classification if classification
       env["RECOVERY_RESULT"] = recovery if recovery
       env["FAILING_SHARDS"] = failing unless failing.nil?
