@@ -507,6 +507,24 @@ regressions. Reports: `execute-consolidation-{before,after}.{json,log}`,
 their raw coverage directories, `execute-same-input-state.json`, and
 `execute-consolidation-mutant-{response,completion,delta}.json`.
 
+Token tracking applies the same consolidation to four equal 1,000/500-token
+calls and two equal cost calls. Compound change matchers retain each run,
+project, and metric-count delta; metric content and both cost assertions remain.
+Model-specific metadata, budget, repeated-call, and other input scenarios stay
+separate. All 49 original and 45 retained examples pass with exactly the same
+7,063 covered application lines. Factory calls fall from 100 to 92. Injected
+run-input, run-output, project-token, metric-count, run-cost, and project-cost
+defects each produce an assertion failure in the retained examples.
+The full-file timings, 25.05 and 46.73 seconds, do not establish a speedup.
+Per-run factory time also changes substantially, so planning and environment
+variance still need investigation. Evidence: `token-consolidation-{before,after}.{json,log}`,
+their raw coverage directories, and `token-consolidation-mutants-state.json`.
+An unchanged 45-example repeat passes in 25.79 seconds; SQL instrumentation
+records 3,875 events totaling 8.50 seconds. A metadata snapshot records a
+background vacuum of the core fixture tables, but its relationship to the
+timing change remains a hypothesis. Reports: `token-consolidation-repeat.json`,
+`token-consolidation-query-cost.json`, and `late-database-statistics.txt`.
+
 ### Global settings evaluated
 
 A larger coverage-enabled YJIT comparison passes all 599 examples in each
@@ -540,9 +558,19 @@ and example counts differ, so these CI samples do not isolate a causal
 performance change. The whole-suite 50% target remains unproven.
 Raw artifacts: `/tmp/paid-testprof-audit/ci-5475-620f831ad/`.
 
+The stacked query-loading PR also passes full CI, run `45795696680`, at head
+`fb4f95183f28882e12f920166da98dd698d19393`: 31,282 examples, zero failures,
+five existing pending cases, and 95% coverage. Its summed shard time is
+4,482.31 seconds; the longest shard takes 976.43 seconds. All six artifact
+digests match. Its feature-branch base omits 19 newer main-branch examples from
+the preceding checkpoint and adds the loading regression; those 19 examples
+account for only 4.70 seconds in the preceding run. These successful runs
+remain insufficient to attribute the timing difference or prove halving.
+Raw artifacts: `/tmp/paid-testprof-audit/ci-5481-fb4f95183/`.
+
 The working-patch simplicity pass against
 `fb4f95183f28882e12f920166da98dd698d19393` reuses the existing fixture context
-and combines only identical execution inputs. It introduces no fixture
+and combines only identical execution and tracking inputs. It introduces no fixture
 registry, cleaning strategy, global aggregation, or runtime setting. LID remains
 Full, version 1.3.0, under TEST-SUITE-011/017. Full CI remains required for the
 new fixture and consolidation patch.
