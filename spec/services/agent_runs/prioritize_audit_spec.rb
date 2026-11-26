@@ -73,6 +73,36 @@ RSpec.describe AgentRuns::PrioritizeAudit do # @spec QUEUE-TIER-007
     expect(agent_run.reload.operator_priority_requested_at).to be_nil
   end
 
+  [
+    { temporal_workflow_id: "retained-workflow" },
+    { started_at: 1.minute.ago },
+    { container_id: "retained-container" },
+    { runner_handle: { "identifier" => "retained-runner" } },
+    { service_container_ids: [ "retained-service" ] },
+    { worktree_path: "/private/retained-worktree" }
+  ].each do |ownership|
+    it "leaves retained #{ownership.keys.first} ownership unchanged" do # @spec QUEUE-TIER-007
+      agent_run.update!(ownership)
+      retained = agent_run.attributes.slice(*ownership.keys.map(&:to_s))
+
+      expect(prioritize).to be(false)
+
+      expect(agent_run.reload.attributes.slice(*retained.keys)).to eq(retained)
+      expect(agent_run.operator_priority_requested_at).to be_nil
+      expect(account.account_activity_events.where(action: "agent_run.audit_priority_requested")).to be_empty
+    end
+  end
+
+  it "leaves an active associated worktree unchanged" do # @spec QUEUE-TIER-007
+    worktree = create(:worktree, :active, project:, agent_run:)
+
+    expect(prioritize).to be(false)
+
+    expect(worktree.reload).to be_active
+    expect(agent_run.reload.operator_priority_requested_at).to be_nil
+    expect(account.account_activity_events.where(action: "agent_run.audit_priority_requested")).to be_empty
+  end
+
   it "enforces the project run permission within the actor's account" do
     policy = instance_double(ProjectPolicy, run_agent?: false)
     allow(ProjectPolicy).to receive(:new).with(actor, project).and_return(policy)

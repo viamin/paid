@@ -58,10 +58,7 @@ module AgentRuns
     end
 
     def unclaimed_execution?
-      agent_run.temporal_workflow_id.blank? && agent_run.started_at.blank? &&
-        agent_run.container_id.blank? && agent_run.runner_handle.blank? &&
-        agent_run.worktree_path.blank? && agent_run.service_container_ids.blank? &&
-        agent_run.worktree.nil?
+      UnclaimedExecution.eligible?(agent_run)
     end
 
     def source_still_eligible?

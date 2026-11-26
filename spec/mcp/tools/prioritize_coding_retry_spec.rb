@@ -27,4 +27,14 @@ RSpec.describe Tools::PrioritizeCodingRetry do # @spec QUEUE-TIER-008
 
     expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
   end
+
+  it "refuses a retained queued retry after confirmation" do # @spec QUEUE-TIER-008
+    agent_run.update!(container_id: "retained-container")
+
+    expect {
+      tool.call(project_id: project.id, agent_run_id: agent_run.id, confirmed: true)
+    }.to raise_error(ArgumentError, /no longer eligible/)
+
+    expect(agent_run.reload).to have_attributes(container_id: "retained-container", operator_coding_priority_requested_at: nil)
+  end
 end

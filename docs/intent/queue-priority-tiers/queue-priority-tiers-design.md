@@ -61,6 +61,14 @@ and one actor audit event, then wakes the scheduler. The request is available
 from the queued PR action and the confirmation-gated MCP tool; sweeps, issue
 text, comments, and automatic retry code cannot set it.
 
+The operator-priority entry-point inventory is deliberately narrow: acceptance
+audit priority is reached by the operator-originated acceptance request through
+`Issues::RequestContinuation`; coding retry priority is reached by the queued
+PR action and `Tools::PrioritizeCodingRetry`; first-implementation priority is
+reached by the run-detail confirmation form and
+`Tools::PrioritizeFirstImplementation`. Each path delegates ownership and
+lineage decisions to its named service under the selected run's lock.
+
 Only automatic coding work that is a PR continuation, an implementation
 continuation request, or a bounded root retry evidenced by retained issue
 attempt history is eligible. Root evidence includes either a positive automatic
@@ -68,11 +76,15 @@ failure streak or a preceding same-issue manual timeout; the latter recognizes
 an already-queued automatic root without fabricating automatic failure,
 continuation, or source-PR lineage. Manual, audit-only,
 untrusted-originated, claimed, running, terminal, and rate-limited work is
-refused. Repeated and concurrent requests converge on the first timestamp and
-audit event. The marker ranks after manual and operator-prioritized audit work
-and before ordinary PR-continuation and fresh-issue tiers. Project/user
-fair-share keys remain earlier scheduler sort keys, so the request advances
-the retry only inside its existing fairness cohort.
+refused. Unclaimed means no Temporal workflow or start timestamp, retained
+container or runner handle, service-container reference, worktree path, or
+associated worktree. Retained markers are refused under the same run lock and
+are not cleaned up or interrupted by the priority request. Repeated and
+concurrent requests converge on the first timestamp and audit event. The
+marker ranks after manual and operator-prioritized audit work and before
+ordinary PR-continuation and fresh-issue tiers. Project/user fair-share keys
+remain earlier scheduler sort keys, so the request advances the retry only
+inside its existing fairness cohort.
 
 The marker is scheduling state only. It never creates, cancels, restarts, or
 claims a run and never changes trigger, execution origin, runner/model/privacy
@@ -124,6 +136,13 @@ the actor, locks the run, and records `operator_priority_requested_at` only for
 an unclaimed queued report-only audit. It records the actor and original
 request/run identity through the account activity audit. Repeated requests keep
 the first timestamp and audit event. Automatic joins do not request priority.
+
+For this audit path, unclaimed has the same execution-ownership meaning as the
+operator coding paths: no Temporal workflow or start timestamp, retained
+container or runner handle, service-container reference, worktree path, or
+associated worktree. A queued audit with any such marker is refused under the
+run lock without priority or audit writes; the request does not clean up or
+interrupt retained resources.
 
 The timestamp is scheduling state. The original trigger, continuation evidence,
 policy signature, runner and retry lineage retain their original values, and
