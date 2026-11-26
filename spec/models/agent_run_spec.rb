@@ -4229,7 +4229,7 @@ RSpec.describe AgentRun do
   end
 
   describe ".retry_trigger_type_for" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
 
     it "inherits manual priority from the latest unsuccessful PR run for the same goal" do
       create(:agent_run, :timeout, :manual, project: project,
@@ -4325,7 +4325,7 @@ RSpec.describe AgentRun do
 
   # @spec LID-RUNS-004
   describe ".planning_run_for_pr" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
 
     it "returns the lid_planning run that opened the PR" do
       run = create(:agent_run, :lid_planning_goal, :completed, project: project, pull_request_number: 42)
@@ -5008,7 +5008,7 @@ RSpec.describe AgentRun do
   end
 
   describe "broadcast callbacks" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
 
     it "broadcasts all updates on create (status changes)" do
       allow(project).to receive(:broadcast_agent_runs_update)
@@ -6314,7 +6314,7 @@ RSpec.describe AgentRun do
   end
 
   describe "dispatch circuit breaker outcome callback" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
     let(:account) { project.account }
 
     it "enqueues DispatchCircuitBreakerOutcomeJob with success on a completed transition" do
@@ -6372,7 +6372,7 @@ RSpec.describe AgentRun do
 
   # @spec LIVE-PREVIEW-003
   describe "synthetic operational run finish callbacks" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
 
     it "flags synthetic operational runs, not their shared agent_type" do
       synthetic = create(:agent_run, :running, :synthetic, project: project)
@@ -6459,7 +6459,7 @@ RSpec.describe AgentRun do
 
   # @spec LIVE-PREVIEW-003
   describe "synthetic run visibility and totals" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
 
     describe ".excluding_synthetic" do
       it "omits synthetic operational runs" do
@@ -6799,7 +6799,6 @@ RSpec.describe AgentRun do
   end
 
   describe "counter caches" do
-    let(:project) { create(:project) }
     let(:inserted_agent_run_timestamp) { Time.current }
 
     def insert_agent_run_without_callbacks(project:, status:, now:)
@@ -6831,6 +6830,8 @@ RSpec.describe AgentRun do
     end
 
     describe "agent_runs_count" do
+      include_context "with stable project"
+
       it "increments on create" do
         expect { create(:agent_run, project: project) }
           .to change { project.reload.agent_runs_count }.by(1)
@@ -6857,6 +6858,8 @@ RSpec.describe AgentRun do
     end
 
     describe "completed_agent_runs_count" do
+      include_context "with stable project"
+
       it "does not change when a non-completed run is created" do
         expect { create(:agent_run, project: project, status: "queued") }
           .not_to change { project.reload.completed_agent_runs_count }
@@ -7130,7 +7133,7 @@ RSpec.describe AgentRun do
     end
 
     describe "scopes" do
-      let(:project) { create(:project) }
+      include_context "with stable project"
 
       let(:local_run) do
         run = create(:agent_run, :completed, project: project, runner_backend: "local")
