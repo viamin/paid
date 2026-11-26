@@ -194,12 +194,11 @@ def readiness_paths(cohort, directory):
         raise AdmissionError("readiness directory contains control characters")
     if cohort["agent"] != cohort["poll"]:
         return {role: str(directory / f"paid-worker-ready-temporal_worker-{role}") for role in cohort}
-    candidates = [directory / "paid-worker-ready-temporal_worker",
-                  directory / "paid-worker-ready-temporal_worker-both"]
-    present = [path for path in candidates if path.is_file()]
-    if len(present) != 1:
-        raise AdmissionError("both-mode worker readiness marker is ambiguous or unavailable")
-    return {role: str(present[0]) for role in cohort}
+    legacy = directory / "paid-worker-ready-temporal_worker"
+    canonical = directory / "paid-worker-ready-temporal_worker-both"
+    if legacy.is_file() or not canonical.is_file():
+        raise AdmissionError("both-mode worker readiness marker is legacy or unavailable")
+    return {role: str(canonical) for role in cohort}
 
 
 def journal_context(workspace):

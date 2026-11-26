@@ -119,11 +119,12 @@ actual worker descendants of the live supervisor entries, with PID/start-time,
 workspace and launch-mode checks. Another genuine worker's marker cannot cover
 the supervised process. Missing, uncovered, duplicate or changing workers defer.
 One both-mode worker can cover both logical roles without double-locking its
-physical admission inode. Its default readiness marker is the unsuffixed
-`paid-worker-ready-temporal_worker` path; an explicitly configured
-`TEMPORAL_WORKER_MODE=both` worker publishes
-`paid-worker-ready-temporal_worker-both`. The controller selects the one live
-producer path for the current cohort, while fencing both paths before a target
+physical admission inode. `bin/temporal_worker` binds its resolved launch mode
+before readiness publication, so implicit and explicit `both` launches publish
+the canonical `paid-worker-ready-temporal_worker-both` path. An old unsuffixed
+`paid-worker-ready-temporal_worker` marker is legacy evidence that defers
+admission rather than an alternate producer path. The controller fences both
+paths before a target
 can start, and coalesces that physical path for both logical roles.
 
 The standalone controller closes renewal on every role before waiting for

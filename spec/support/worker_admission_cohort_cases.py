@@ -61,8 +61,7 @@ class CohortTest(unittest.TestCase):
     def test_both_mode_readiness_paths_match_the_actual_ruby_producer_for_default_and_explicit_launches(self):
         source = Path(__file__).resolve().parents[2]
         cohort_identity = {role: {"pid": 12, "start_ticks": 102} for role in ("poll", "agent")}
-        for configured_mode, expected in ((None, "paid-worker-ready-temporal_worker"),
-                                         ("both", "paid-worker-ready-temporal_worker-both")):
+        for arguments, configured_mode in (([], None), (["--mode=both"], "both")):
             with self.subTest(configured_mode=configured_mode):
                 environment = dict(os.environ)
                 if configured_mode is None:
@@ -70,15 +69,25 @@ class CohortTest(unittest.TestCase):
                 else:
                     environment["TEMPORAL_WORKER_MODE"] = configured_mode
                 producer_name = subprocess.check_output(
-                    ["bundle", "exec", "ruby", "-Ilib", "-ractive_support/core_ext/object/blank", "-rpaid/worker_readiness", "-e",
-                     '$PROGRAM_NAME = "bin/temporal_worker"; print Paid::WorkerReadiness.default_file_name'],
+                    ["bundle", "exec", "ruby", "-Ilib", "-ractive_support/core_ext/object/blank",
+                     "-rpaid/temporal_worker_config", "-rpaid/worker_readiness", "-e",
+                     '$PROGRAM_NAME = "bin/temporal_worker"; Paid::TemporalWorkerConfig.bind_launch_mode!(ARGV, ENV); print Paid::WorkerReadiness.default_file_name',
+                     "--",
+                     *arguments],
                     cwd=source, env=environment, text=True
                 )
-                self.assertEqual(producer_name, expected)
+                self.assertEqual(producer_name, "paid-worker-ready-temporal_worker-both")
                 (self.root / producer_name).touch()
                 paths = cohort.readiness_paths(cohort_identity, self.root)
                 self.assertEqual(paths, {role: str(self.root / producer_name) for role in ("poll", "agent")})
                 (self.root / producer_name).unlink()
+
+    def test_legacy_unsuffixed_both_marker_defers_instead_of_acknowledging_an_unknown_contract(self):
+        cohort_identity = {role: {"pid": 12, "start_ticks": 102} for role in ("poll", "agent")}
+        (self.root / "paid-worker-ready-temporal_worker").touch()
+
+        with self.assertRaises(AdmissionError):
+            cohort.readiness_paths(cohort_identity, self.root)
 
     def test_conflicting_launch_mode_and_environment_are_unknown(self):
         self.process(12, 11, 102, mode="poll", environment_mode="agent")

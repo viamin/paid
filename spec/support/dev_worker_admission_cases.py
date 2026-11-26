@@ -48,13 +48,12 @@ sleep 30
         (self.root / "bin/git").chmod(0o755)
         self.start_workers("a" * 40)
 
-    def start_workers(self, revision, both=False, explicit_both=False):
+    def start_workers(self, revision, both=False):
         current = []
         modes = ("both",) if both else ("poll", "agent")
         for role in modes:
             environment = dict(os.environ, TMPDIR=str(self.root / "tmp"), FIXTURE_REVISION=revision)
-            if not both or explicit_both:
-                environment["TEMPORAL_WORKER_MODE"] = role
+            environment["TEMPORAL_WORKER_MODE"] = role
             worker = subprocess.Popen(["ruby", "bin/temporal_worker", "--mode=" + role], cwd=self.root,
                                       env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             self.workers.append(worker)
@@ -200,12 +199,12 @@ worker_admission_resume ''' + "b" * 40 + "\n")
         self.assertEqual(journal["phase"], "resumed")
         self.assertEqual(journal["update_phase"], "complete")
 
-    def replacement(self, before_both, after_both, before_explicit_both=False, after_explicit_both=False):
+    def replacement(self, before_both, after_both):
         if before_both:
             for worker in self.workers:
                 worker.terminate()
                 worker.wait(timeout=2)
-            self.start_workers("a" * 40, both=True, explicit_both=before_explicit_both)
+            self.start_workers("a" * 40, both=True)
         old = [worker for worker in self.workers if worker.poll() is None]
         script = self.script("worker_admission_begin " + "b" * 40 + '''
 worker_admission_before_stop
@@ -220,7 +219,7 @@ worker_admission_resume ''' + "b" * 40 + "\n")
         for worker in old:
             worker.terminate()
             worker.wait(timeout=2)
-        self.start_workers("b" * 40, both=after_both, explicit_both=after_explicit_both)
+        self.start_workers("b" * 40, both=after_both)
         self.assertEqual(len(self.requests()), 4)
         (self.root / "go").touch()
         self.finish(script)
@@ -232,8 +231,8 @@ worker_admission_resume ''' + "b" * 40 + "\n")
     def test_split_to_both_replacement_covers_target_launch_paths(self):
         self.replacement(False, True)
 
-    def test_explicit_both_replacement_uses_the_producer_marker_and_keeps_every_target_path_fenced(self):
-        self.replacement(True, True, before_explicit_both=True, after_explicit_both=True)
+    def test_both_replacement_uses_the_producer_marker_and_keeps_every_target_path_fenced(self):
+        self.replacement(True, True)
 
     def test_stopped_recovery_resumes_target_after_repeating_incomplete_setup(self):
         script = self.script("worker_admission_begin " + "b" * 40 + '''

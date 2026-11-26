@@ -26,6 +26,12 @@ module Paid
       mode
     end
 
+    # Make the effective CLI/default mode available to readiness publishing.
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
+    def bind_launch_mode!(arguments, env = ENV)
+      launch_mode(arguments, env).tap { |mode| env["TEMPORAL_WORKER_MODE"] = mode }
+    end
+
     def validate_worker_mode!(worker_mode)
       return worker_mode if VALID_MODES.include?(worker_mode)
 
