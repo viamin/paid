@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Anomalies::UpdateBaseline do
-  let(:project) { create(:project) }
+  include_context "with stable project"
 
   describe ".call" do
     context "with fewer than MIN_SAMPLE_SIZE completed runs" do
@@ -29,27 +29,20 @@ RSpec.describe Anomalies::UpdateBaseline do
         end
       end
 
-      it "creates baselines for all metric types" do
+      it "creates all baseline metrics with token distribution statistics", :aggregate_failures do
         described_class.call(project)
         expect(project.project_baselines.count).to eq(4)
         expect(project.project_baselines.pluck(:metric_name).sort).to eq(
           ProjectBaseline::METRIC_NAMES.sort
         )
-      end
-
-      it "calculates correct mean for tokens_total" do
-        described_class.call(project)
         baseline = project.project_baselines.find_by(metric_name: "tokens_total")
         # tokens: (5000+2500), (6000+3000), (7000+3500), (8000+4000), (9000+4500), (10000+5000)
         # = 7500, 9000, 10500, 12000, 13500, 15000
         # mean = 11250
         expect(baseline.mean).to be_within(0.1).of(11250.0)
-      end
-
-      it "calculates correct standard deviation" do
-        described_class.call(project)
-        baseline = project.project_baselines.find_by(metric_name: "tokens_total")
         expect(baseline.standard_deviation).to be > 0
+        expect(baseline.sample_count).to eq(6)
+        expect(baseline.p95).to be > baseline.mean
       end
 
       it "updates existing baselines" do
@@ -66,18 +59,6 @@ RSpec.describe Anomalies::UpdateBaseline do
 
         described_class.call(project)
         expect(ProjectBaseline.count).to eq(initial_count)
-      end
-
-      it "sets sample_count" do
-        described_class.call(project)
-        baseline = project.project_baselines.find_by(metric_name: "tokens_total")
-        expect(baseline.sample_count).to eq(6)
-      end
-
-      it "sets p95" do
-        described_class.call(project)
-        baseline = project.project_baselines.find_by(metric_name: "tokens_total")
-        expect(baseline.p95).to be > baseline.mean
       end
 
       it "includes runs with partial token metrics in the token baseline" do

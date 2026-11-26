@@ -4,7 +4,8 @@ require "rails_helper"
 
 RSpec.describe AgentRuns::CreateFollowup do
   describe ".call" do
-    let(:project) { create(:project) }
+    include_context "with stable project"
+
     let(:issue) { create(:issue, project: project) }
     let(:runner) { create(:runner, user: project.created_by) }
     let(:initiating_user) { create(:user, account: project.account) }
@@ -17,37 +18,17 @@ RSpec.describe AgentRuns::CreateFollowup do
     end
 
     context "when goal is create_pr" do
-      it "creates a queued create_pr run" do
+      it "creates a queued automatic create_pr run with inherited context", :aggregate_failures do
         followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
 
         expect(followup).to be_persisted
         expect(followup.goal).to eq("create_pr")
         expect(followup.status).to eq("queued")
-      end
-
-      it "inherits project and issue from the analysis run" do
-        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
-
         expect(followup.project).to eq(project)
         expect(followup.issue).to eq(issue)
-      end
-
-      it "inherits runner from the analysis run" do
-        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
-
         expect(followup.runner).to eq(runner)
-      end
-
-      it "sets trigger_type to automatic and auto_pick to true" do
-        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
-
         expect(followup.trigger_type).to eq("automatic")
         expect(followup.auto_pick).to be true
-      end
-
-      it "carries forward the original initiating user" do
-        followup = described_class.call(agent_run: analysis_run, goal: "create_pr")
-
         expect(followup.initiating_user).to eq(initiating_user)
       end
     end
