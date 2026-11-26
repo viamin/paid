@@ -23,6 +23,22 @@
   *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_client`,
   `Paid.temporal_worker_client`.
 
+- [x] **TEMPORAL-ORCHESTRATION-022** — When a prompt-evolution or
+  coordination-policy-evolution workflow is replayed from a `json/plain`
+  history, the worker and replay verifier SHALL use
+  `Paid::TemporalDataConverter` before workflow code runs. The compatibility
+  path SHALL preserve the workflow's original identity, input scope, activity
+  routing, retry policies, budget decisions, and retained business work; it
+  SHALL NOT cancel, terminate, reset, restart, or mark the execution complete.
+  A `RUNNING` execution or an empty pending-activity list SHALL NOT be reported
+  as proof of forward progress. An opaque historical workflow-task failure is
+  evidence of its recorded failure only: an operator SHALL retain the exact
+  run identity, loaded worker identity, decoded failure, and a before/after
+  progress receipt before any separately authorized recovery action.
+  *Tests:* `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_worker_client`,
+  `bin/temporal_worker`.
+
 ## Worker Resource Sizing
 
 - [x] **TEMPORAL-ORCHESTRATION-013** — When a Temporal worker receives a first

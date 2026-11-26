@@ -31,6 +31,7 @@ module Paid
       end
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-022
     def temporal_worker_client
       @temporal_worker_mutex.synchronize do
         unless defined?(@temporal_worker_client)

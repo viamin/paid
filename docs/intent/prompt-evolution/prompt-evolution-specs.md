@@ -30,3 +30,11 @@
   valid and the recovery action stays executing until promotion.
   *Tests:* `spec/models/ab_test_complete_spec.rb`.
   *Code:* `AbTest`, `QualityRecoveryAction`.
+
+- [x] **PROMPT-EVOLUTION-006** — When a `PromptEvolutionWorkflow` history is
+  replayed, Paid SHALL use `Paid::TemporalDataConverter` so the recorded
+  initial activity command remains compatible. The replay path SHALL preserve
+  the existing execution identity, project scope, retained work, and budgets,
+  and SHALL NOT cancel, reset, terminate, replace, or complete the execution.
+  *Tests:* `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_worker_client`.
