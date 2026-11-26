@@ -272,7 +272,9 @@ module Prompts
       # marker, and do not claim merge authorization. Keep the reason concise and
       # sanitized (for example "unavailable git dependency", "bounded setup timed
       # out", or "insufficient remaining time for bounded setup"); do not include
-      # raw command output.
+      # raw command output. Replace the sample reason below with the concise
+      # category matching the observed terminal outcome. Never post the sample's
+      # unavailable-git-dependency reason when it is not true.
       tmpfile=$(mktemp)
       cat > "$tmpfile" <<'REVIEW_JSON'
       {
