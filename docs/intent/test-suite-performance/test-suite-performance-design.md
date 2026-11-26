@@ -25,6 +25,11 @@ sections in every component example.
 
 ## Execution
 
+The runner startup-budget regression freezes its wall clock within the example,
+so setup latency cannot consume the exact remaining budget under assertion.
+The scope restores time afterward; application deadline calculations and both
+timeout expectations remain unchanged (TEST-SUITE-029).
+
 Partition all non-system, non-performance spec files into five deterministic,
 disjoint groups. Assign largest source files first to the least-loaded group,
 using file bytes as a cheap structural estimate, not a correctness judgment or
