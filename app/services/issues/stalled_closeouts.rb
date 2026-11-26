@@ -30,7 +30,7 @@ module Issues
     # eligibility and diagnostic inputs. GitHub sync uses this to avoid
     # evaluating the partial-closeout lane for unrelated state changes.
     def self.candidate?(issue)
-      candidates_for(issue.project).where(id: issue.id).exists?
+      candidates_for(issue.project).where(id: issue.id).pick(:id).present?
     end
 
     def self.pairs_for(project, candidates: candidates_for(project).to_a)
@@ -61,17 +61,18 @@ module Issues
     # merged-evidence sources (parent-linked and run-recorded) so the
     # prefilter only ever over-includes, never drops, real stalls.
     def self.candidates_for(project)
-      blocking_issue_ids = AgentRun.where(
-        project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
-      ).where.not(issue_id: nil).select(:issue_id)
+      blocking_issue_ids = AgentRun.where(project: project)
+        .where("agent_runs.status IN (?)", AgentRun::AUTO_PICK_BLOCKING_STATUSES)
+        .where.not(issue_id: nil).select(:issue_id)
 
+      # Bound status lists and evidence keep repeated lookups eligible for prepared plans.
       Issue.where(project: project)
-        .where(github_state: "open", is_pull_request: false, paused: false)
-        .where.not(paid_state: %w[needs_input manual_review])
+        .where(is_pull_request: false, paused: false)
+        .where("issues.paid_state NOT IN (?)", %w[needs_input manual_review])
         .where(runner_retry_abandoned_at: nil)
         .where.not(id: blocking_issue_ids)
         .where.not(id: IssueContinuationRequest.open.where(project: project).select(:issue_id))
-        .where(closeout_evidence_sql)
+        .where("(#{closeout_evidence_sql}) AND issues.github_state = ?", "open")
     end
 
     def self.closeout_evidence_sql

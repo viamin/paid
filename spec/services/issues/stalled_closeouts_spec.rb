@@ -93,6 +93,37 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
   end
 
   describe ".candidate?" do
+    # @spec TEST-SUITE-027, PARTIAL-CLOSEOUT-037
+    it "excludes an open continuation until it is consumed" do
+      issue.update!(no_code_required_at: Time.current)
+      continuation = create(:issue_continuation_request, issue: issue)
+
+      expect(described_class.candidate?(issue)).to be(false)
+
+      continuation.consume!(run_status: "completed")
+
+      expect(described_class.candidate?(issue)).to be(true)
+    end
+
+    # @spec TEST-SUITE-027, PARTIAL-CLOSEOUT-037
+    it "excludes an issue with a queued run until the run finishes" do
+      issue.update!(no_code_required_at: Time.current)
+      run = create(:agent_run, project: project, issue: issue, goal: "analyze_issue")
+
+      expect(described_class.candidate?(issue)).to be(false)
+
+      run.update!(status: "completed", completed_at: Time.current)
+
+      expect(described_class.candidate?(issue)).to be(true)
+    end
+
+    # @spec TEST-SUITE-027, PARTIAL-CLOSEOUT-037
+    it "keeps closed issues out even when they have no-code evidence" do
+      issue.update!(no_code_required_at: Time.current, github_state: "closed")
+
+      expect(described_class.candidate?(issue)).to be(false)
+    end
+
     it "checks only the named issue against the cheap candidate prefilter" do # @spec PARTIAL-CLOSEOUT-037
       merged_pr_row(number: 13, parent_issue_id: issue.id)
       other_issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
@@ -101,7 +132,7 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
 
       candidate_query = queries.find { |query| query[:sql].include?("merged_prs") }
       expect(candidate_query.fetch(:sql)).to match(/"issues"\."id" = \$\d+/)
-      issue_ids = candidate_query.fetch(:binds).select { |bind| bind.name == "id" }.map(&:value_for_database)
+      issue_ids = candidate_query.fetch(:binds).select { |bind| bind.respond_to?(:name) && bind.name == "id" }.map(&:value_for_database)
       expect(issue_ids).to eq([ issue.id ])
     end
   end

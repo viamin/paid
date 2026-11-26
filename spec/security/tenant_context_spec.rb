@@ -71,6 +71,30 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  # @spec TEST-SUITE-027, PARTIAL-CLOSEOUT-037
+  it "reuses the closeout candidate statement while switching tenants", :aggregate_failures do
+    candidate = described_class.with_system_access do
+      create(:issue, project: create(:project, account: account_a), no_code_required_at: Time.current)
+    end
+    accounts = described_class.with_system_access { [ account_a, account_b, account_a ] }
+    connection = ActiveRecord::Base.connection
+    queries = capture_query_payloads do
+      as_restricted_role do
+        connection.execute("SET LOCAL plan_cache_mode = force_generic_plan")
+        ActiveRecord::Base.uncached do
+          accounts.each do |account|
+            described_class.with(account) do
+              6.times { expect(Issues::StalledCloseouts.candidate?(candidate)).to eq(account == account_a) }
+            end
+          end
+        end
+      end
+    end
+    statement_names = queries.select { |query| query[:sql].include?("merged_prs") }.pluck(:statement_name)
+    expect(statement_names).to match_array([ statement_names.first ] * 18)
+    expect(connection.select_value("SELECT generic_plans FROM pg_prepared_statements WHERE name = #{connection.quote(statement_names.first)}").to_i).to be >= 18
+  end
+
   it "filters direct account records through the database policy" do
     project_a = described_class.with_system_access { create(:project, account: account_a) }
     described_class.with_system_access { create(:project, account: account_b) }

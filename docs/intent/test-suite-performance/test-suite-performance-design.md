@@ -269,6 +269,12 @@ cases remain independent; all matrix rows use normal status factory traits.
 
 ## Prepared query plans
 
+Repeated closeout-candidate checks use a scalar ID lookup and a bound evidence
+predicate so ActiveRecord can prepare the statement. Retain the original open
+state, evidence, project, hold and in-flight-work filters. A restricted-role
+regression reuses the actual candidate statement across tenant A/B/A under a
+generic plan; normal execution keeps PostgreSQL's automatic plan selection.
+
 The default PostgreSQL test connection uses prepared statements, matching normal
 Rails connection behavior. Reusing query plans avoids repeating planning work
 across factory callbacks and service queries. Cached statements must continue to
