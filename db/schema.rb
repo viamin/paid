@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205851) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2197,7 +2197,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["affected_issue_id"], name: "index_feature_intent_forward_work_items_on_affected_issue_id"
     t.index ["feature_intent_completion_id", "fingerprint"], name: "index_forward_work_on_completion_and_fingerprint", unique: true
-    t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
     t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'applied'::character varying::text])", name: "chk_forward_work_items_status"
   end
