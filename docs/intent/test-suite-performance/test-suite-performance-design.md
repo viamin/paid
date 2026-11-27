@@ -95,6 +95,22 @@ reaps a timed-out curl descendant before the next fresh connection. The
 downloaded archive remains checksum-verified before installation; exhausted
 retries fail the shard rather than skipping structural-search coverage.
 
+Both shard paths restore the installed ast-grep binary from the GitHub Actions
+cache before invoking the installer (TEST-SUITE-031). The cache key combines
+the runner's operating system and architecture with a hash of
+`bin/install-ast-grep`, which is the file `bin/update` rewrites for every pin
+change, so a normal pin update changes the key instead of reusing a stale
+entry. The cache holds one executable per version, OS, and architecture; a
+restore is a hit only when the installer can execute that entry and it reports
+the pinned version. A hit installs the binary with the same `sg` symlink and
+performs no network transfer. A miss, wrong-version entry, or non-executable
+entry falls through to the unchanged bounded, checksum-verified release
+download, and only a successful download writes the cache entry, so a failed
+installer never becomes a cached result. A cache-service failure fails the
+restore step alone and leaves the bounded fresh install in force; the cache is
+an optimization over the supervised install, never a bypass of its pin,
+checksum, transfer, retry, or process-group contract.
+
 ## Platform-dropped shard recovery
 
 GitHub Actions occasionally drops a matrix leg (or another job) entirely during

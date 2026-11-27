@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# @spec TEST-SUITE-024, TEST-SUITE-031
 set -euo pipefail
 
 AST_GREP_VERSION="${AST_GREP_VERSION:-0.45.1}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+AST_GREP_CACHE_DIR="${AST_GREP_CACHE_DIR:-}"
 
 case "$(uname -s)" in
   Linux) ;;
@@ -40,6 +42,38 @@ URL="https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
+cache_entry() {
+  printf '%s/ast-grep-%s-%s\n' "${AST_GREP_CACHE_DIR}" "${AST_GREP_VERSION}" "${RUST_TRIPLE}"
+}
+
+# A cached entry is trusted only after it executes on this OS and
+# architecture and reports the pinned version, so a stale or foreign entry
+# cannot bypass the pin even if a cache key collides. A rejected entry falls
+# through to the checksum-verified release download below.
+restore_cached_binary() {
+  [ -n "${AST_GREP_CACHE_DIR}" ] || return 1
+  local entry
+  entry="$(cache_entry)"
+  [ -f "${entry}" ] && [ -x "${entry}" ] || return 1
+  if ! "${entry}" --version 2>/dev/null | grep -Eq "ast-grep ${AST_GREP_VERSION//./\\.}([^0-9]|\$)"; then
+    return 1
+  fi
+  install -m 0755 "${entry}" "${INSTALL_DIR}/ast-grep"
+  ln -sf "${INSTALL_DIR}/ast-grep" "${INSTALL_DIR}/sg"
+  echo "Restored ast-grep ${AST_GREP_VERSION} for ${RUST_TRIPLE} from ${entry}"
+}
+
+store_cached_binary() {
+  [ -n "${AST_GREP_CACHE_DIR}" ] || return 0
+  mkdir -p "${AST_GREP_CACHE_DIR}"
+  install -m 0755 "${INSTALL_DIR}/ast-grep" "$(cache_entry)"
+  echo "Cached ast-grep ${AST_GREP_VERSION} for ${RUST_TRIPLE} at $(cache_entry)"
+}
+
+if restore_cached_binary; then
+  exit 0
+fi
+
 echo "Installing ast-grep ${AST_GREP_VERSION} from ${URL}..."
 curl -fsSL --retry 2 --retry-delay 2 --retry-connrefused --retry-all-errors \
   --connect-timeout "${AST_GREP_DOWNLOAD_CONNECT_TIMEOUT:-15}" \
@@ -49,3 +83,4 @@ echo "${EXPECTED_CHECKSUM}  ${TMPDIR}/${ZIPFILE}" | sha256sum -c -
 unzip -j -o "${TMPDIR}/${ZIPFILE}" ast-grep -d "${TMPDIR}"
 install -m 0755 "${TMPDIR}/ast-grep" "${INSTALL_DIR}/ast-grep"
 ln -sf "${INSTALL_DIR}/ast-grep" "${INSTALL_DIR}/sg"
+store_cached_binary

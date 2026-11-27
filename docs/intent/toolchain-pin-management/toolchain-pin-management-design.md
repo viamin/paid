@@ -74,6 +74,13 @@ rewrites and what the test suite asserts against, so a Dockerfile reworded past
 its own registry pattern is caught by a failing test instead of by a silent
 no-op update months later.
 
+CI's ast-grep binary cache follows the same rule (TOOLCHAIN-PIN-055): its key
+hashes `bin/install-ast-grep` and its entry validation replays the version that
+file pins, so the registry's ast-grep rewrite is the only path that can change
+what CI installs or caches. The workflow declares no ast-grep version of its
+own, and a pin update invalidates the cache rather than reusing the superseded
+binary.
+
 ## PostgreSQL Version Coupling
 
 PostgreSQL is the most tightly coupled group. The server image version pinned

@@ -258,3 +258,14 @@
   that repository.
   *Tests:* `spec/config/agent_image_build_script_spec.rb`.
   *Code:* `docker/agent/Dockerfile`.
+
+- [x] **TOOLCHAIN-PIN-055** — When CI caches the installed ast-grep binary for
+  test shards or dropped-shard recovery, the cache key and entry validation
+  SHALL derive from `bin/install-ast-grep`, the file the pin registry and
+  `bin/update` rewrite for ast-grep version and checksum updates, so a normal
+  pin change invalidates the cache instead of serving the superseded version,
+  and no workflow or cache configuration SHALL declare a second ast-grep
+  version or checksum pin.
+  *Tests:* `spec/config/ci_workflow_file_spec.rb`,
+  `spec/config/ast_grep_installer_spec.rb`.
+  *Code:* `.github/workflows/ci.yml`, `bin/install-ast-grep`.

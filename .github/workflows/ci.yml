@@ -447,8 +447,21 @@ jobs:
           # retries failures, and reaps its process-group descendants.
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
+      - name: Restore ast-grep binary cache
+        # A cache-service failure must not stop the shard: the bounded,
+        # checksum-verified release download in the next step remains the
+        # install path (TEST-SUITE-031).
+        # @spec TEST-SUITE-031
+        continue-on-error: true
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        env:
+          AST_GREP_INSTALLER_HASH: ${{ hashFiles('bin/install-ast-grep') }}
+        with:
+          path: ${{ env.XDG_CACHE_HOME }}/ast-grep
+          key: ast-grep-${{ runner.os }}-${{ runner.arch }}-${{ env.AST_GREP_INSTALLER_HASH }}
+
       - name: Install ast-grep
-        # @spec TEST-SUITE-024
+        # @spec TEST-SUITE-024, TEST-SUITE-031
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -457,6 +470,7 @@ jobs:
           # out curl cannot survive to contend with the next fresh connection.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
           export AST_GREP_DOWNLOAD_MAX_TIME=60
+          export AST_GREP_CACHE_DIR="${XDG_CACHE_HOME}/ast-grep"
           DEPENDENCY_SETUP_TIMEOUT=90s \
             DEPENDENCY_SETUP_BACKOFF_SECONDS=10 \
             bin/retry-with-process-group bash -c 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
@@ -829,8 +843,21 @@ jobs:
           # retries failures, and reaps its process-group descendants.
           bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile --prefer-offline --network-concurrency 1 --network-timeout 300000 && bin/yarn-postinstall'
 
+      - name: Restore ast-grep binary cache
+        # A cache-service failure must not stop recovery: the bounded,
+        # checksum-verified release download in the next step remains the
+        # install path (TEST-SUITE-031).
+        # @spec TEST-SUITE-031
+        continue-on-error: true
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        env:
+          AST_GREP_INSTALLER_HASH: ${{ hashFiles('bin/install-ast-grep') }}
+        with:
+          path: ${{ env.XDG_CACHE_HOME }}/ast-grep
+          key: ast-grep-${{ runner.os }}-${{ runner.arch }}-${{ env.AST_GREP_INSTALLER_HASH }}
+
       - name: Install ast-grep
-        # @spec TEST-SUITE-024
+        # @spec TEST-SUITE-024, TEST-SUITE-031
         run: |
           mkdir -p "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -838,6 +865,7 @@ jobs:
           # supervised release download contract as the matrix shards.
           export AST_GREP_DOWNLOAD_CONNECT_TIMEOUT=15
           export AST_GREP_DOWNLOAD_MAX_TIME=60
+          export AST_GREP_CACHE_DIR="${XDG_CACHE_HOME}/ast-grep"
           DEPENDENCY_SETUP_TIMEOUT=90s \
             DEPENDENCY_SETUP_BACKOFF_SECONDS=10 \
             bin/retry-with-process-group bash -c 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'

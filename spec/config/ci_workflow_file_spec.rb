@@ -353,6 +353,43 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
+  # @spec TEST-SUITE-031
+  it "restores a pin-derived ast-grep binary cache in every shard path" do
+    %w[test-shards shard-recovery].each do |job_name|
+      steps = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+      cache_step = steps.find { |step| step["name"] == "Restore ast-grep binary cache" }
+      install_step = steps.find { |step| step["name"] == "Install ast-grep" }
+
+      expect(steps.index(cache_step)).to be < steps.index(install_step)
+      expect(cache_step.fetch("uses")).to eq("actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
+      # A cache-service failure leaves the bounded release download in force.
+      expect(cache_step.fetch("continue-on-error")).to be(true)
+      expect(cache_step.fetch("env")).to include(
+        "AST_GREP_INSTALLER_HASH" => "${{ hashFiles('bin/install-ast-grep') }}"
+      )
+      with = cache_step.fetch("with")
+      expect(with.fetch("path")).to eq("${{ env.XDG_CACHE_HOME }}/ast-grep")
+      expect(with.fetch("key")).to eq(
+        "ast-grep-${{ runner.os }}-${{ runner.arch }}-${{ env.AST_GREP_INSTALLER_HASH }}"
+      )
+
+      expect(install_step.fetch("run")).to include('export AST_GREP_CACHE_DIR="${XDG_CACHE_HOME}/ast-grep"')
+    end
+  end
+
+  # @spec TOOLCHAIN-PIN-055
+  it "derives the ast-grep cache from the installer pin instead of a second version declaration" do
+    %w[test-shards shard-recovery].each do |job_name|
+      steps = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+      cache_step = steps.find { |step| step["name"] == "Restore ast-grep binary cache" }
+      install_run = steps.find { |step| step["name"] == "Install ast-grep" }.fetch("run")
+
+      expect(cache_step.fetch("with").fetch("key")).to include("${{ env.AST_GREP_INSTALLER_HASH }}")
+      expect(install_run).not_to include("AST_GREP_VERSION=")
+      expect(cache_step.fetch("with").fetch("key")).not_to match(/\d+\.\d+\.\d+/)
+    end
+  end
+
   # @spec TEST-SUITE-024
   it "sets bounded ast-grep download timeouts" do
     installer = Rails.root.join("bin/install-ast-grep").read
