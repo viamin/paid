@@ -7,8 +7,8 @@ RSpec.describe AgentComboImageCleanupJob do
   let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
   let(:active_projects) { instance_double(ActiveRecord::Relation) }
   let(:tag) { "paid-agent:go-node-python-ruby" }
-  let(:stale_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 31.days.ago.iso8601 } }
-  let(:fresh_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 1.day.ago.iso8601 } }
+  let(:stale_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 8.days.ago.iso8601 } }
+  let(:fresh_labels) { { Containers::ComboImageBuilder::BUILT_AT_LABEL => 6.days.ago.iso8601 } }
 
   before do
     allow(Containers).to receive(:all_backends).and_return([ backend ])
@@ -56,7 +56,8 @@ RSpec.describe AgentComboImageCleanupJob do
       expect(backend).to have_received(:image_in_use?).with(tag)
     end
 
-    it "prunes a stale, unreferenced, unused combo tag" do
+    # @spec POLYGLOT-TEST-010
+    it "prunes an unreferenced, unused combo tag built eight days ago" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: stale_labels)
       allow(backend).to receive(:image_in_use?).and_return(false)
       allow(backend).to receive(:delete_image)
@@ -106,7 +107,8 @@ RSpec.describe AgentComboImageCleanupJob do
       expect(backend).to have_received(:delete_image).with(tag, force: true)
     end
 
-    it "keeps a combo tag whose build timestamp is within the retention window" do
+    # @spec POLYGLOT-TEST-010
+    it "keeps a combo tag built six days ago" do
       stub_combo_images(image: tag, id: "sha256:abc", labels: fresh_labels)
       allow(backend).to receive(:image_in_use?).and_return(false)
       allow(backend).to receive(:image_label_sets).with(tag).and_return([ fresh_labels ])
@@ -115,6 +117,20 @@ RSpec.describe AgentComboImageCleanupJob do
       job.perform
 
       expect(backend).not_to have_received(:delete_image)
+    end
+
+    # @spec POLYGLOT-TEST-010
+    it "keeps a combo tag built exactly seven days ago" do
+      travel_to(Time.zone.local(2026, 11, 27, 12)) do
+        labels = { Containers::ComboImageBuilder::BUILT_AT_LABEL => 7.days.ago.iso8601 }
+        stub_combo_images(image: tag, id: "sha256:abc", labels: labels)
+        allow(backend).to receive(:image_in_use?).and_return(false)
+        allow(backend).to receive(:delete_image)
+
+        job.perform
+
+        expect(backend).not_to have_received(:delete_image)
+      end
     end
 
     it "keeps a combo tag when any healthy node copy is still within the retention window" do

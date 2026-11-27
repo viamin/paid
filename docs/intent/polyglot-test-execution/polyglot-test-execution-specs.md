@@ -119,7 +119,7 @@
 
 - [x] **POLYGLOT-TEST-010** — The system SHALL periodically prune combo image
   tags that no active project resolves to and no running container uses, once
-  they have been unreferenced past a retention window (30 days). The base
+  their `built-at` label is older than seven days. The base
   image, and any other `paid-agent:` tag the builder did not produce, SHALL
   never be pruned by this job.
   *Code:* `app/jobs/agent_combo_image_cleanup_job.rb`,
