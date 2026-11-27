@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212733) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3129,7 +3129,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["free_variant_of_id"], name: "index_llm_models_on_free_variant_of_id"
     t.index ["model_id"], name: "index_llm_models_on_model_id", unique: true
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
-    t.index ["provider"], name: "index_llm_models_on_provider"
     t.index ["tier"], name: "index_llm_models_on_tier"
     t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "llm_models_tier_check"
   end
