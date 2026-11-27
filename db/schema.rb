@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212847) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3151,7 +3151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["output_type"], name: "index_llm_output_metrics_on_output_type"
     t.index ["project_id", "output_type", "created_at"], name: "idx_llm_output_metrics_project_type_time"
     t.index ["project_id", "output_type", "source_type", "source_id"], name: "idx_llm_output_metrics_unique_source", unique: true
-    t.index ["project_id"], name: "index_llm_output_metrics_on_project_id"
     t.index ["prompt_slug", "prompt_version_id"], name: "idx_llm_output_metrics_slug_version"
     t.index ["prompt_version_id"], name: "index_llm_output_metrics_on_prompt_version_id"
     t.index ["source_type", "source_id"], name: "index_llm_output_metrics_on_source_type_and_source_id"
