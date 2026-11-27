@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_213454) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3328,7 +3328,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "url", limit: 2048
     t.index ["account_id", "enabled"], name: "index_mcp_server_definitions_on_account_id_and_enabled"
     t.index ["account_id", "name"], name: "index_mcp_server_definitions_on_account_id_and_name", unique: true
-    t.index ["account_id"], name: "index_mcp_server_definitions_on_account_id"
   end
 
   create_table "model_availability_checks", comment: "Per (model, runner, auth, account) availability evidence from reconciliation, kept distinct from the global LlmModel catalog so a scheduled sync cannot silently undo a validated availability change or a structured runtime rejection.", force: :cascade do |t|
