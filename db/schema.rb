@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_194552) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -64,7 +64,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
     t.index ["prompt_id", "idempotency_key"], name: "index_ab_tests_on_prompt_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
-    t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
     t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["status"], name: "index_ab_tests_on_status"
     t.index ["winner_variant_id"], name: "index_ab_tests_on_winner_variant_id"
