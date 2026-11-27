@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2633,7 +2633,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.string "verdict", default: "not_evaluated", null: false, comment: "within_scope | material_drift | uncertain | not_evaluated."
     t.index ["shadow_evaluation_id", "case_id"], name: "idx_shadow_evaluation_runs_case", unique: true, comment: "At most one executed reviewer run per case; re-execution retries failures in place."
-    t.index ["shadow_evaluation_id"], name: "idx_on_shadow_evaluation_id_ffb203051f"
   end
 
   create_table "intent_conformance_shadow_evaluations", comment: "Solo-maintainer RDR-067 shadow evaluation: one labeling session per evidence generation (project, purpose, frozen corpus manifest digest) with blinded reference labels, executed reviewer runs, and the reproducible report (#4594).", force: :cascade do |t|
