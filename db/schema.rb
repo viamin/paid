@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211735) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2884,7 +2884,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["created_at"], name: "idx_knowledge_audit_events_on_created_at", using: :brin
     t.index ["event_type"], name: "index_knowledge_audit_events_on_event_type"
     t.index ["project_id", "created_at", "id"], name: "idx_knowledge_audit_events_on_project_created_at_id", order: { created_at: :desc, id: :desc }
-    t.index ["project_id"], name: "index_knowledge_audit_events_on_project_id"
     t.index ["target_type", "target_id"], name: "index_knowledge_audit_events_on_target_type_and_target_id"
   end
 
