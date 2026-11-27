@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203114) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1282,7 +1282,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["project_id", "created_at"], name: "index_context_intake_sessions_on_project_id_and_created_at", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_context_intake_sessions_on_project_id_and_status"
-    t.index ["project_id"], name: "index_context_intake_sessions_on_project_id"
     t.index ["started_by_id"], name: "index_context_intake_sessions_on_started_by_id"
   end
 
