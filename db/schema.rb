@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205956) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2209,7 +2209,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["depends_on_feature_intent_issue_id"], name: "idx_on_depends_on_feature_intent_issue_id_b2b58b0492"
     t.index ["feature_intent_issue_id", "depends_on_feature_intent_issue_id"], name: "idx_feature_intent_issue_dependencies_unique", unique: true
-    t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_32c718a1ab"
   end
 
   create_table "feature_intent_issue_prerequisite_mappings", comment: "Audited coverage and design baseline for one linked issue's prerequisites.", force: :cascade do |t|
