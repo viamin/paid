@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_215952) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3776,7 +3776,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.float "standard_deviation", default: 0.0, null: false, comment: "Historical standard deviation for the tracked metric."
     t.datetime "updated_at", null: false
     t.index ["project_id", "metric_name"], name: "index_project_baselines_on_project_id_and_metric_name", unique: true
-    t.index ["project_id"], name: "index_project_baselines_on_project_id"
   end
 
   create_table "project_convention_detections", comment: "Repository-derived convention detections captured for a specific project version.", force: :cascade do |t|
