@@ -124,6 +124,10 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+The `chat_sessions.feature_intent_id` foreign key is validated against existing
+`feature_intents` rows. Validation preserves the reference definition and existing
+application data; rollback retains validation.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

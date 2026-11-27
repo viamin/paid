@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_193957) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5440,7 +5440,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
-  add_foreign_key "chat_sessions", "feature_intents", validate: false
+  add_foreign_key "chat_sessions", "feature_intents"
   add_foreign_key "chat_sessions", "issues", column: "clarifying_question_issue_id", validate: false
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
