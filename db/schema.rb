@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_195004) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -128,7 +128,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["parent_workflow_id"], name: "index_agent_coordination_signals_on_parent_workflow_id"
     t.index ["source_agent_run_id"], name: "index_agent_coordination_signals_on_source_agent_run_id"
     t.index ["target_agent_run_id", "signal_type"], name: "idx_coordination_signals_target_type"
-    t.index ["target_agent_run_id"], name: "index_agent_coordination_signals_on_target_agent_run_id"
   end
 
   create_table "agent_images", comment: "Immutable registry of agent container images identified by (registry, repository, digest, architecture) and tracked through active/deprecated/blocked states for audit, scheduling, and rollback.", force: :cascade do |t|
