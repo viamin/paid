@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_210648) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2538,8 +2538,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "category"], name: "index_integration_credentials_on_account_id_and_category"
     t.index ["account_id", "revoked_at"], name: "index_integration_credentials_on_account_id_and_revoked_at"
     t.index ["account_id", "service_key", "name"], name: "idx_on_account_id_service_key_name_e4c03e1ea7", unique: true
-    t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
-    t.index ["account_id"], name: "index_integration_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
   end
 
