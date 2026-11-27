@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202408) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1096,7 +1096,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "project_id", "version"], name: "index_config_bundles_unique_version_project", unique: true, where: "(project_id IS NOT NULL)"
     t.index ["account_id", "status"], name: "index_config_bundles_on_account_status"
     t.index ["account_id", "version"], name: "index_config_bundles_unique_version_account", unique: true, where: "(project_id IS NULL)"
-    t.index ["account_id"], name: "index_configuration_bundles_on_account_id"
     t.index ["llm_model_id"], name: "index_configuration_bundles_on_llm_model_id"
     t.index ["project_id", "status"], name: "index_config_bundles_on_project_status"
     t.index ["project_id"], name: "index_configuration_bundles_on_project_id"
