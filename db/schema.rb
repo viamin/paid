@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201356) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -742,7 +742,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "starts_at", "ends_at"], name: "index_billing_periods_on_account_id_and_starts_at_and_ends_at"
     t.index ["account_id", "status"], name: "index_billing_periods_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_periods_on_account_id"
     t.index ["billing_plan_id"], name: "index_billing_periods_on_billing_plan_id"
   end
 
