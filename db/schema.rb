@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_192601) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5519,7 +5519,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
   add_foreign_key "design_artifact_findings", "users", column: "resolution_actor_id"
   add_foreign_key "dispatch_circuit_breakers", "accounts"
-  add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
+  add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify
   add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "egress_allowlist_entries", "accounts", on_delete: :cascade
   add_foreign_key "egress_allowlist_entries", "projects", on_delete: :cascade

@@ -68,6 +68,13 @@
 
 ## Canonical Schema Dump
 
+- [x] **POSTGRESQL-PERSISTENCE-014** — The dispatch circuit breaker
+  `last_probe_run_id` foreign key SHALL validate existing references without
+  changing rows or its `ON DELETE SET NULL` behavior. Migration rollback
+  SHALL preserve the validated foreign key.
+  *Tests:* `spec/migrations/validate_dispatch_circuit_breakers_last_probe_run_foreign_key_spec.rb`.
+  *Code:* `ValidateDispatchCircuitBreakersLastProbeRunForeignKey`.
+
 - [x] **POSTGRESQL-PERSISTENCE-007** — Replaying migrations in CI SHALL dump a
   `db/schema.rb` identical to the checked-in canonical schema, and PostgreSQL
   helper functions included in the schema dump SHALL be backed by versioned
