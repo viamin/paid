@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211452) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2727,7 +2727,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false, comment: "The user who should receive the notification."
     t.index ["issue_id", "user_id", "subscription_type"], name: "index_issue_merge_subscriptions_on_dedup", unique: true
-    t.index ["issue_id"], name: "index_issue_merge_subscriptions_on_issue_id"
     t.index ["user_id"], name: "index_issue_merge_subscriptions_on_user_id"
   end
 
