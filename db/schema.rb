@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204329) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1582,7 +1582,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id"], name: "index_design_artifact_findings_on_account_id"
     t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
     t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
-    t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
     t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
     t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
     t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
