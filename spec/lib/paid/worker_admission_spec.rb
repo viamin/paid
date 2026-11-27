@@ -55,6 +55,14 @@ RSpec.describe Paid::WorkerAdmission do # @spec TEMPORAL-ORCHESTRATION-021
       "workflow_task_polls" => 4, "activity_task_polls" => activity_slots }
   end
 
+  # @spec TEMPORAL-ORCHESTRATION-024
+  it "keeps explicit fixed pollers even at the SDK default count" do
+    options = described_class.poller_options(workflow_task_polls: 5, activity_task_polls: 5)
+
+    expect(options.values).to all(be_a(Temporalio::Worker::PollerBehavior::SimpleMaximum))
+    expect(options.values.map(&:maximum)).to eq([ 5, 5 ])
+  end
+
   it "owns an unused reservation before any task-used notification" do
     expect(reserve).not_to be_nil
     expect(exclusive_available?).to be(false)

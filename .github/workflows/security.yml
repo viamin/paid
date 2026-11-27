@@ -40,6 +40,9 @@ jobs:
           path: tmp/tools/gitleaks
           key: gitleaks-${{ runner.os }}-${{ hashFiles('bin/install-gitleaks') }}
 
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true

@@ -44,7 +44,17 @@ FileUtils.chdir APP_ROOT do
   system! "git config core.hooksPath .githooks"
 
   puts "\n== Installing dependencies =="
-  system(*bundle_command("check")) || system!(*bundle_command("install"))
+  unless system(*bundle_command("check"))
+    system!("bin/install-temporal-build-tools")
+    native_tools = ENV.fetch("PAID_TEMPORAL_BUILD_TOOLS", File.join(Dir.home, ".local/share/paid-temporal-build"))
+    ENV["CARGO_BUILD_JOBS"] ||= "2"
+    ENV["CARGO_HOME"] = File.join(native_tools, "cargo")
+    ENV["RUSTUP_HOME"] = File.join(native_tools, "rustup")
+    ENV["PROTOC"] = File.join(native_tools, "protoc/bin/protoc")
+    ENV["PROTOC_INCLUDE"] = File.join(native_tools, "protoc/include")
+    ENV["PATH"] = "#{ENV.fetch('CARGO_HOME')}/bin:#{native_tools}/protoc/bin:#{ENV.fetch('PATH')}"
+    system!(*bundle_command("install"))
+  end
 
   # Install JavaScript dependencies (scripts disabled via .yarnrc for supply-chain security)
   system!("yarn install")

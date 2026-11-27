@@ -339,3 +339,19 @@
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.
+
+- [x] **TEMPORAL-ORCHESTRATION-024** — Custom slot permits released by native
+  worker threads SHALL retain Ruby GC roots until a Ruby thread can safely
+  unregister them. Activity heartbeats SHALL release the Ruby GVL while Core
+  may wait for a Ruby slot notification. Source dependency builds SHALL provision
+  checksum-verified tools before Bundler. Worker boot SHALL activate locked
+  dependencies before readiness helpers load JSON. Explicit fixed poller
+  behavior SHALL preserve admission's configured budgets even when an SDK
+  default would auto-enroll in autoscaling. SDK adoption SHALL preserve saved workflow replay,
+  activity heartbeat delivery, and admission-lock release across completion
+  and cancellation. Native lifecycle acceptance SHALL run in a bounded
+  subprocess so a VM crash or deadlock is reported as a failure.
+  *Tests:* `spec/lib/paid/worker_admission_native_spec.rb`,
+  `spec/lib/paid/temporal_worker_dependency_boot_spec.rb`,
+  `spec/lib/setup_script_spec.rb`, `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Gemfile`, `bin/temporal_worker`, `Paid::WorkerAdmission`.

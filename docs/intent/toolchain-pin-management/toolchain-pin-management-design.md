@@ -60,6 +60,13 @@ so it can be filed against `agent-harness` rather than patched locally.
 deliberate migration with build, gem, and CI consequences that no automated
 rewrite should decide.
 
+Temporal's temporary source dependency uses Rust 1.100.1 and protoc 34.0 from
+`bin/install-temporal-build-tools`, with per-platform download checksums. These
+SDK build prerequisites are deliberate migration pins, outside automatic pin
+updates. Remove their bootstrap and CI steps when a released native gem
+replaces the source dependency; the Temporal orchestration segment owns that
+release condition.
+
 ## Consistency Groups
 
 A single logical pin is usually written into several files with different

@@ -21,6 +21,25 @@ The shipped implementation uses the official `temporalio` Ruby SDK. Client
 connections are created lazily from Rails so boot time does not eagerly load the
 native Temporal client stack.
 
+Native custom-slot permit cleanup must unregister Ruby GC roots on a Ruby
+thread. The worker SDK must include the upstream deferred-cleanup fix
+([sdk-ruby#569](https://github.com/temporalio/sdk-ruby/pull/569)); releasing
+roots from Tokio threads can corrupt the GC root list and freeze or crash the
+worker. Paid uses Temporal SDK 1.12 with its supported JSON 2.x dependency.
+Core activity-map locking can also wait synchronously for a Ruby custom-slot
+notification. The heartbeat bridge must release the Ruby GVL before entering
+Core; otherwise a heartbeat can retain the GVL while waiting for the map mutex
+and prevent the slot notification from releasing that mutex. Until an upstream
+release contains that correction, the dependency uses an immutable source ref.
+Source builds provision checksum-verified Rust and protoc plus libclang before
+Bundler in setup, CI, and the image build stage. Build-only tooling stays out of
+the final runtime image. SDK adoption preserves task queues, admission limits,
+and workflow commands and is verified against saved workflow histories and
+native permit lifecycle acceptance runs. Both poller types explicitly use the
+fixed `SimpleMaximum` behavior so the SDK's autoscaling defaults cannot change
+admission's poll budgets. Worker boot activates Bundler before readiness helpers
+load dependencies such as JSON.
+
 Workflow and activity code lives under `app/temporal/workflows` and
 `app/temporal/activities`. This is the intentional shipped path layout,
 replacing the earlier illustrative `app/workflows` and `app/activities`

@@ -72,6 +72,17 @@ RUN BUNDLER_VERSION="$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print
     test -n "${BUNDLER_VERSION}" && \
     gem install --no-document "bundler:${BUNDLER_VERSION}"
 
+# The temporary Temporal SDK source pin needs a native bridge build.
+ENV CARGO_BUILD_JOBS=2 \
+    PAID_TEMPORAL_BUILD_TOOLS=/opt/paid-temporal-build \
+    CARGO_HOME=/opt/paid-temporal-build/cargo \
+    RUSTUP_HOME=/opt/paid-temporal-build/rustup \
+    PROTOC=/opt/paid-temporal-build/protoc/bin/protoc \
+    PROTOC_INCLUDE=/opt/paid-temporal-build/protoc/include
+ENV PATH="/opt/paid-temporal-build/cargo/bin:/opt/paid-temporal-build/protoc/bin:${PATH}"
+COPY bin/install-temporal-build-tools bin/install-temporal-build-tools
+RUN bin/install-temporal-build-tools
+
 # Install application gems
 COPY vendor/* ./vendor/
 COPY Gemfile Gemfile.lock ./

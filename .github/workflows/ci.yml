@@ -51,6 +51,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
@@ -216,7 +219,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16.15
@@ -272,6 +275,9 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_ENV"
           fi
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby
@@ -406,6 +412,9 @@ jobs:
 
       - name: Prepare workspace cache directories
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby
@@ -793,6 +802,9 @@ jobs:
       - name: Prepare workspace cache directories
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
@@ -1115,6 +1127,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
@@ -1160,7 +1175,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -1214,6 +1229,9 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_ENV"
           fi
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby
@@ -1316,7 +1334,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -1370,6 +1388,9 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_ENV"
           fi
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby
@@ -1510,7 +1531,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -1567,6 +1588,9 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
 
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
@@ -1606,6 +1630,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby
@@ -1704,6 +1731,9 @@ jobs:
 
       - name: Prepare workspace cache directories
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
+      - name: Install Temporal native build tools
+        run: bin/install-temporal-build-tools
 
       - name: Set up Ruby
         id: setup_ruby

@@ -32,11 +32,8 @@ gem "devise"
 gem "pundit"
 gem "avo", "4.4.5"
 
-# json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
-# Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
-# already calls JSON.parse(json, **options), so the 3.x line is safe here;
-# this constraint just keeps the major version bump deliberate.
-gem "json", "~> 3.1"
+# Temporal SDK releases with safe native slot-permit cleanup require JSON 2.x.
+gem "json", "~> 2.0"
 
 # Docker API's transitive MultiJson dependency is selected by Sawyer/Octokit.
 # 1.21.2 forwards parser options as keywords, as required by json 3.x.
@@ -57,7 +54,11 @@ gem "faraday-http-cache"
 # Temporal workflow orchestration [https://temporal.io]
 # Defer loading — 139 MB gem with native Rust extensions only needed for
 # Temporal client/worker code, not the web process boot path.
-gem "temporalio", require: false
+# Remove the source pin after a release contains sdk-ruby#699.
+gem "temporalio", "~> 1.12.0", require: false,
+  git: "https://github.com/viamin/sdk-ruby.git",
+  branch: "paid/heartbeat-gvl-source-build",
+  ref: "a49ec2218474991a94ee2bb3cd47194d2bbf98b1", glob: "temporalio/*.gemspec", submodules: true, force_ruby_platform: true
 gem "opentelemetry-sdk", require: false
 gem "opentelemetry-exporter-otlp", require: false
 

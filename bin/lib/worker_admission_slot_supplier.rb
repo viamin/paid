@@ -3,6 +3,7 @@
 require "thread"
 require "temporalio/worker/thread_pool"
 require "temporalio/worker/tuner"
+require "temporalio/worker/poller_behavior"
 require_relative "../../lib/paid/worker_admission"
 
 module Paid
@@ -12,6 +13,16 @@ module Paid
       max_cached_workflows: 1000,
       nonsticky_to_sticky_poll_ratio: 0.2
     }.freeze
+
+    # SDK defaults may auto-enroll pollers in server-controlled autoscaling.
+    # Admission accounts for a fixed number of outstanding polls.
+    # @spec TEMPORAL-ORCHESTRATION-024
+    def self.poller_options(workflow_task_polls:, activity_task_polls:)
+      {
+        workflow_task_poller_behavior: Temporalio::Worker::PollerBehavior::SimpleMaximum.new(workflow_task_polls),
+        activity_task_poller_behavior: Temporalio::Worker::PollerBehavior::SimpleMaximum.new(activity_task_polls)
+      }
+    end
 
     # Keep the SDK dependency on the worker boot path, outside Rails autoload.
     # @spec TEMPORAL-ORCHESTRATION-021

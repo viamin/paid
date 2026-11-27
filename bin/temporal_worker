@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require_relative "../config/boot"
 require_relative "../app/services/trusted_measurements/deployment_signal"
 require_relative "../lib/paid/worker_readiness"
 require_relative "../lib/paid/worker_readiness/startup_identity"
@@ -191,8 +192,9 @@ when "poll"
         workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls, readiness_file:
       ),
       **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
-      max_concurrent_activity_task_polls: poll_activity_task_polls,
-      max_concurrent_workflow_task_polls: poll_workflow_task_polls,
+      **Paid::WorkerAdmission.poller_options(
+        workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls
+      ),
       graceful_shutdown_period: graceful_shutdown
     )
   ]
@@ -212,8 +214,9 @@ when "agent"
         workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls, readiness_file:
       ),
       **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
-      max_concurrent_activity_task_polls: agent_activity_task_polls,
-      max_concurrent_workflow_task_polls: agent_workflow_task_polls,
+      **Paid::WorkerAdmission.poller_options(
+        workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls
+      ),
       graceful_shutdown_period: graceful_shutdown
     )
   ]
@@ -233,8 +236,9 @@ else
         workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls, readiness_file:
       ),
       **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
-      max_concurrent_activity_task_polls: poll_activity_task_polls,
-      max_concurrent_workflow_task_polls: poll_workflow_task_polls,
+      **Paid::WorkerAdmission.poller_options(
+        workflow_task_polls: poll_workflow_task_polls, activity_task_polls: poll_activity_task_polls
+      ),
       graceful_shutdown_period: graceful_shutdown
     ),
     # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
@@ -251,8 +255,9 @@ else
         workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls, readiness_file:
       ),
       **Paid::WorkerAdmission::WORKFLOW_POLLER_OPTIONS,
-      max_concurrent_activity_task_polls: agent_activity_task_polls,
-      max_concurrent_workflow_task_polls: agent_workflow_task_polls,
+      **Paid::WorkerAdmission.poller_options(
+        workflow_task_polls: agent_workflow_task_polls, activity_task_polls: agent_activity_task_polls
+      ),
       graceful_shutdown_period: graceful_shutdown
     )
   ]

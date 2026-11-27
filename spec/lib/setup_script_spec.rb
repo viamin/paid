@@ -244,6 +244,27 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec TEMPORAL-ORCHESTRATION-024
+  it "prepares native SDK tools before installing missing gems" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      write_executable(File.join(dir, "bin", "install-temporal-build-tools"), <<~BASH)
+        #!/usr/bin/env bash
+        echo tools >> "#{dir}/native-build.log"
+      BASH
+      env = setup_script_env(dir).merge(
+        "SETUP_MISSING_GEMS" => "1", "PAID_TEMPORAL_BUILD_TOOLS" => File.join(dir, "native-tools")
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "native-build.log")).lines.map(&:chomp)).to eq([
+        "tools", "#{dir}/native-tools/cargo|#{dir}/native-tools/rustup|#{dir}/native-tools/protoc/bin/protoc"
+      ])
+    end
+  end
+
   def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.12" ])
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "lib", "paid"))
@@ -336,9 +357,13 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
             exit 0
             ;;
           check)
+            if [[ "${SETUP_MISSING_GEMS:-0}" == 1 ]]; then exit 1; fi
             exit 0
             ;;
           install)
+            if [[ "${SETUP_MISSING_GEMS:-0}" == 1 ]]; then
+              echo "$CARGO_HOME|$RUSTUP_HOME|$PROTOC" >> "#{dir}/native-build.log"
+            fi
             exit 0
             ;;
           *)

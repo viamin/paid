@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The temporary SDK source pin needs Rust, protoc, and libclang before Bundler.
+# @spec TEMPORAL-ORCHESTRATION-024
+native_tools="${PAID_TEMPORAL_BUILD_TOOLS:-${HOME}/.local/share/paid-temporal-build}"
+rust_version=1.100.1
+rustup_version=1.29.3
+protoc_version=34.0
+case "$(uname -s):$(uname -m)" in
+  Linux:aarch64|Linux:arm64)
+    rust_target=aarch64-unknown-linux-gnu
+    rustup_checksum=9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
+    protoc_target=linux-aarch_64
+    protoc_checksum=f0b8aad28be5ea6150c082f96ac57e028154afb9ee29f4ce092b5a39df8ae6c8
+    ;;
+  Linux:x86_64)
+    rust_target=x86_64-unknown-linux-gnu
+    rustup_checksum=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+    protoc_target=linux-x86_64
+    protoc_checksum=e9a91b6fcfe4177ec2cd35fc8f15c1e811fa0ecdef9372755cd6d3513d5faaab
+    ;;
+  Darwin:arm64)
+    rust_target=aarch64-apple-darwin
+    rustup_checksum=63752a1919a3a4793173ec70f8f212621a7ce38ba6a246095984482f4de20f9f
+    protoc_target=osx-aarch_64
+    protoc_checksum=3ef35187a3c8aed81ee57e792227e483e558fa56c93fce525e569bff55794c1a
+    ;;
+  Darwin:x86_64)
+    rust_target=x86_64-apple-darwin
+    rustup_checksum=bc107f1fb0228de7fa32413c89c1b305cea9cd256e94b01150cd054128145429
+    protoc_target=osx-x86_64
+    protoc_checksum=d58fcd413a9ed458283d54023e409fd5cf767da4ed225d1ffaffd83cf2764f53
+    ;;
+  *) echo "Unsupported native SDK build platform" >&2; exit 1 ;;
+esac
+if [[ "$rust_target" == *-linux-gnu ]] && ! compgen -G '/usr/lib/llvm-*/lib/libclang.so*' > /dev/null; then
+  privilege=()
+  if [ "$(id -u)" -ne 0 ]; then privilege=(sudo); fi
+  "${privilege[@]}" apt-get update -qq
+  "${privilege[@]}" apt-get install -y --no-install-recommends libclang-dev unzip
+fi
+
+verify_checksum() {
+  if command -v sha256sum >/dev/null; then
+    echo "$1  $2" | sha256sum -c -
+  else
+    echo "$1  $2" | shasum -a 256 -c -
+  fi
+}
+
+mkdir -p "$native_tools"
+export CARGO_HOME="$native_tools/cargo" RUSTUP_HOME="$native_tools/rustup"
+export PATH="$CARGO_HOME/bin:$native_tools/protoc/bin:$PATH"
+if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
+  curl --fail --location --retry 3 "https://static.rust-lang.org/rustup/archive/${rustup_version}/${rust_target}/rustup-init" -o "$native_tools/rustup-init"
+  verify_checksum "$rustup_checksum" "$native_tools/rustup-init"
+  chmod +x "$native_tools/rustup-init"
+  "$native_tools/rustup-init" -y --profile minimal --default-toolchain "$rust_version" --no-modify-path
+fi
+"$CARGO_HOME/bin/rustup" toolchain install "$rust_version" --profile minimal --no-self-update
+"$CARGO_HOME/bin/rustup" default "$rust_version"
+if [ ! -x "$native_tools/protoc/bin/protoc" ]; then
+  curl --fail --location --retry 3 "https://github.com/protocolbuffers/protobuf/releases/download/v${protoc_version}/protoc-${protoc_version}-${protoc_target}.zip" -o "$native_tools/protoc.zip"
+  verify_checksum "$protoc_checksum" "$native_tools/protoc.zip"
+  unzip -oq "$native_tools/protoc.zip" -d "$native_tools/protoc"
+fi
+if [ -n "${GITHUB_PATH:-}" ]; then
+  echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+  echo "$native_tools/protoc/bin" >> "$GITHUB_PATH"
+  {
+    echo "CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}"
+    echo "CARGO_HOME=$CARGO_HOME"
+    echo "RUSTUP_HOME=$RUSTUP_HOME"
+    echo "PROTOC=$native_tools/protoc/bin/protoc"
+    echo "PROTOC_INCLUDE=$native_tools/protoc/include"
+  } >> "$GITHUB_ENV"
+fi
+printf 'Native SDK tools ready in %s; export CARGO_HOME, RUSTUP_HOME, PROTOC and PATH before bundle install.\n' "$native_tools"
