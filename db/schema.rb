@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202044) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -983,7 +983,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["actor_id"], name: "index_chat_turn_lifecycle_events_on_actor_id"
     t.index ["chat_session_id"], name: "index_chat_turn_lifecycle_events_on_chat_session_id"
     t.index ["chat_turn_id", "occurred_at"], name: "idx_on_chat_turn_id_occurred_at_87ddf0bbe7"
-    t.index ["chat_turn_id"], name: "index_chat_turn_lifecycle_events_on_chat_turn_id"
     t.index ["event_name"], name: "index_chat_turn_lifecycle_events_on_event_name"
   end
 
