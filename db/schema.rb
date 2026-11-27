@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201021) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -589,7 +589,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "digest"], name: "idx_apple_verification_images_identity", unique: true
     t.index ["account_id", "name", "status"], name: "idx_apple_verification_images_catalog"
-    t.index ["account_id"], name: "index_apple_verification_images_on_account_id"
   end
 
   create_table "apple_verification_waivers", comment: "One-attempt administrator waivers for required Apple verification checks.", force: :cascade do |t|
