@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201141) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -648,7 +648,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "revision"], name: "idx_apple_workflow_revisions_project_revision", unique: true
     t.index ["project_id", "status"], name: "idx_on_project_id_status_309d97d26e"
     t.index ["project_id"], name: "idx_apple_workflow_revisions_one_approved_per_project", unique: true, where: "((status)::text = 'approved'::text)"
-    t.index ["project_id"], name: "index_apple_verification_workflow_revisions_on_project_id"
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_workflow_revisions_gate"
     t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'approved'::character varying::text, 'superseded'::character varying::text, 'disabled'::character varying::text])", name: "chk_apple_workflow_revisions_status"
   end
