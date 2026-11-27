@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202702) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1151,7 +1151,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "winner_variant_id", comment: "Variant selected as the winner when the experiment is completed."
     t.index ["account_id", "config_key", "status"], name: "idx_on_account_id_config_key_status_a42f39cd2a"
     t.index ["account_id", "config_key"], name: "index_config_experiments_one_running_per_account_key", unique: true, where: "(((status)::text = 'running'::text) AND (account_id IS NOT NULL))"
-    t.index ["account_id"], name: "index_configuration_experiments_on_account_id"
     t.index ["config_key"], name: "index_global_config_experiments_one_running_per_key", unique: true, where: "(((status)::text = 'running'::text) AND (account_id IS NULL))"
     t.index ["winner_variant_id"], name: "index_configuration_experiments_on_winner_variant_id"
   end
