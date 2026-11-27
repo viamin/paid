@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204533) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1665,7 +1665,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id"], name: "index_egress_allowlist_entries_on_account_id"
     t.index ["created_by_id"], name: "index_egress_allowlist_entries_on_created_by_id"
     t.index ["project_id", "enabled"], name: "idx_egress_allowlist_entries_project_enabled"
-    t.index ["project_id"], name: "index_egress_allowlist_entries_on_project_id"
     t.check_constraint "host_pattern IS NOT NULL", name: "chk_egress_allowlist_entries_host_present"
     t.check_constraint "port IS NULL OR port > 0 AND port <= 65535", name: "chk_egress_allowlist_entries_port_range"
     t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_allowlist_entries_scheme_valid"
