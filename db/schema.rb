@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200851) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -526,7 +526,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "storage_key", null: false
     t.datetime "updated_at", null: false
     t.index ["apple_verification_attempt_id", "kind"], name: "idx_on_apple_verification_attempt_id_kind_82be1ab43b"
-    t.index ["apple_verification_attempt_id"], name: "idx_on_apple_verification_attempt_id_0873cc6e26"
   end
 
   create_table "apple_verification_attempts", comment: "Apple verification attempt lifecycle and source provenance.", force: :cascade do |t|
