@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203158) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1298,7 +1298,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.string "workflow_id", null: false, comment: "Temporal workflow ID for the orchestrated feature sample"
     t.index ["coordination_experiment_id", "workflow_id"], name: "idx_coordination_experiment_assignments_unique", unique: true
-    t.index ["coordination_experiment_id"], name: "idx_on_coordination_experiment_id_73eaaefa30"
     t.index ["coordination_experiment_variant_id"], name: "idx_on_coordination_experiment_variant_id_d60101236e"
     t.index ["issue_id"], name: "index_coordination_experiment_assignments_on_issue_id"
     t.index ["project_id"], name: "index_coordination_experiment_assignments_on_project_id"
