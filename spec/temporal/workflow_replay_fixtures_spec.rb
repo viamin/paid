@@ -7,6 +7,10 @@ require "temporalio/worker/workflow_replayer"
 require "temporalio/workflow_history"
 require "temporalio/testing"
 
+# Warm-process replay coverage: eager loading here means these examples cannot
+# surface failures caused by a cold worker lazily autoloading constants from
+# the workflow thread. Cold-worker coverage lives in
+# spec/temporal/workflow_replay_fixtures_cold_worker_spec.rb.
 Rails.application.eager_load!
 
 RSpec.describe WorkflowReplayFixtures, :no_db do
@@ -141,6 +145,8 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
 
     # @spec TEMPORAL-ORCHESTRATION-022, PROMPT-EVOLUTION-006
     it "executes both evolution workflows through a supported Temporal server with the Paid converter" do
+      # Runs warm (see the eager_load! note at the top of this file); the
+      # cold-worker replay spec covers the lazy-load path this cannot reach.
       expect(execute_evolution_workflows).to all(be_present)
     end
   end

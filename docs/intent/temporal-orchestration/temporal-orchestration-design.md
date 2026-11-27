@@ -48,6 +48,26 @@ discard work. Source delivery does not authorize cancellation, termination,
 reset, replacement work, retry changes, budget changes, or completion of an
 existing execution.
 
+A second replay boundary is worker boot temperature. A worker that has not
+eager-loaded the application resolves autoload-managed constants lazily, and
+workflow code that references them from inside `execute` runs Zeitwerk's
+Monitor-locked directory autoload on the workflow thread. Temporal's
+illegal-call tracer rejects that `Monitor#synchronize` call as
+nondeterminism, so the workflow task fails and the execution keeps retrying
+without doing business work. The evolution workflows therefore resolve their
+service constants (for example
+`CoordinationPolicyEvolution::PrepareInputs::POLICY_TYPE` and
+`PromptEvolution::SampleRuns::QUALITY_THRESHOLD`) when the workflow file
+loads during worker boot. The in-process replay fixtures run after
+`Rails.application.eager_load!` and cannot surface this failure, so a separate
+cold-worker verification boots a fresh process without eager loading, follows
+`bin/temporal_worker`'s activity/workflow require order, confirms the
+evolution namespaces were still pending autoloads, and replays the
+coordination-policy, prompt, and strategy evolution histories with the Paid
+converter (`script/temporal/replay_cold_worker.rb`). Recovery coverage claims
+for evolution workflows require that cold check, not only the eager-loaded
+replay.
+
 Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.

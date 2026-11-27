@@ -33,8 +33,13 @@
 
 - [x] **PROMPT-EVOLUTION-006** — When a `PromptEvolutionWorkflow` history is
   replayed, Paid SHALL use `Paid::TemporalDataConverter` so the recorded
-  initial activity command remains compatible. The replay path SHALL preserve
+  initial activity command remains compatible. The workflow SHALL resolve the
+  `PromptEvolution::SampleRuns` defaults it forwards at workflow-file load time
+  so a cold worker never autoloads them from the workflow thread. The replay
+  path SHALL preserve
   the existing execution identity, project scope, retained work, and budgets,
   and SHALL NOT cancel, reset, terminate, replace, or complete the execution.
-  *Tests:* `spec/temporal/workflow_replay_fixtures_spec.rb`.
-  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_worker_client`.
+  *Tests:* `spec/temporal/workflow_replay_fixtures_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_cold_worker_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_worker_client`,
+  `Workflows::PromptEvolutionWorkflow`.

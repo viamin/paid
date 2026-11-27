@@ -21,9 +21,16 @@ module Workflows
   #   strategies:      - Mutation strategies to apply (default: all)
   #   min_samples:     - Minimum samples per A/B test variant (default: 30)
   #   confidence:      - Statistical confidence threshold (default: 0.95)
-  class PromptEvolutionWorkflow < BaseWorkflow
+  class PromptEvolutionWorkflow < BaseWorkflow # @spec TEMPORAL-ORCHESTRATION-023, PROMPT-EVOLUTION-006
     # Explicit activity timeouts (BaseWorkflow default is 300s)
     AB_TEST_TIMEOUT = 30
+
+    # Resolved when this file loads during worker boot so replaying a cold
+    # worker never triggers Rails autoloading from the workflow thread: Zeitwerk
+    # locks directory autoloads with Monitor#synchronize, which Temporal's
+    # illegal-call tracer rejects as nondeterministic.
+    DEFAULT_QUALITY_THRESHOLD = PromptEvolution::SampleRuns::QUALITY_THRESHOLD
+    DEFAULT_MIN_RUNS_FOR_EVALUATION = PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
 
     def execute(input)
       prompt_id = input[:prompt_id]
@@ -45,10 +52,10 @@ module Workflows
           sample_days: input.fetch(:sample_days, 14),
           failure_only: input.fetch(:failure_only, false),
           metric_type: input.fetch(:metric_type, "composite_score"),
-          threshold: input.fetch(:threshold, PromptEvolution::SampleRuns::QUALITY_THRESHOLD),
+          threshold: input.fetch(:threshold, DEFAULT_QUALITY_THRESHOLD),
           min_runs_for_evaluation: input.fetch(
             :min_runs_for_evaluation,
-            PromptEvolution::SampleRuns::MIN_RUNS_FOR_EVALUATION
+            DEFAULT_MIN_RUNS_FOR_EVALUATION
           )
         },
         timeout: 60

@@ -1,19 +1,28 @@
 # frozen_string_literal: true
 
 module Workflows
-  class CoordinationPolicyEvolutionWorkflow < BaseWorkflow
+  class CoordinationPolicyEvolutionWorkflow < BaseWorkflow # @spec TEMPORAL-ORCHESTRATION-023
+    # Resolved when this file loads during worker boot so replaying a cold
+    # worker never triggers Rails autoloading from the workflow thread: Zeitwerk
+    # locks directory autoloads with Monitor#synchronize, which Temporal's
+    # illegal-call tracer rejects as nondeterministic.
+    DEFAULT_POLICY_TYPE = CoordinationPolicyEvolution::PrepareInputs::POLICY_TYPE
+    DEFAULT_LOOKBACK_DAYS = CoordinationPolicyEvolution::PrepareInputs::DEFAULT_LOOKBACK_DAYS
+    DEFAULT_MIN_DECISIONS = CoordinationPolicyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS
+    DEFAULT_SAMPLE_LIMIT = CoordinationPolicyEvolution::PrepareInputs::DEFAULT_SAMPLE_LIMIT
+
     def execute(input)
       account_id = input.fetch(:account_id)
-      policy_type = input.fetch(:policy_type, CoordinationPolicyEvolution::PrepareInputs::POLICY_TYPE)
+      policy_type = input.fetch(:policy_type, DEFAULT_POLICY_TYPE)
 
       inputs_result = run_activity(
         Activities::PrepareCoordinationPolicyEvolutionInputsActivity,
         {
           account_id: account_id,
           policy_type: policy_type,
-          lookback_days: input.fetch(:lookback_days, CoordinationPolicyEvolution::PrepareInputs::DEFAULT_LOOKBACK_DAYS),
-          min_decisions: input.fetch(:min_decisions, CoordinationPolicyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS),
-          sample_limit: input.fetch(:sample_limit, CoordinationPolicyEvolution::PrepareInputs::DEFAULT_SAMPLE_LIMIT)
+          lookback_days: input.fetch(:lookback_days, DEFAULT_LOOKBACK_DAYS),
+          min_decisions: input.fetch(:min_decisions, DEFAULT_MIN_DECISIONS),
+          sample_limit: input.fetch(:sample_limit, DEFAULT_SAMPLE_LIMIT)
         },
         timeout: 30
       )
@@ -21,7 +30,7 @@ module Workflows
       performance = inputs_result.fetch(:performance, {})
       decision_count = performance.fetch(:decision_count, 0)
       classified_decision_count = performance.fetch(:classified_decision_count, decision_count)
-      min_decisions = performance.fetch(:min_decisions, CoordinationPolicyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS)
+      min_decisions = performance.fetch(:min_decisions, DEFAULT_MIN_DECISIONS)
 
       if classified_decision_count < min_decisions
         return {

@@ -1,7 +1,15 @@
 # frozen_string_literal: true
 
 module Workflows
-  class StrategyEvolutionWorkflow < BaseWorkflow
+  class StrategyEvolutionWorkflow < BaseWorkflow # @spec TEMPORAL-ORCHESTRATION-023
+    # Resolved when this file loads during worker boot so replaying a cold
+    # worker never triggers Rails autoloading from the workflow thread: Zeitwerk
+    # locks directory autoloads with Monitor#synchronize, which Temporal's
+    # illegal-call tracer rejects as nondeterministic.
+    DEFAULT_LOOKBACK_DAYS = StrategyEvolution::PrepareInputs::DEFAULT_LOOKBACK_DAYS
+    DEFAULT_MIN_DECISIONS = StrategyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS
+    DEFAULT_SAMPLE_LIMIT = StrategyEvolution::PrepareInputs::DEFAULT_SAMPLE_LIMIT
+
     def execute(input)
       account_id = input.fetch(:account_id)
       strategy_type = input.fetch(:strategy_type)
@@ -11,16 +19,16 @@ module Workflows
         {
           account_id: account_id,
           strategy_type: strategy_type,
-          lookback_days: input.fetch(:lookback_days, StrategyEvolution::PrepareInputs::DEFAULT_LOOKBACK_DAYS),
-          min_decisions: input.fetch(:min_decisions, StrategyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS),
-          sample_limit: input.fetch(:sample_limit, StrategyEvolution::PrepareInputs::DEFAULT_SAMPLE_LIMIT)
+          lookback_days: input.fetch(:lookback_days, DEFAULT_LOOKBACK_DAYS),
+          min_decisions: input.fetch(:min_decisions, DEFAULT_MIN_DECISIONS),
+          sample_limit: input.fetch(:sample_limit, DEFAULT_SAMPLE_LIMIT)
         },
         timeout: 30
       )
 
       performance = inputs_result.fetch(:performance, {})
       decision_count = performance.fetch(:decision_count, 0)
-      min_decisions = performance.fetch(:min_decisions, StrategyEvolution::PrepareInputs::DEFAULT_MIN_DECISIONS)
+      min_decisions = performance.fetch(:min_decisions, DEFAULT_MIN_DECISIONS)
 
       if decision_count < min_decisions
         return {

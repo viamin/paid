@@ -44,6 +44,15 @@ claim that a running execution is healthy. A separately authorized operator
 recovery records the loaded worker identity and pinned-history progress before
 and after recovery.
 
+`Workflows::PromptEvolutionWorkflow` resolves the `PromptEvolution::SampleRuns`
+defaults it forwards to the sampling activity when the workflow file loads at
+worker boot. A cold worker that resolves them from inside `execute` instead
+triggers Zeitwerk's Monitor-locked autoload on the workflow thread, which
+Temporal's illegal-call tracer rejects as nondeterminism, so the workflow task
+fails and the execution keeps retrying without doing business work. The
+cold-worker replay check covers this boot path; the eager-loaded in-process
+replay fixtures cannot.
+
 ## Variant Persistence and Review Gates
 
 `PromptEvolution::CreateVariants` persists each mutation as a pending
