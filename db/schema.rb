@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_193120) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5752,7 +5752,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
   add_foreign_key "projects", "accounts"
-  add_foreign_key "projects", "github_installations", validate: false
+  add_foreign_key "projects", "github_installations"
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "github_tokens", column: "git_push_fallback_token_id", validate: false
   add_foreign_key "projects", "users", column: "created_by_id"

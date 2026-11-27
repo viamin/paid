@@ -128,3 +128,9 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-015** — The `projects.github_installation_id` foreign key
+  SHALL validate existing references without changing rows or its reference
+  definition. Migration rollback SHALL preserve the validated foreign key.
+  *Tests:* `spec/migrations/validate_projects_github_installation_foreign_key_spec.rb`.
+  *Code:* `ValidateProjectsGithubInstallationForeignKey`.
