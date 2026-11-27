@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200933) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -559,7 +559,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["bundle_retained_until"], name: "idx_apple_attempts_bundle_retained_until", where: "(bundle_retained_until IS NOT NULL)"
     t.index ["container_retained_until"], name: "idx_apple_attempts_container_retained_until", where: "(container_retained_until IS NOT NULL)"
     t.index ["project_id", "status", "created_at"], name: "idx_apple_attempts_project_status_created"
-    t.index ["project_id"], name: "index_apple_verification_attempts_on_project_id"
     t.index ["retry_of_attempt_id"], name: "idx_apple_attempts_one_retry_per_source", unique: true
     t.index ["status", "queue_entered_at", "id"], name: "idx_apple_attempts_fair_queue"
     t.check_constraint "lifecycle_gate::text = ANY (ARRAY['agent_iteration'::character varying::text, 'completion_verification'::character varying::text, 'pull_request_verification'::character varying::text])", name: "chk_apple_attempts_gate"
