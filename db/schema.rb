@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_213934) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3549,7 +3549,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["agent_run_id"], name: "index_page_load_regression_findings_on_agent_run_id"
     t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_findings_one_open_per_route", unique: true, where: "((status)::text = 'open'::text)"
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
-    t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
     t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
     t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
