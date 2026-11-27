@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202616) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1127,7 +1127,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.decimal "total_quality_score", precision: 10, scale: 4, default: "0.0", null: false, comment: "Sum of quality scores across assignments so averages can be derived incrementally."
     t.datetime "updated_at", null: false
     t.index ["configuration_experiment_id", "is_control"], name: "index_config_experiment_variants_on_experiment_and_control"
-    t.index ["configuration_experiment_id"], name: "idx_on_configuration_experiment_id_54cb3ed654"
     t.index ["configuration_experiment_id"], name: "index_config_experiment_variants_one_control", unique: true, where: "(is_control = true)"
   end
 
