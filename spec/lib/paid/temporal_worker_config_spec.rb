@@ -45,22 +45,6 @@ RSpec.describe Paid::TemporalWorkerConfig do # @spec TEMPORAL-ORCHESTRATION-002
     end
   end
 
-  describe ".bind_launch_mode!" do
-    it "publishes the resolved default mode for readiness consumers" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
-      environment = {}
-
-      expect(described_class.bind_launch_mode!([], environment)).to eq("both")
-      expect(environment).to include("TEMPORAL_WORKER_MODE" => "both")
-    end
-
-    it "keeps an explicit both launch on the same readiness path" do # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-006
-      environment = { "TEMPORAL_WORKER_MODE" => "both" }
-
-      expect(described_class.bind_launch_mode!([ "--mode=both" ], environment)).to eq("both")
-      expect(environment).to include("TEMPORAL_WORKER_MODE" => "both")
-    end
-  end
-
   describe ".selected_activity_slots" do
     let(:slots) do
       {

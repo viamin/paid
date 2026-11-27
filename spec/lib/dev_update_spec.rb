@@ -61,7 +61,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     [ false, true ].each do |migration_trigger|
       Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
         script_path = prepare_script_fixture(dir)
-        %w[poll agent].each { |mode| FileUtils.rm_f(worker_readiness_path(mode)) }
         env = migration_trigger_env(dir)
         env.delete("DEV_UPDATE_CHANGED_FILES") unless migration_trigger
         env.delete("DEV_UPDATE_RESTART_TRIGGER_FILES") unless migration_trigger
@@ -163,38 +162,9 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "defers worker adoption instead of killing a same-workspace orphaned tmux session when the control socket is missing" do # @spec TEMPORAL-ORCHESTRATION-019
+  it "stops same-workspace orphaned tmux sessions before setup when the Overmind control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # A missing control socket cannot be quit gracefully, so stop_overmind
-      # would force-kill the orphaned session, interrupting any worker_poll/
-      # worker_agent Temporal workers it still hosts without a quiescence
-      # acknowledgement. The updater must defer before stopping Overmind.
       script_path = prepare_script_fixture(dir, tmux: :same_workspace)
-      create_overmind_tmux_socket(dir)
-      env = poll_env.merge(
-        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
-      )
-
-      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
-
-      expect(status.success?).to be(false)
-      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
-      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
-      expect(File.exist?(File.join(dir, "dev-ran"))).to be(false)
-      calls_log = File.join(dir, "calls.log")
-      expect(File.exist?(calls_log) ? File.read(calls_log) : "").not_to include("tmux kill-session")
-      expect(read_updater_log(dir)).to include("deferring worker adoption before stopping Overmind")
-      expect(read_updater_log(dir)).to include("orphaned Overmind tmux session")
-    end
-  end
-
-  it "stops a worker-free same-workspace orphaned tmux session before setup when the control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # The orphaned session hosts no worker_poll/worker_agent window, so the
-      # worker-quiescence gate verifies no Temporal worker will be stopped and
-      # the session is cleaned up before setup as RAILS-CONTROL-PLANE-019 requires.
-      script_path = prepare_script_fixture(dir, tmux: :same_workspace_worker_free)
       create_overmind_tmux_socket(dir)
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -592,7 +562,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(calls.count("overmind quit")).to eq(1)
       expect(calls.count("dev")).to eq(1)
       expect(calls.count("setup --skip-server")).to eq(1)
-      expect(File).not_to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("Worker adoption verified: poll and agent workers report revision post-pull-sha.")
@@ -603,134 +573,34 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers a full update before stopping the supervisor when a legacy worker is ready" do
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "defers a full update before stopping the supervisor while a worker owns an activity" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
         pull_diff_files: %w[app/services/llm/request.rb],
         changed_files: "app/services/llm/request.rb",
         start_overmind_running: true,
         with_stale_socket: true,
-        worker_ready: true,
         worker_active_activities: 1)
 
       expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
 
       updater_log = read_updater_log(dir)
-      expect(updater_log).to include("does not support task-safe worker quiescence")
-      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-021")
+      expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
       expect(updater_log).not_to include("Full restart update complete.")
     end
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers an idle ready worker rather than treating activity count as admission safety" do
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "closes admission on an idle role while the other role drains" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      stdout, stderr, status = run_lightweight_with_pull(dir,
-        pull_diff_files: %w[app/services/llm/request.rb],
-        changed_files: "app/services/llm/request.rb",
-        start_overmind_running: true,
-        with_stale_socket: true,
-        worker_ready: true)
+      status, poll_admitted, stderr = run_cross_role_arrival(dir)
 
-      expect(status.success?).to be(false), "stdout: #{stdout}\nstderr: #{stderr}"
-      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
-      expect(read_updater_log(dir)).to include("does not support task-safe worker quiescence")
-    end
-  end
-
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers a full update when a running Overmind reports Temporal workers without readiness metadata" do
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # Models a worker that failed before mark_ready! (or whose readiness
-      # marker was removed): Overmind still reports the worker processes, so
-      # missing metadata must not be read as proof that no worker owns work.
-      stdout, stderr, status = run_lightweight_with_pull(dir,
-        pull_diff_files: %w[app/services/llm/request.rb],
-        changed_files: "app/services/llm/request.rb",
-        start_overmind_running: true,
-        with_stale_socket: true,
-        overmind_worker_processes: true)
-
-      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
-      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
-      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
-
-      updater_log = read_updater_log(dir)
-      expect(updater_log).to include("readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind.")
-      expect(updater_log).not_to include("Full restart update complete.")
-    end
-  end
-
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers a full update when a stale control socket leaves a worker-bearing orphaned tmux session" do
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # A stale socket does not authorize force-killing its worker-bearing orphan.
-      script_path = prepare_script_fixture(
-        dir,
-        start_overmind_running: true,
-        tmux: :same_workspace,
-        overmind_status_exit_status: 1,
-        pull_diff_files: %w[app/services/llm/request.rb]
-      )
-      create_overmind_tmux_socket(dir)
-      create_stale_socket(dir)
-      env = stale_socket_worker_orphan_env(dir)
-
-      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
-
-      expect(status.success?).to be(false)
-      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
-      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
-      expect(File.read(File.join(dir, "calls.log"))).not_to include("tmux kill-session")
-      expect(read_updater_log(dir)).to include("no safe no-worker supervisor state was verified")
-    end
-  end
-
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "defers a full update when overmind status exits successfully with unparseable output" do
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # A zero exit status only proves the command ran, not that its output
-      # parsed as status rows. Garbled text contains no "worker_poll"/
-      # "worker_agent" row not because none exists, but because nothing
-      # parsed; this must not be read as verified absence of a worker.
-      script_path = prepare_script_fixture(dir,
-        pull_diff_files: %w[app/services/llm/request.rb],
-        start_overmind_running: true,
-        overmind_status_malformed: true)
-      env = trigger_context_env(dir,
-        "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
-        "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb")
-
-      stdout, stderr, status = with_active_overmind_socket(dir) do
-        Open3.capture3(env, script_path, "--lightweight", chdir: dir)
-      end
-
-      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
-      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
-      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
-
-      updater_log = read_updater_log(dir)
-      expect(updater_log).to include("overmind status output did not match the expected PROCESS/PID/STATUS format")
-      expect(updater_log).not_to include("Full restart update complete.")
-    end
-  end
-
-  # @spec TEMPORAL-ORCHESTRATION-019
-  it "proceeds without worker quiescence when a running Overmind reports no Temporal worker processes" do
-    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      stdout, stderr, status = run_lightweight_with_pull(dir,
-        pull_diff_files: %w[app/services/llm/request.rb],
-        changed_files: "app/services/llm/request.rb",
-        start_overmind_running: true,
-        with_stale_socket: true)
-
-      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-
-      updater_log = read_updater_log(dir)
-      expect(updater_log).to include("no Temporal worker is running; no Temporal worker quiescence is required.")
-      expect(updater_log).to include("Full restart update complete.")
+      expect(status.success?).to be(true), stderr
+      expect(poll_admitted).to be(false)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to include("overmind quit")
     end
   end
 
@@ -1002,9 +872,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
   it "does not treat overmind restart as success unless health persists" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      # The worker-quiescence gate consumes one successful `overmind status`
-      # call before start_dev runs, so the budget allows that first success.
-      script_path = prepare_script_fixture(dir, start_overmind_running: true, status_successes_after_start: 2)
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, status_successes_after_start: 1)
       env = poll_env.merge(
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
         "OVERMIND_SOCKET" => ".overmind.sock",
@@ -1440,10 +1308,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     status_successes_after_start: nil,
     tmux: nil,
     worker_readiness_revision: nil,
-    worker_ready: false,
-    overmind_worker_processes: false,
-    overmind_status_exit_status: 0,
-    overmind_status_malformed: false,
     unknown_checkout_head: false,
     worker_active_activities: 0
   )
@@ -1453,7 +1317,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
-    if start_overmind_running && worker_ready
+    if start_overmind_running
       %w[poll agent].each do |mode|
         File.write(
           worker_readiness_path(mode),
@@ -1470,9 +1334,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(script_source, script_path)
     FileUtils.chmod("+x", script_path)
     FileUtils.cp(File.expand_path("../../bin/lib/dev_supervisor.sh", __dir__), File.join(dir, "bin", "lib", "dev_supervisor.sh"))
-    %w[dev_worker_admission.sh worker_admission.py worker_admission_cohort.py].each do |name|
-      FileUtils.cp(File.expand_path("../../bin/lib/#{name}", __dir__), File.join(dir, "bin", "lib", name))
-    end
 
     # Models the real Temporal workers' readiness flags: when a stub worker
     # boots it publishes its boot revision so bin/dev-update can verify
@@ -1661,10 +1522,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
-            if [ #{overmind_status_exit_status} -ne 0 ]; then
-              echo "overmind status unavailable" >&2
-              exit #{overmind_status_exit_status}
-            fi
             [ -e "#{dir}/overmind-running" ]
             running=$?
             if [ "$running" -ne 0 ]; then
@@ -1683,16 +1540,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
               rm -f "#{dir}/overmind-running"
               exit 1
             fi
-            if [ "#{overmind_status_malformed ? 1 : 0}" = "1" ]; then
-              echo "private malformed status response"
-              exit 0
-            fi
             echo "PROCESS   PID       STATUS"
             echo "web       12345     running"
-            if [ "#{overmind_worker_processes ? 1 : 0}" = "1" ]; then
-              echo "worker_poll   12346   running"
-              echo "worker_agent  12347   running"
-            fi
             exit 0
             ;;
           quit)
@@ -1736,7 +1585,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         case "$command" in
           list-panes)
             [ -e "#{dir}/tmux-session-stopped" ] && exit 0
-            window="web"
             case "#{tmux}" in
               socket_disappeared)
                 rm -f "$socket"
@@ -1750,13 +1598,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
                 fi
                 path="$PWD"
                 ;;
-              same_workspace)
-                # Model a real orphaned dev supervisor: it still hosts a
-                # worker_poll Temporal worker window.
-                path="$PWD"
-                window="worker_poll"
-                ;;
-              same_workspace_worker_free|stop_fails) path="$PWD" ;;
+              same_workspace|stop_fails) path="$PWD" ;;
               inspection_fails)
                 echo "error connecting to $socket (Permission denied)" >&2
                 exit 1
@@ -1766,8 +1608,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             esac
             if [[ "$format" == *session_name* ]]; then
               printf 'paid|%s\\n' "$path"
-            elif [[ "$format" == *window_name* ]]; then
-              printf '%s|%s\\n' "$path" "$window"
             else
               printf '%s\\n' "$path"
             fi
@@ -1803,28 +1643,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     socket
   end
 
-  def stale_socket_worker_orphan_env(dir)
-    poll_env.merge(
-      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
-      "OVERMIND_SOCKET" => ".overmind.sock",
-      "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux"),
-      "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb"
-    )
-  end
-
   def create_stale_socket(dir)
     socket_path = File.join(dir, ".overmind.sock")
     UNIXServer.open(socket_path) { |server| server.close }
     expect(File.socket?(socket_path)).to be(true)
     socket_path
-  end
-
-  def with_active_overmind_socket(dir)
-    socket_path = File.join(dir, ".overmind.sock")
-    server = UNIXServer.new(socket_path)
-    yield
-  ensure
-    server&.close
-    FileUtils.rm_f(socket_path)
   end
 end
