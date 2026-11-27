@@ -35,7 +35,8 @@ module Inbox
       Queue::PROJECT_SETUP_PENDING_KIND => [ "Complete project setup", "Paid will recheck readiness after setup evidence is recorded." ],
       Queue::TRACEABILITY_GAP_KIND => [ "Resolve the traceability finding", "Reconciliation will verify the recorded resolution." ],
       Queue::LAYERED_VERIFICATION_FINDING_KIND => [ "Record the verification decision", "Paid records the decision without changing project artifacts." ],
-      Queue::DEPENDENCY_CYCLE_KIND => [ "Resolve the dependency cycle", "A later synchronization will confirm whether the cycle cleared." ]
+      Queue::DEPENDENCY_CYCLE_KIND => [ "Resolve the dependency cycle", "A later synchronization will confirm whether the cycle cleared." ],
+      Queue::TECHNICAL_MERGE_BLOCKER_KIND => [ "Verify the technical release condition", "Paid retains the stop until current-head evidence resolves its exact version." ]
     }.freeze
 
     DECISIONS = {
@@ -54,7 +55,8 @@ module Inbox
       Queue::PROJECT_SETUP_PENDING_KIND => "Complete the missing setup or start a readiness bootstrap.",
       Queue::TRACEABILITY_GAP_KIND => "Resolve, assign, or recheck the traceability finding.",
       Queue::LAYERED_VERIFICATION_FINDING_KIND => "Request repair, persist a clarification, or defer the finding.",
-      Queue::DEPENDENCY_CYCLE_KIND => "Choose which dependency declaration should change."
+      Queue::DEPENDENCY_CYCLE_KIND => "Choose which dependency declaration should change.",
+      Queue::TECHNICAL_MERGE_BLOCKER_KIND => "Verify the recorded technical release condition on the current pull request head."
     }.freeze
 
     UNKNOWNS = {
@@ -72,7 +74,8 @@ module Inbox
       Queue::PROJECT_SETUP_PENDING_KIND => "Which missing setup step should be completed first?",
       Queue::TRACEABILITY_GAP_KIND => "Which work should own this traceability finding?",
       Queue::LAYERED_VERIFICATION_FINDING_KIND => "Should Paid request repair, persist clarification, or defer?",
-      Queue::DEPENDENCY_CYCLE_KIND => "Which dependency declaration should be removed or corrected?"
+      Queue::DEPENDENCY_CYCLE_KIND => "Which dependency declaration should be removed or corrected?",
+      Queue::TECHNICAL_MERGE_BLOCKER_KIND => "Which current-head evidence satisfies this technical release condition?"
     }.freeze
 
     def self.call(entry:)

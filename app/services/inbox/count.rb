@@ -44,7 +44,7 @@ module Inbox
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
         test_review_pending_count + project_setup_pending_count + traceability_gap_count +
-        layered_verification_finding_count
+        layered_verification_finding_count + technical_merge_blocker_count
       return count unless personal_removals?
 
       [ count - suppressed_removal_count, 0 ].max
@@ -210,6 +210,12 @@ module Inbox
     # @spec LAYERED-VERIFY-015
     def layered_verification_finding_count
       LayeredVerificationFinding.where(project_id: visible_project_ids, status: %w[open deferred]).count
+    end
+
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    def technical_merge_blocker_count
+      Issue.where(project_id: visible_project_ids, is_pull_request: true, github_state: "open")
+        .where("technical_merge_blockers != ?::jsonb", [].to_json).count
     end
 
     # Shares the exact lane computation with Inbox::Queue

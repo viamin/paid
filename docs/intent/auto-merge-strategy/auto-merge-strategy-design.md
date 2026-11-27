@@ -48,6 +48,14 @@ stale request from erasing a newer stop. Both actions are audited; semantic
 judgment belongs to the authorized operator or delegated agent. Neither action
 grants merge approval or bypasses the normal checks.
 
+Open pull requests with unresolved technical blockers remain actionable after
+their coding or review runs complete. The operator queue projects the scanner's
+current head, each blocker's responsible issue, exact version, release
+condition, and recorded evidence without creating a human hold, clearing a
+stop, or allocating replacement work. Resolution still verifies the exact
+blocker version and current provider head, so a green CI result, a completed
+run, or an owner issue changing state cannot clear the stop implicitly.
+
 Unresolved technical blockers prevent scan-time auto-merge and every final
 merge execution, including dependency-update and credential-fallback paths.
 Final executors reload the internal state before merge I/O. A push, clean

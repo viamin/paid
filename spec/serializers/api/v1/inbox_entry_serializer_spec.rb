@@ -114,6 +114,17 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       )
     end
 
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    it "serializes technical blockers without presenting them as human approval" do
+      issue = create(:issue, :pull_request, project: project, last_scanned_head_sha: "a" * 40)
+      guidance = { current_head: "a" * 40, next_eligible_action: "Reconcile the release condition against the current PR head.",
+                   blockers: [ { "key" => "safe_worker_adoption", "release_condition" => "Verify adoption" } ] }
+      entry = build_entry(Inbox::Queue::TECHNICAL_MERGE_BLOCKER_KIND, issue: issue, record: issue, guidance: guidance)
+
+      expect(described_class.render(entry)).to include(technical_merge_blockers: guidance.fetch(:blockers),
+        current_head: "a" * 40, next_eligible_action: guidance.fetch(:next_eligible_action))
+    end
+
     it "includes the detail-only progress projection without adding it to list payloads" do
       issue = create(:issue, :pull_request, project: project, last_scanned_head_sha: "a" * 40)
       entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue)

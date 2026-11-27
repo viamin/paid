@@ -1,0 +1,14 @@
+<%# @spec AUTO-MERGE-015 OPERATOR-INBOX-028 %>
+<section class="space-y-3" aria-label="Technical merge blockers">
+  <p class="text-sm text-gray-700"><%= entry.guidance.fetch(:next_eligible_action) %></p>
+  <p class="text-sm text-gray-700">Current scanned head: <code><%= entry.guidance[:current_head] || "unavailable" %></code></p>
+  <% entry.guidance.fetch(:blockers).each do |blocker| %>
+    <article class="rounded border border-orange-200 p-3 text-sm text-gray-700">
+      <p><strong>Last verified evidence:</strong> <%= blocker.fetch("reason") %></p>
+      <p><strong>Release condition:</strong> <%= blocker.fetch("release_condition") %></p>
+      <p><strong>Responsible issue:</strong> #<%= blocker.fetch("owner_issue_number") %></p>
+      <p><strong>Recorded evidence:</strong> <%= blocker.fetch("recorded_at") %> for <code><%= blocker.fetch("head_sha") %></code></p>
+    </article>
+  <% end %>
+  <p class="text-sm text-gray-500">This technical stop does not request human merge approval or create a replacement run.</p>
+</section>

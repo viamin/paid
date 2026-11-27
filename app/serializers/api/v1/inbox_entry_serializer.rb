@@ -25,7 +25,8 @@ module Api
         Inbox::Queue::PROJECT_SETUP_PENDING_KIND => :tasks,
         Inbox::Queue::TRACEABILITY_GAP_KIND => :traceability_evidence,
         Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND => :verification_evidence,
-        Inbox::Queue::DEPENDENCY_CYCLE_KIND => :dependency_cycle
+        Inbox::Queue::DEPENDENCY_CYCLE_KIND => :dependency_cycle,
+        Inbox::Queue::TECHNICAL_MERGE_BLOCKER_KIND => :technical_merge_blockers
       }.freeze
 
       def self.render(entry, user: nil, history_limit: nil, history_cursor: nil)
@@ -141,9 +142,20 @@ module Api
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_payload
         when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_payload
+        when Inbox::Queue::TECHNICAL_MERGE_BLOCKER_KIND then technical_merge_blocker_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
+      end
+
+      # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+      def technical_merge_blocker_payload
+        guidance = entry.guidance || {}
+        {
+          technical_merge_blockers: guidance.fetch(:blockers, guidance.fetch("blockers", [])),
+          current_head: guidance[:current_head] || guidance["current_head"],
+          next_eligible_action: guidance[:next_eligible_action] || guidance["next_eligible_action"]
+        }
       end
 
       # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020

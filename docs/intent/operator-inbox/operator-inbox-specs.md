@@ -980,6 +980,18 @@
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
 
+- [x] **OPERATOR-INBOX-028** — When an open pull request has an unresolved
+  technical merge blocker, the Inbox SHALL retain a technical-action entry even
+  if the PR's coding or review run is completed. The entry SHALL use persisted
+  scanner and blocker evidence only, expose the current scanned head, blocker
+  owner, release condition, recorded evidence, and next eligible reconciliation
+  action, and SHALL not represent the stop as a human merge-approval request or
+  allocate, cancel, restart, or reset an existing run.
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+
 - [x] **OPERATOR-INBOX-027** — When an actionable Inbox entry is listed,
   selected, requested through the supported API, or opened in contextual chat,
   the system SHALL use one deterministic decision-brief projection that names

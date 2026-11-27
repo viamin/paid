@@ -315,6 +315,21 @@
   *Test:* `spec/services/pull_requests/technical_merge_blockers_spec.rb`,
   `spec/mcp/tools/update_technical_merge_blocker_spec.rb`.
 
+- [x] **AUTO-MERGE-015** — When an open pull request retains one or more
+  unresolved technical merge blockers, including after its coding or review
+  run is completed, the system SHALL retain it in an actionable technical
+  operator queue independent of `paid_state`. The local queue projection SHALL
+  show the current scanned head, each blocker owner, exact version, release
+  condition, and recorded evidence, and SHALL name current-head reconciliation
+  as the next eligible action. It SHALL NOT create a human-approval request,
+  clear a technical stop, restart a worker, or allocate replacement coding or
+  review work. A resolution remains subject to the existing exact-version and
+  provider-current-head verification contract.
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/services/pull_requests/technical_merge_blockers.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+
 - [x] **AUTO-MERGE-014** — When Paid evaluates an automatic merge path, it
   SHALL inventory workflow runs for the exact pull-request HEAD
   alongside check runs. A green check-run list SHALL NOT be treated as complete

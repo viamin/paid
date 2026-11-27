@@ -225,6 +225,16 @@ or multiplying collection rows.
 
 ## Entry Kinds
 
+### `technical_merge_blocker`
+
+An open pull request with persisted technical merge blockers remains in this
+agent/operator lane independently of its completed coding or review run state.
+The lane is a read-only local projection of the latest scanner head and exact
+blocker records: it identifies the responsible issue, release condition,
+recorded evidence, and current-head reconciliation action. It neither turns a
+technical stop into a human review request nor creates, cancels, or resets a
+run. Exact-version and provider-head validation remain in the blocker resolver.
+
 ### `traceability_gap`
 
 Durable reconciliation findings are operator decisions, not proof that an

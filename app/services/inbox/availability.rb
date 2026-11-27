@@ -180,6 +180,7 @@ module Inbox
       when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_by_project
       when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_by_project
       when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_by_project
+      when Inbox::Queue::TECHNICAL_MERGE_BLOCKER_KIND then technical_merge_blocker_by_project
       end
     end
 
@@ -297,6 +298,14 @@ module Inbox
     def layered_verification_finding_by_project
       LayeredVerificationFinding.where(project_id: visible_project_ids, status: %w[open deferred])
         .group(:project_id).count
+    end
+
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    def technical_merge_blocker_by_project
+      return {} if visible_project_ids.empty?
+
+      Issue.where(project_id: visible_project_ids, is_pull_request: true, github_state: "open")
+        .where("technical_merge_blockers != ?::jsonb", [].to_json).group(:project_id).count
     end
 
     def preload_runner_users(notifications)

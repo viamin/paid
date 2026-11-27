@@ -49,6 +49,43 @@ RSpec.describe Inbox::Queue do
       expect(Inbox::MergeApproval.call(pr)).to be_present
     end
 
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    it "keeps an open completed PR with technical stops in the actionable queue" do
+      pr = create(:issue, :pull_request, project:, paid_state: "completed", last_scanned_head_sha: "a" * 40)
+      owner = create(:issue, project:, github_number: 5293)
+      pr.update!(technical_merge_blockers: [ {
+        "key" => "safe_worker_adoption", "version" => SecureRandom.uuid, "head_sha" => "a" * 40,
+        "reason" => "Worker adoption is not verified", "owner_issue_id" => owner.id,
+        "owner_issue_number" => owner.github_number, "release_condition" => "#5293 verifies safe worker adoption",
+        "recorded_by_id" => user.id, "recorded_at" => 1.hour.ago.iso8601
+      } ])
+
+      entry = described_class.call(user:, kind: described_class::TECHNICAL_MERGE_BLOCKER_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, waiting_since: be_within(1.second).of(pr.updated_at))
+      expect(entry.summary).to include("Worker adoption is not verified")
+      expect(entry.guidance).to include(current_head: "a" * 40, next_eligible_action: "Reconcile the release condition against the current PR head.")
+      expect(entry.guidance.fetch(:blockers).sole).to include("owner_issue_number" => 5293,
+        "release_condition" => "#5293 verifies safe worker adoption")
+    end
+
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    it "retains a blocker after its owner closes until the exact release condition is resolved" do
+      pr = create(:issue, :pull_request, project:, last_scanned_head_sha: "b" * 40)
+      owner = create(:issue, project:, github_state: "closed", github_number: 5326)
+      blocker = { "key" => "safe_worker_adoption", "version" => SecureRandom.uuid, "head_sha" => "a" * 40,
+                  "reason" => "Adoption evidence targets an earlier head", "owner_issue_id" => owner.id,
+                  "owner_issue_number" => owner.github_number, "release_condition" => "Verify #5326 on the current head",
+                  "recorded_by_id" => user.id, "recorded_at" => 1.hour.ago.iso8601 }
+      pr.update!(technical_merge_blockers: [ blocker ])
+
+      entries = described_class.call(user:, kind: described_class::TECHNICAL_MERGE_BLOCKER_KIND)
+
+      expect(entries.map(&:issue)).to include(pr)
+      expect(entries.find { |entry| entry.issue == pr }.guidance).to include(current_head: "b" * 40, blockers: [ blocker ])
+      expect(described_class.call(user:, kind: described_class::TECHNICAL_MERGE_BLOCKER_KIND).map(&:id)).to eq(entries.map(&:id))
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

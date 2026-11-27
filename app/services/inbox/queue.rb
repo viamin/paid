@@ -18,6 +18,7 @@ module Inbox
     TRACEABILITY_GAP_KIND = "traceability_gap"
     LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
     DEPENDENCY_CYCLE_KIND = "dependency_cycle"
+    TECHNICAL_MERGE_BLOCKER_KIND = "technical_merge_blocker"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -45,7 +46,8 @@ module Inbox
       PROJECT_SETUP_PENDING_KIND,
       TRACEABILITY_GAP_KIND,
       LAYERED_VERIFICATION_FINDING_KIND,
-      DEPENDENCY_CYCLE_KIND
+      DEPENDENCY_CYCLE_KIND,
+      TECHNICAL_MERGE_BLOCKER_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -175,6 +177,11 @@ module Inbox
         kind == DEPENDENCY_CYCLE_KIND
       end
 
+      # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+      def technical_merge_blocker?
+        kind == TECHNICAL_MERGE_BLOCKER_KIND
+      end
+
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-020
@@ -246,7 +253,7 @@ module Inbox
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
           test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? ||
-          dependency_cycle?
+          dependency_cycle? || technical_merge_blocker?
 
         "#{tasks.size} proposed tasks"
       end
@@ -475,6 +482,7 @@ module Inbox
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
         entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
         entries.concat(dependency_cycle_entries) if include_kind?(DEPENDENCY_CYCLE_KIND)
+        entries.concat(technical_merge_blocker_entries) if include_kind?(TECHNICAL_MERGE_BLOCKER_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -1084,6 +1092,45 @@ module Inbox
           )
         end
       end
+    end
+
+    # Technical stops stay visible even after a coding run has completed. The
+    # queue is a local projection: scanner-owned current-head data and the
+    # immutable blocker version tell the next owner what must be revalidated;
+    # rendering does not contact GitHub or allocate another agent run.
+    # @spec AUTO-MERGE-015 OPERATOR-INBOX-028
+    def technical_merge_blocker_entries
+      ids = scoped_projects.map(&:id)
+      return [] if ids.empty?
+
+      Issue.where(project_id: ids, is_pull_request: true, github_state: "open")
+        .where("technical_merge_blockers != ?::jsonb", [].to_json)
+        .then { |scope| only_record(scope) }
+        .includes(:project)
+        .order(updated_at: :asc, id: :asc)
+        .filter_map do |issue|
+          blockers = PullRequests::TechnicalMergeBlockers.entries(issue)
+          next unless blockers.any?
+
+          Entry.new(
+            id: "#{TECHNICAL_MERGE_BLOCKER_KIND}:#{issue.id}", kind: TECHNICAL_MERGE_BLOCKER_KIND,
+            project: issue.project, issue:, record: issue, waiting_since: issue.updated_at,
+            questions: [], tasks: [], summary_text: technical_merge_blocker_summary(blockers), title_text: nil,
+            action_url: nil, guidance: technical_merge_blocker_guidance(issue, blockers)
+          )
+        end
+    end
+
+    def technical_merge_blocker_summary(blockers)
+      blockers.map { |blocker| blocker.fetch("reason") }.join(" ").truncate(220)
+    end
+
+    def technical_merge_blocker_guidance(issue, blockers)
+      {
+        current_head: issue.last_scanned_head_sha,
+        blockers:,
+        next_eligible_action: "Reconcile the release condition against the current PR head."
+      }
     end
 
     def traceability_title(finding)
