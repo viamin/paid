@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205524) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2137,7 +2137,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_feature_intent_facet_directions_on_account_id"
     t.index ["feature_intent_facet_id", "name"], name: "idx_on_feature_intent_facet_id_name_f5a6e56431", unique: true
-    t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_b98fb4f64a"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'superseded'::character varying::text])", name: "facet_direction_status"
   end
 
