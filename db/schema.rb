@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212055) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2974,7 +2974,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.integer "token_count", default: 0, null: false, comment: "Approximate token cost of the retrieved knowledge context."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "artifact_type", "context_type"], name: "idx_knowledge_usage_stats_unique", unique: true
-    t.index ["agent_run_id"], name: "index_knowledge_usage_stats_on_agent_run_id"
     t.index ["artifact_type", "goal"], name: "index_knowledge_usage_stats_on_artifact_type_and_goal"
     t.index ["project_id", "created_at"], name: "index_knowledge_usage_stats_on_project_id_and_created_at"
     t.index ["project_id"], name: "index_knowledge_usage_stats_on_project_id"
