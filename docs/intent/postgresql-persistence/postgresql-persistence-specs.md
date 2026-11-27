@@ -128,3 +128,8 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-017** — The `chat_sessions.clarifying_question_issue_id` foreign key
+  SHALL validate existing references without changing rows or its reference
+  definition. Migration rollback SHALL preserve the validated foreign key.
+  *Code:* `ValidateChatSessionsClarifyingQuestionIssueForeignKey`.
