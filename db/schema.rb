@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201916) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -907,7 +907,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "tool_status", comment: "Confirmation state for write tool calls: pending, approved, or denied"
     t.datetime "updated_at", null: false
     t.index ["chat_session_id", "created_at"], name: "index_chat_messages_on_chat_session_id_and_created_at"
-    t.index ["chat_session_id"], name: "index_chat_messages_on_chat_session_id"
     t.index ["external_id"], name: "index_chat_messages_on_external_id", unique: true
     t.index ["role"], name: "index_chat_messages_on_role"
     t.index ["tool_status"], name: "index_chat_messages_on_tool_status", where: "((tool_status)::text = 'pending'::text)"
