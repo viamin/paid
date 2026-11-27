@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200807) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -506,7 +506,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["chat_message_id"], name: "index_api_usage_attempts_on_chat_message_id"
     t.index ["chat_session_id"], name: "index_api_usage_attempts_on_chat_session_id"
     t.index ["project_id", "created_at"], name: "idx_api_usage_attempts_project_created"
-    t.index ["project_id"], name: "index_api_usage_attempts_on_project_id"
     t.index ["runner_id"], name: "index_api_usage_attempts_on_runner_id"
     t.index ["token_usage_id"], name: "index_api_usage_attempts_on_token_usage_id"
     t.check_constraint "((agent_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1", name: "api_usage_attempts_exactly_one_owner"
