@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -u
+
+# @spec RAILS-CONTROL-PLANE-031
+worker_pid=""
+crash_count=0
+first_crash_at=0
+restart_delay_seconds="${PAID_TEMPORAL_RESTART_DELAY_SECONDS:-2}"
+worker_mode="${TEMPORAL_WORKER_MODE:-both}"
+if ! [[ "$restart_delay_seconds" =~ ^[0-9]+$ ]]; then
+  echo "PAID_TEMPORAL_RESTART_DELAY_SECONDS must be a non-negative integer" >&2
+  exit 2
+fi
+case "$worker_mode" in
+  poll|agent|both) ;;
+  *) echo "Invalid TEMPORAL_WORKER_MODE" >&2; exit 2 ;;
+esac
+
+stop_worker() {
+  if [ -n "$worker_pid" ]; then
+    # Bash background children inherit ignored SIGINT until they install traps.
+    kill -TERM "$worker_pid" 2>/dev/null || true
+    while kill -0 "$worker_pid" 2>/dev/null; do
+      wait "$worker_pid" 2>/dev/null || true
+    done
+  fi
+  exit 0
+}
+
+trap 'stop_worker' INT TERM
+
+# Keep native backtraces separate from the supervisor's rotating log.
+mkdir -p log/crashes || exit 1
+chmod 700 log/crashes || exit 1
+
+while true; do
+  ruby --crash-report="log/crashes/temporal-${worker_mode}-%p.log" bin/temporal_worker "$@" &
+  worker_pid=$!
+  wait "$worker_pid"
+  exit_code=$?
+  worker_pid=""
+
+  if [ "$exit_code" -ne 139 ]; then
+    exit "$exit_code"
+  fi
+
+  now=$(date +%s)
+  if [ "$first_crash_at" -eq 0 ] || (( now - first_crash_at >= 300 )); then
+    first_crash_at=$now
+    crash_count=0
+  fi
+  if [ "$crash_count" -ge 3 ]; then
+    echo "Temporal ${worker_mode} exited 139 four times within five minutes; stopping automatic recovery" >&2
+    exit 139
+  fi
+
+  crash_count=$((crash_count + 1))
+  echo "Temporal ${worker_mode} exited 139; restarting in $((crash_count * restart_delay_seconds))s (attempt ${crash_count}/3); crash reports: log/crashes" >&2
+  sleep "$((crash_count * restart_delay_seconds))" &
+  worker_pid=$!
+  wait "$worker_pid"
+  worker_pid=""
+done

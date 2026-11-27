@@ -96,7 +96,11 @@
   visibility, its heartbeat becomes stale, or runnable work waits beyond the
   configured progress window while a thread in that work's eligible scheduler
   pool is available, the worker
-  SHALL withdraw readiness and request the existing graceful GoodJob shutdown;
+  SHALL withdraw readiness and request the existing graceful GoodJob shutdown
+  with the same forced-exit deadline as signal shutdown. A blocked shutdown
+  SHALL not prevent the watchdog from exiting the process, and a subsequent
+  signal SHALL force exit. A health observation during signal-driven draining
+  SHALL NOT shorten that drain's existing deadline;
   it SHALL preserve active job ownership and SHALL not log job payloads or
   credentials.
   Queue eligibility SHALL honor GoodJob queue expressions, pauses, scheduling,
@@ -105,6 +109,7 @@
   next continuously waiting window. A GoodJob dispatch timestamp SHALL reset
   the eligible pool's progress window before that execution completes.
   *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
+  `spec/lib/paid/good_job_worker_shutdown_spec.rb`,
   `spec/lib/paid/good_job_worker/health_snapshot_spec.rb`,
   `spec/lib/paid/worker_readiness_spec.rb`.
   *Code:* `lib/paid/good_job_worker.rb`, `lib/paid/worker_readiness.rb`,
@@ -360,3 +365,19 @@ failures when no tmux socket responds.
 - [D] **RAILS-CONTROL-PLANE-005** — When a Phlex migration is approved, the
   control plane SHALL update this segment to replace the ERB-specific claim with
   the new shipped component-layer behavior.
+
+- [x] **RAILS-CONTROL-PLANE-031** — When a development Temporal worker exits
+  139, its wrapper SHALL retry at most three times within five minutes with
+  increasing delay and retain role-specific Ruby crash reports. Other exits
+  SHALL surface unchanged. INT or TERM SHALL stop the child without recovery,
+  including during boot and restart backoff. If the crash-report directory
+  cannot be secured, the wrapper SHALL fail before launching a worker.
+  *Tests:* `spec/lib/dev_temporal_worker_spec.rb`.
+  *Code:* `bin/dev-temporal-worker`, `Procfile.dev`.
+
+- [x] **RAILS-CONTROL-PLANE-032** — When GoodJob receives INT or TERM, its
+  signal handler SHALL dispatch graceful shutdown outside trap context. A
+  subsequent signal SHALL force exit, and the graceful path SHALL retain its
+  shutdown watchdog and readiness withdrawal.
+  *Tests:* `spec/lib/paid/good_job_worker_spec.rb`.
+  *Code:* `lib/paid/good_job_worker.rb`, `bin/jobs`.

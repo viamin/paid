@@ -30,7 +30,13 @@ The repo now includes substantial runtime infrastructure:
 - persisted interactive-verification outcomes, app-log tails, and artifact
   metadata for review flows
 
-These are real execution surfaces, not placeholders.
+These are real execution surfaces, not placeholders. The tunnel server emits
+an explicit services table even when no previews are active, allowing Rathole
+to start and wait for subsequent bindings. Noise uses Rathole's authenticated
+NK pattern: the server's X25519 private key is derived with domain-separated
+HMAC-SHA256 from the existing shared secret, and clients pin its public key.
+The key remains stable across server and client processes without another
+secret to provision; rotating the shared secret rotates the key pair.
 
 ## Preview Viewer Bootstrap
 

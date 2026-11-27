@@ -65,8 +65,10 @@ work look stalled, and another pool's completions cannot hide a stalled pool.
 The progress window resets when the pool has no eligible waiting work or no
 available thread. When eligible work continuously waits for an available
 thread in its pool without a bounded GoodJob dispatch or completion update, or when the GoodJob process heartbeat is stale, the
-worker withdraws readiness and requests GoodJob's graceful shutdown.  This
-preserves active execution ownership during the configured drain window; a
+worker withdraws readiness and requests GoodJob's graceful shutdown. Both health
+recovery and signal shutdown start the same forced-exit watchdog before invoking
+GoodJob, and a later signal forces exit even when health recovery began shutdown.
+This preserves active execution ownership during the configured drain window; a
 replacement must let GoodJob's normal ownership and expiry mechanisms decide
 when work is eligible again.  The health monitor never marks readiness healthy
 or renews audit allowances to manufacture progress, and it records only counts,
@@ -322,3 +324,15 @@ the issues it already created instead of duplicating them.
 The RDR's earlier Phlex preference remains deferred. Any future view-layer
 migration should update this segment and the representative ERB evidence rather
 than assuming component-layer adoption already happened.
+
+## Worker crash recovery and shutdown
+
+Development Temporal wrappers retry exit 139 at most three times in five
+minutes with increasing delay. Other exits surface to Overmind. INT and TERM
+send TERM to the child without restarting it, including during boot and
+backoff, when background children may still ignore INT. Each role retains Ruby
+crash reports outside the rotating supervisor log. Repeated native crashes
+still stop the stack for investigation. Startup fails if the directory cannot
+be secured. Memory sampling identifies the worker script independently of
+Ruby interpreter options. GoodJob signal handlers dispatch shutdown to normal
+Ruby threads so readiness and shutdown mutexes are never used in trap context.

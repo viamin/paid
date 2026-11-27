@@ -3,8 +3,8 @@ jobs: bin/jobs
 js: yarn build --watch
 css: yarn build:css --watch
 preview_tunnel: bin/preview-tunnel-server
-worker_poll: TEMPORAL_WORKER_MODE=poll TEMPORAL_PROMETHEUS_BIND_ADDRESS=0.0.0.0:9464 bin/temporal_worker --mode=poll
-worker_agent: TEMPORAL_WORKER_MODE=agent TEMPORAL_PROMETHEUS_BIND_ADDRESS=0.0.0.0:9465 bin/temporal_worker --mode=agent
+worker_poll: TEMPORAL_WORKER_MODE=poll TEMPORAL_PROMETHEUS_BIND_ADDRESS=0.0.0.0:9464 bin/dev-temporal-worker --mode=poll
+worker_agent: TEMPORAL_WORKER_MODE=agent TEMPORAL_PROMETHEUS_BIND_ADDRESS=0.0.0.0:9465 bin/dev-temporal-worker --mode=agent
 
 # Connect to a running process by running `overmind connect <process name>`
 # e.g. `overmind connect web` or `overmind connect worker_agent`

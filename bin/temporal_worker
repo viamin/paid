@@ -36,6 +36,10 @@ require_relative "lib/worker_admission_slot_supplier"
 # concurrent threads can hit method_missing simultaneously and fail.
 Rails.application.reload_routes!
 
+# Zeitwerk's autoload monitors are forbidden inside workflow execution.
+# @spec TEMPORAL-ORCHESTRATION-023
+Rails.application.eager_load!
+
 Dir[Rails.root.join("app/temporal/activities/**/*.rb")].each { |f| require f }
 Dir[Rails.root.join("app/temporal/workflows/**/*.rb")].each { |f| require f }
 
