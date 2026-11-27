@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202530) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1113,7 +1113,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_configuration_experiment_assignments_on_agent_run_id"
     t.index ["configuration_experiment_id", "agent_run_id"], name: "index_config_experiment_assignments_unique", unique: true
-    t.index ["configuration_experiment_id"], name: "idx_on_configuration_experiment_id_6532d1a5ed"
     t.index ["configuration_experiment_variant_id"], name: "idx_on_configuration_experiment_variant_id_9de5ff7df6"
   end
 
