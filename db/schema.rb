@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211119) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2617,7 +2617,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["recorded_by_id"], name: "idx_on_recorded_by_id_38f8005397"
     t.index ["revised_by_id"], name: "idx_on_revised_by_id_74dce43a7b"
     t.index ["shadow_evaluation_id", "case_id"], name: "idx_shadow_evaluation_labels_case", unique: true, comment: "One durable label row per case: saves update in place, giving durable save/resume."
-    t.index ["shadow_evaluation_id"], name: "idx_on_shadow_evaluation_id_faf0701cf6"
   end
 
   create_table "intent_conformance_shadow_evaluation_runs", comment: "Executed reviewer run per corpus case: the actual reviewer verdict recorded after the reference set froze (#4594). Failures persist as not_evaluated with a reason.", force: :cascade do |t|
