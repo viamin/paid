@@ -128,3 +128,8 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-021** — The project delegation posture level check
+  SHALL validate existing rows without changing its allowed-level predicate or
+  application data. Rollback SHALL preserve the validated check.
+  *Code:* `ValidateProjectDelegationPosturesLevelConstraint`.
