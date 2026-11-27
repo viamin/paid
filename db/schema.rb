@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204412) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1641,7 +1641,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "enabled"], name: "index_docker_hosts_on_account_id_and_enabled"
     t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
     t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
-    t.index ["account_id"], name: "index_docker_hosts_on_account_id"
   end
 
   create_table "egress_allowlist_entries", comment: "Tenant-managed host allowlist entries that resolve into an agent run's egress policy snapshot.", force: :cascade do |t|
