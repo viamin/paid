@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -920,7 +920,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "project_id", null: false
     t.datetime "updated_at", null: false
     t.index ["chat_session_id", "project_id"], name: "index_chat_session_projects_on_chat_session_id_and_project_id", unique: true
-    t.index ["chat_session_id"], name: "index_chat_session_projects_on_chat_session_id"
     t.index ["project_id"], name: "index_chat_session_projects_on_project_id"
   end
 
