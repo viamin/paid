@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211533) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2842,7 +2842,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
-    t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
     t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
