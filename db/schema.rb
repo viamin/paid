@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212531) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3077,7 +3077,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["agent_run_id", "revision_number"], name: "index_layered_verification_review_packages_revision", unique: true
     t.index ["agent_run_id"], name: "index_layered_verification_review_packages_on_agent_run_id"
     t.index ["project_id", "package_digest"], name: "index_layered_verification_review_packages_identity"
-    t.index ["project_id"], name: "index_layered_verification_review_packages_on_project_id"
   end
 
   create_table "linear_tokens", force: :cascade do |t|
