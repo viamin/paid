@@ -100,6 +100,18 @@
         The agent-run-actions Stimulus controller observes the detail target
         for status changes and hides/shows buttons client-side. %>
     <div data-agent-run-actions-target="actions">
+      <% if @agent_run.queued? %>
+        <% queue_explanation = @agent_run.queue_admission_explanation %>
+        <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+          Queue priority: <%= queue_explanation[:queue_priority] %>. Waiting <%= distance_of_time_in_words(queue_explanation[:queue_age_seconds]) %>.
+          <% if queue_explanation[:admission][:state] == "denied" %>
+            Latest scheduler admission was denied: <%= queue_explanation[:admission][:reason].to_s.humanize %>.
+          <% else %>
+            Scheduler admission has not been observed yet.
+          <% end %>
+        </p>
+      <% end %>
+
       <%# @spec QUEUE-TIER-010 %>
       <% if @first_implementation_priority_available %>
         <div class="mt-3 flex justify-end">

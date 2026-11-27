@@ -38,6 +38,7 @@ class ProcessRunQueueJob < ApplicationJob
   TEMPORAL_PRIORITY_KEYS = {
     manual: 1,
     operator_coding: 2,
+    dependency_bottleneck: 2,
     pr_p1: 3,
     pr_p2: 3,
     pr_p3: 3,
@@ -98,6 +99,7 @@ class ProcessRunQueueJob < ApplicationJob
       admission_snapshot = Capacity::AdmissionSnapshot.capture(
         window_seconds: Capacity::InfrastructureLimits.current[:provisioning_rate_window_seconds]
       )
+      AgentRuns::RefreshDependencyBottleneckPriority.call
 
       loop do
         iterations += 1

@@ -126,6 +126,24 @@ or run identity. It has no capacity, P0, preemption, or dispatch effect beyond
 the existing queue tier, so all fairness and dequeue guards continue to decide
 whether it may run.
 
+### Synchronized delivery bottlenecks
+
+Before a scheduler pass, `AgentRuns::RefreshDependencyBottleneckPriority`
+re-evaluates existing unclaimed automatic first implementations against the
+locally synchronized, project-scoped dependency graph. A run receives a
+revocable marker only when its source issue is an ancestor of the source issue
+for open delivery PR work. The marker ranks below manual and audited operator
+requests but above ordinary PR review and repair work. It is cleared as soon as
+the local dependency or open-PR fact no longer supports it.
+
+The marker is an ordering observation, not an admission result. It neither
+changes the original queue episode, trigger, initiator, continuation identity,
+budget nor execution authority, and it never bypasses the normal capacity,
+tenant, policy, phase, fairness, or retry gates. Scheduler rejection events
+remain the evidence of an actual admission denial; without such an event the
+operator surface must report admission as unobserved rather than infer denial
+from queue age or position.
+
 ## Ruby mirror and badges
 
 ### Explicit operator acceptance requests

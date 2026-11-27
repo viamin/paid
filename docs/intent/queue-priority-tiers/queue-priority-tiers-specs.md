@@ -151,3 +151,23 @@
   `spec/mcp/tools/prioritize_first_implementation_spec.rb`,
   `spec/models/agent_run_spec.rb`,
   `spec/system/first_implementation_priority_spec.rb`.
+
+- [x] **QUEUE-TIER-011** — When a queued automatic fresh `create_pr` run is
+  the locally synchronized prerequisite, directly or transitively, of an open
+  pull request's source issue, Paid SHALL refresh a revocable dependency-
+  bottleneck marker before dequeue and rank that run after human and explicit
+  operator priority but ahead of recurring PR review or repair work. The
+  marker SHALL clear when the dependency or open-delivery evidence is no longer
+  current, SHALL preserve the run's identity and queue age, and SHALL not
+  bypass authorization, tenant/phase, fairness, capacity, or retry guards.
+  *Code:* `AgentRuns::RefreshDependencyBottleneckPriority`,
+  `AgentRun::QUEUE_PRIORITY_CASE_SQL`, `ProcessRunQueueJob`.
+  *Test:* `spec/services/agent_runs/refresh_dependency_bottleneck_priority_spec.rb`,
+  `spec/models/agent_run_spec.rb`.
+
+- [x] **QUEUE-TIER-012** — A queued run's operator-visible explanation SHALL
+  show its current queue age and ordering tier, and SHALL identify admission as
+  denied only when a scheduler `execution.rejected` audit event exists; absent
+  such evidence it SHALL say that admission is unobserved.
+  *Code:* `AgentRun#queue_admission_explanation`, agent-run detail view.
+  *Test:* `spec/models/agent_run_spec.rb`.
