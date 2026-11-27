@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204037) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1515,7 +1515,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "status", default: "held", null: false, comment: "Hold status: held or released."
     t.datetime "updated_at", null: false
     t.index ["design_amendment_id", "issue_id"], name: "index_design_amendment_pauses_unique_branch", unique: true
-    t.index ["design_amendment_id"], name: "index_design_amendment_pauses_on_design_amendment_id"
     t.index ["issue_id"], name: "index_design_amendment_pauses_on_issue_id"
     t.index ["released_by_id"], name: "index_design_amendment_pauses_on_released_by_id"
     t.index ["status"], name: "index_design_amendment_pauses_on_status"
