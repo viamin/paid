@@ -128,3 +128,8 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-020** — The `chat_sessions.feature_intent_id` foreign key
+  SHALL validate existing references without changing rows or its reference
+  definition. Migration rollback SHALL preserve the validated foreign key.
+  *Code:* `ValidateChatSessionsFeatureIntentForeignKey`.
