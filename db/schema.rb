@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_214557) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3590,7 +3590,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "state_token", comment: "Opaque CSRF state token tied to the user's session at install time; included for audit / forensic value, not used as a binding signal in itself"
     t.datetime "updated_at", null: false
     t.index ["account_id", "github_installation_id"], name: "idx_pending_install_claims_on_account_installation", unique: true
-    t.index ["account_id"], name: "index_pending_install_claims_on_account_id"
     t.index ["expires_at"], name: "index_pending_install_claims_on_expires_at"
     t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
   end
