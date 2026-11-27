@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203911) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1483,7 +1483,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "alert_state", "last_detected_at"], name: "idx_dependabot_coverages_project_alert_state_detected", comment: "Supports projects#show listing of open Dependabot alerts (alert_state='open' filtered by project_id, ordered by last_detected_at desc) so the query stays a cheap index scan instead of growing linearly with backlog size."
     t.index ["project_id", "coverage_state"], name: "idx_on_project_id_coverage_state_9626caa4b8"
     t.index ["project_id", "dependency_ecosystem", "dependency_name", "advisory_ghsa_id", "manifest_path"], name: "index_dependabot_coverages_on_dependency_advisory_identity", unique: true
-    t.index ["project_id"], name: "index_dependabot_alert_coverages_on_project_id"
   end
 
   create_table "design_amendment_follow_ups", comment: "Follow-up human decisions for already-merged work affected by a design revision; never auto-rolled back.", force: :cascade do |t|
