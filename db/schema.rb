@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200031) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -243,7 +243,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "status", limit: 50, default: "completed", null: false, comment: "Outcome for the recorded phase. Currently completed or failed."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "started_at"], name: "index_agent_run_phases_on_agent_run_id_and_started_at"
-    t.index ["agent_run_id"], name: "index_agent_run_phases_on_agent_run_id"
     t.index ["phase_group", "started_at"], name: "index_agent_run_phases_on_phase_group_and_started_at"
     t.index ["phase_key", "started_at"], name: "index_agent_run_phases_on_phase_key_and_started_at"
     t.check_constraint "duration_seconds >= 0", name: "agent_run_phases_duration_seconds_non_negative"
