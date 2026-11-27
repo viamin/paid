@@ -30,6 +30,21 @@ RSpec.describe Development::PgHeroOverview::Scan do
     )
   end
 
+  def stub_partial_filing(remote_issues)
+    fail_next_create = true
+    allow(client).to receive(:all_issues) { remote_issues.dup }
+    allow(client).to receive(:create_issue) do |repo, title:, body:, labels:|
+      if remote_issues.any? && fail_next_create
+        fail_next_create = false
+        raise GithubClient::Error, "write failed"
+      end
+
+      Struct.new(:number, :body, :state).new(77 + remote_issues.size, body, "open").tap do |issue|
+        remote_issues << issue
+      end
+    end
+  end
+
   def transient_finding(key: "connection_pressure")
     Development::PgHeroOverview::Finding.new(
       type: :connection_pressure, key: key, title: "Connection pressure",
@@ -95,6 +110,28 @@ RSpec.describe Development::PgHeroOverview::Scan do
     row.reload
     expect(row.consecutive_observations).to eq(2)
     expect(row.last_seen_at.to_i).to eq(now.to_i)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
+  it "recovers remote issues after a later filing failure rolls back observation state" do
+    first = structural_finding
+    second = structural_finding(key: "invalid_index/public/idx_other")
+    remote_issues = []
+    stub_partial_filing(remote_issues)
+    scan = scanner(findings: [ first, second ])
+
+    expect {
+      Project.transaction(requires_new: true) { scan.call }
+    }.to raise_error(GithubClient::Error, "write failed")
+    expect(PgHeroOverviewFinding.where(project: project)).to be_empty
+    expect(remote_issues.size).to eq(1)
+
+    result = scan.call
+
+    expect(result.created).to eq(1)
+    expect(remote_issues.size).to eq(2)
+    expect(PgHeroOverviewFinding.where(project: project).pluck(:finding_key, :github_issue_number))
+      .to contain_exactly([ first.key, 77 ], [ second.key, 78 ])
   end
 
   # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-028

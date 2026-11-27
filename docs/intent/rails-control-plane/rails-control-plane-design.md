@@ -266,7 +266,11 @@ Findings are deduplicated by the stable identities above. Each actionable
 finding owns at most one GitHub issue labeled `pghero-overview` in each
 tenant self repository; the issue
 body embeds a hidden marker with the finding identity so issues can be
-adopted even if local state is lost. A persisted `pghero_overview_findings`
+adopted even if local state is lost. Recovery checks open and closed issues
+and fills missing links even when observation recording has recreated the
+state row. Existing links take precedence; otherwise recovery prefers an
+open issue, then the oldest match. An actionable recurring finding reopens
+its recovered closed issue. A persisted `pghero_overview_findings`
 row (system infrastructure in the primary database, not tenant data) scopes
 first/last observation, consecutive observations, and the linked issue number
 to the target project. On subsequent scans the existing issue body is refreshed when the
@@ -292,9 +296,10 @@ Overview rescues), unavailable query stats, and GitHub lookup or write
 failures each yield a failed or explicitly incomplete scan — never an
 apparent all-clear — and categories that could not be observed are excluded
 from disappearance decisions so a timed-out catalog read cannot close a
-still-open issue. GitHub failures never file or close anything: the open
-issue list is read first, and a lookup failure aborts the scan before any
-write, so duplicates cannot be created by a failed lookup. Database errors
+still-open issue. The complete issue list is read first, and a lookup failure
+aborts the scan before any write. A later write failure may leave remote
+issues after local state rolls back; the next scan recovers their identity
+markers before creating issues. Database errors
 propagate so GoodJob records the failure.
 
 ### Scheduling and concurrency

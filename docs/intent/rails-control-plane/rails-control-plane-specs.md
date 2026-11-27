@@ -298,7 +298,11 @@ failures when no tmux socket responds.
   PgHero dashboard link, and a concrete investigation prompt that treats
   suggested indexes and slow queries as investigation leads rather than
   schema-change instructions; a recurring finding updates the existing
-  issue; a finding that disappears closes its issue with when it was last
+  issue, recovering open or closed marked issues when local linkage is
+  missing, including when an unlinked observation row already exists;
+  existing links SHALL take precedence, otherwise recovery SHALL prefer
+  an open issue, then the oldest matching issue;
+  a finding that disappears closes its issue with when it was last
   observed; a finding that recurs after closure reopens its issue. Query
   text embedded in issues SHALL be filtered of literal values and SHALL NOT
   include credentials.

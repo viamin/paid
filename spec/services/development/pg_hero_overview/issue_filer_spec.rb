@@ -199,6 +199,71 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   end
 
   # @spec RAILS-CONTROL-PLANE-027
+  it "adopts an existing issue when observation recording already created an unlinked row" do
+    f = finding
+    row = row_for(f)
+    allow(client).to receive(:all_issues) { [ github_issue(number: 31, body: filer.send(:body_for, f)) ] }
+
+    result = filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
+      collected_categories: Set.new(%i[indexes]))
+
+    expect(client).not_to have_received(:create_issue)
+    expect(row.reload.github_issue_number).to eq(31)
+    expect(result.created).to eq(0)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
+  it "recovers and reopens a closed issue after losing its local linkage" do
+    f = finding
+    row = row_for(f)
+    allow(client).to receive(:all_issues).with("viamin/paid", labels: described_class::LABEL, state: "all")
+      .and_return([ github_issue(number: 31, body: filer.send(:body_for, f), state: "closed") ])
+
+    result = filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
+      collected_categories: Set.new(%i[indexes]))
+
+    expect(client).not_to have_received(:create_issue)
+    expect(row.reload.github_issue_number).to eq(31)
+    expect(client).to have_received(:update_issue).with("viamin/paid", 31, state: "open", body: kind_of(String))
+    expect(result.reopened).to eq(1)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
+  it "prefers the oldest open issue when several issues match an unlinked finding" do
+    f = finding
+    row = row_for(f)
+    allow(client).to receive(:all_issues) do
+      [ github_issue(number: 3, body: filer.send(:body_for, f), state: "closed"),
+        github_issue(number: 31, body: filer.send(:body_for, f)),
+        github_issue(number: 7, body: filer.send(:body_for, f)) ]
+    end
+
+    filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
+      collected_categories: Set.new(%i[indexes]))
+
+    expect(row.reload.github_issue_number).to eq(7)
+    expect(client).not_to have_received(:create_issue)
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
+  it "preserves an existing issue link when other marked issues have the same identity" do
+    f = finding
+    row = row_for(f, github_issue_number: 7)
+    allow(client).to receive(:all_issues) do
+      [ github_issue(number: 31, body: filer.send(:body_for, f)),
+        github_issue(number: 7, body: filer.send(:body_for, f)) ]
+    end
+
+    filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
+      collected_categories: Set.new(%i[indexes]))
+
+    expect(row.reload.github_issue_number).to eq(7)
+    expect(client).not_to have_received(:create_issue)
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
   it "truncates oversized query text in issue bodies" do
     long_query = "SELECT * FROM issues WHERE token = $1 -- #{'x' * 5_000}"
     f = finding(type: :slow_query, key: "slow_query/5", category: :query_stats,

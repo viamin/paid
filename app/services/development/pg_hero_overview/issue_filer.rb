@@ -6,9 +6,9 @@ module Development
     # the one-issue-per-identity lifecycle: create with evidence, update on
     # changed evidence, reopen on recurrence (or a human close while the
     # finding persists), close when the finding disappears from a category
-    # this scan could observe. The GitHub open-issue list is read before any
+    # this scan could observe. The GitHub issue list is read before any
     # write, so a failed lookup aborts without filing or closing anything,
-    # and open issues carrying the identity marker are adopted when local
+    # and issues carrying the identity marker are adopted when local
     # state is missing — a retried or concurrent scan cannot duplicate.
     #
     # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-028 RAILS-CONTROL-PLANE-029
@@ -69,9 +69,10 @@ module Development
       end
 
       def sync(observed_findings:, actionable_findings:, rows:, collected_categories:)
-        open_issues = @client.all_issues(@project.full_name, labels: LABEL, state: "open")
+        issues = @client.all_issues(@project.full_name, labels: LABEL, state: "all")
+        open_issues = issues.reject { |issue| issue.state == "closed" }
         open_by_number = open_issues.to_h { |issue| [ issue.number.to_i, issue ] }
-        adopt_marked_issues(open_issues, rows)
+        adopt_marked_issues(issues, rows)
 
         actionable_keys = actionable_findings.map(&:key).to_set
         created = updated = reopened = 0
@@ -153,23 +154,25 @@ module Development
         closed
       end
 
-      # Issues carrying our identity marker but no local row (state loss, or
-      # a partially-completed prior run) are adopted instead of duplicated.
-      def adopt_marked_issues(open_issues, rows)
-        open_issues.each do |issue|
+      # Observation recording may already have recreated an unlinked row.
+      # Prefer an open issue, then the oldest issue, without replacing a link.
+      def adopt_marked_issues(issues, rows)
+        issues.sort_by { |issue| [ issue.state == "closed" ? 1 : 0, issue.number.to_i ] }.each do |issue|
           identity = issue.body.to_s[/<!-- #{IDENTITY_MARKER}: (.+?) -->/, 1]
           next if identity.blank?
 
           database_id, key = identity.split("/", 2)
-          next if key.blank? || rows.key?(key)
+          next if key.blank?
 
-          row = findings_scope.find_or_create_by!(database: database_id, finding_key: key) do |new_row|
+          row = rows[key] || findings_scope.find_or_create_by!(database: database_id, finding_key: key) do |new_row|
             new_row.finding_type = key.split("/").first
             new_row.first_seen_at = @now.call
             new_row.last_seen_at = @now.call
             new_row.consecutive_observations = 1
           end
-          row.update!(github_issue_number: issue.number, resolved_at: nil)
+          next if row.github_issue_number.present?
+
+          row.update!(github_issue_number: issue.number, resolved_at: issue.state == "closed" ? @now.call : nil)
           rows[key] = row
           log(:adopted, finding_key: key, issue_number: issue.number)
         end
