@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203829) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1450,7 +1450,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["issue_id", "created_at"], name: "index_decomposition_decisions_on_issue_id_and_created_at"
     t.index ["issue_id"], name: "index_decomposition_decisions_on_issue_id"
     t.index ["project_id", "created_at"], name: "index_decomposition_decisions_on_project_id_and_created_at"
-    t.index ["project_id"], name: "index_decomposition_decisions_on_project_id"
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
   end
 
