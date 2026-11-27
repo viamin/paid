@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_210042) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2240,7 +2240,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_1cd66b5f10"
     t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_5eef7ee3f6"
     t.index ["feature_intent_issue_prerequisite_mapping_id", "feature_intent_facet_id", "feature_intent_facet_direction_id"], name: "index_issue_prerequisites_unique_mapping", unique: true
-    t.index ["feature_intent_issue_prerequisite_mapping_id"], name: "idx_on_feature_intent_issue_prerequisite_mapping_id_d60e1156f7"
   end
 
   create_table "feature_intent_issue_publications", comment: "Durable GitHub issue-create receipts for planning-held feature work.", force: :cascade do |t|
