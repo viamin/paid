@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_210930) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2594,7 +2594,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "status", default: "pending", null: false, comment: "pending while the review chain (including retries) is active; completed once terminal (see IntentConformanceReviewSchedule::STATUSES)."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "approved_design_revision"], name: "idx_intent_review_schedules_unique_identity", unique: true, comment: "Repeated scans of the same (pull request, PR head, approved design revision) never spawn a second review chain."
-    t.index ["issue_id"], name: "index_intent_conformance_review_schedules_on_issue_id"
     t.index ["project_id", "status"], name: "idx_intent_review_schedules_project_status", comment: "Backs the bounded per-project pending-schedule check."
     t.index ["project_id"], name: "index_intent_conformance_review_schedules_on_project_id"
   end
