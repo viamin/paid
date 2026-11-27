@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203421) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1356,7 +1356,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id"], name: "index_coordination_policies_on_account_id"
     t.index ["current_version_id"], name: "index_coordination_policies_on_current_version_id"
     t.index ["project_id", "policy_type", "status"], name: "idx_coordination_policies_project_type_status"
-    t.index ["project_id"], name: "index_coordination_policies_on_project_id"
   end
 
   create_table "coordination_policy_versions", comment: "Immutable policy revisions that carry the executable rules and tunable parameters for a coordination policy.", force: :cascade do |t|
