@@ -88,6 +88,14 @@ preflight as a failure, while remaining skipped when the preflight is
 intentionally skipped for an untrusted pull request. Tool authors update the reviewed inventory whenever they
 add, remove, rename, or change the write classification of an MCP tool.
 
+Before the shard matrix starts, CI also runs the exhaustive ApplicationJob
+queue-assignment inventory. The inventory remains an explicit, reviewed mapping
+from every top-level `app/jobs/*_job.rb` implementation to its intended GoodJob
+queue; it must not acquire a fallback queue. A failure records its elapsed time
+and leaves dependent shards skipped. `bin/ci` runs that same focused inventory
+before lint and audit so local publication discovers a missing registration
+before more expensive verification.
+
 The same shard paths install the pinned ast-grep binary before running specs.
 Each release-asset transfer has explicit connection and total-transfer bounds.
 The existing finite, process-group supervisor retries the complete install and

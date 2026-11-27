@@ -5,6 +5,7 @@
 CI.run do
   step "Setup", "bin/setup --skip-server"
 
+  step "ApplicationJob queue inventory", "bin/rspec spec/config/application_job_queue_priority_spec.rb"
   step "Lint", "bin/lint"
   step "Security audit", "bin/audit"
 

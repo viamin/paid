@@ -46,6 +46,16 @@ Jobs are assigned to six priority queues:
 | `low_priority` | 5 | DashboardBroadcast, LiveDashboardBroadcast, DelayedHumanFeedback | Non-urgent UI updates and batch processing |
 | `shadow_evaluation` | 6 (lowest) | ShadowEvaluationExecutionJob | Long-running, provider-bound reviewer evaluations; isolated so they cannot starve the other queues |
 
+### Adding or changing an ApplicationJob
+
+Queue ownership is an explicit review decision. When adding, removing, or
+renaming a top-level `ApplicationJob`, update
+`spec/config/application_job_queue_priority_spec.rb` with the job's intended
+queue and run that exhaustive inventory. Do not rely on the ActiveJob default
+queue: the inventory intentionally fails for an unregistered job. `bin/ci` and
+CI run the inventory before more expensive verification, but job authors should
+run it with the job's focused spec before publication.
+
 ### Thread Pool Sizing
 
 The thread pool size (`GOOD_JOB_MAX_THREADS`) determines maximum job concurrency.

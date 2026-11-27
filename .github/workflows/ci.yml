@@ -302,6 +302,69 @@ jobs:
           elapsed_seconds=$(( $(date +%s) - started_at ))
           printf 'MCP write-tool inventory elapsed: %ss\n' "$elapsed_seconds" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # Run the explicit ApplicationJob queue inventory before the shard matrix
+  # allocates its services and dependency budgets. A failure causes dependent
+  # shard jobs to be skipped, preserving their truthful GitHub Actions state.
+  # @spec TEST-SUITE-031
+  job-queue-assignment-inventory:
+    name: ApplicationJob queue inventory
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
+        uses: ruby/setup-ruby@78c62f2208e480ce3d5ae4dfd9b9e181acf48b63
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@78c62f2208e480ce3d5ae4dfd9b9e181acf48b63
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Check ApplicationJob queue assignments
+        run: |
+          started_at=$(date +%s)
+          bin/rspec spec/config/application_job_queue_priority_spec.rb
+          elapsed_seconds=$(( $(date +%s) - started_at ))
+          printf 'ApplicationJob queue inventory elapsed: %ss\n' "$elapsed_seconds" | tee -a "$GITHUB_STEP_SUMMARY"
+
   # @spec TEST-SUITE-003
   test-shards:
     name: test-shard (${{ matrix.shard }})
@@ -310,7 +373,7 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    needs: mcp-write-tool-inventory
+    needs: [ mcp-write-tool-inventory, job-queue-assignment-inventory ]
     strategy:
       fail-fast: false
       matrix:
@@ -1067,10 +1130,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018 @spec TEST-SUITE-025 @spec TEST-SUITE-026
+  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018 @spec TEST-SUITE-025 @spec TEST-SUITE-026 @spec TEST-SUITE-031
   test:
-    needs: [ mcp-write-tool-inventory, test-shards, shard-status, shard-recovery ]
-    if: ${{ always() && needs.mcp-write-tool-inventory.result != 'skipped' }}
+    needs: [ mcp-write-tool-inventory, job-queue-assignment-inventory, test-shards, shard-status, shard-recovery ]
+    if: ${{ always() && needs.mcp-write-tool-inventory.result != 'skipped' && needs.job-queue-assignment-inventory.result != 'skipped' }}
     runs-on: ubuntu-24.04
     env:
       BUNDLE_FROZEN: "true"
@@ -1084,6 +1147,7 @@ jobs:
         # @spec TEST-SUITE-006 @spec TEST-SUITE-018
         env:
           MCP_WRITE_TOOL_INVENTORY_RESULT: ${{ needs.mcp-write-tool-inventory.result }}
+          JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT: ${{ needs.job-queue-assignment-inventory.result }}
           SHARD_RESULT: ${{ needs.test-shards.result }}
           SHARD_STATUS_RESULT: ${{ needs.shard-status.result }}
           RECOVERY_RESULT: ${{ needs.shard-recovery.result }}
@@ -1091,6 +1155,10 @@ jobs:
         run: |
           if [ "$MCP_WRITE_TOOL_INVENTORY_RESULT" != "success" ]; then
             echo "::error::MCP write-tool inventory preflight did not succeed (result: ${MCP_WRITE_TOOL_INVENTORY_RESULT:-missing})"
+            exit 1
+          fi
+          if [ "$JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT" != "success" ]; then
+            echo "::error::ApplicationJob queue inventory preflight did not succeed (result: ${JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT:-missing})"
             exit 1
           fi
           if [ "$SHARD_RESULT" = "success" ]; then

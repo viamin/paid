@@ -63,6 +63,33 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(shards.fetch("if")).not_to include("always()")
   end
 
+  # @spec TEST-SUITE-031
+  it "runs the exhaustive job queue inventory before expensive shards" do
+    preflight = workflow.fetch("jobs").fetch("job-queue-assignment-inventory")
+    inventory_step = preflight.fetch("steps").find { |step| step["name"] == "Check ApplicationJob queue assignments" }
+
+    expect(preflight.fetch("timeout-minutes")).to be_between(1, 60)
+    expect(inventory_step.fetch("run")).to include("bin/rspec spec/config/application_job_queue_priority_spec.rb")
+    expect(inventory_step.fetch("run")).to include("elapsed_seconds")
+    shards = workflow.fetch("jobs").fetch("test-shards")
+    expect(shards.fetch("needs")).to include("job-queue-assignment-inventory")
+    expect(shards.fetch("if")).not_to include("always()")
+  end
+
+  # @spec TEST-SUITE-031
+  it "fails the stable test check when the queue inventory preflight fails" do
+    job = workflow.fetch("jobs").fetch("test")
+    gate = job.fetch("steps").first.fetch("run")
+
+    [ "failure", "cancelled" ].each do |result|
+      _stdout, _stderr, status = Open3.capture3(
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT" => result, "SHARD_RESULT" => "skipped" },
+        "sh", "-c", gate
+      )
+      expect(status).not_to be_success
+    end
+  end
+
   # @spec TEST-SUITE-020
   it "bounds dependency installation to the external process-group supervisor in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
@@ -76,12 +103,12 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
-    expect(job.fetch("needs")).to eq([ "mcp-write-tool-inventory", "test-shards", "shard-status", "shard-recovery" ])
+    expect(job.fetch("needs")).to eq([ "mcp-write-tool-inventory", "job-queue-assignment-inventory", "test-shards", "shard-status", "shard-recovery" ])
     expect(job.fetch("if")).to include("always()")
     gate = job.fetch("steps").first.fetch("run")
     %w[success failure cancelled skipped].each do |result|
       _stdout, _stderr, status = Open3.capture3(
-        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => result },
+        { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT" => "success", "SHARD_RESULT" => result },
         "sh", "-c", gate
       )
       expect(status.success?).to eq(result == "success")
@@ -117,7 +144,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     ]
 
     expectations.each do |shards, classification, recovery, failing, expected|
-      env = { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "SHARD_RESULT" => shards }
+      env = { "MCP_WRITE_TOOL_INVENTORY_RESULT" => "success", "JOB_QUEUE_ASSIGNMENT_INVENTORY_RESULT" => "success", "SHARD_RESULT" => shards }
       env["SHARD_STATUS_RESULT"] = classification if classification
       env["RECOVERY_RESULT"] = recovery if recovery
       env["FAILING_SHARDS"] = failing unless failing.nil?
