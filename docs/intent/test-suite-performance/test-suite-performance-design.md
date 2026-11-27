@@ -272,6 +272,13 @@ is checked for every matrix entry. Active and finished membership use explicit
 expected sets. Specialized claim, recovery, timeout, synthetic-run, and tenant
 cases remain independent; all matrix rows use normal status factory traits.
 
+AgentRun retry/planning lookup, broadcast/dispatch callbacks, synthetic-run
+visibility/finish callbacks, execution-usage scopes and counter-cache groups reuse
+only their uncustomized project configuration. Counter-cache sharing is scoped
+to its two counter groups; unrelated workspace cases retain lazy setup. Each
+example gets a fresh project instance and keeps its runs, issues and usage rows
+local. Custom actor/TDD/priority fixtures and single-example graphs are unchanged.
+
 ## Prepared query plans
 
 Repeated closeout-candidate checks use a scalar ID lookup and a bound evidence
