@@ -40,6 +40,10 @@ development and explicit `db:schema:dump` retain Rails defaults. This prevents
 local catalog differences from becoming auto-stashed edits that conflict with
 later upstream migrations.
 
+The dispatch circuit breaker's optional `last_probe_run_id` reference is
+validated against existing agent runs. Its validation migration preserves
+the foreign key's `ON DELETE SET NULL` behavior and does not modify rows.
+
 The complete-policy bootstrap repair is a frozen, transactional metadata
 migration sourced from the migrated main policy catalog: 224 policies across
 200 tables at revision `2fb3a7103`. It restores their full current predicates
