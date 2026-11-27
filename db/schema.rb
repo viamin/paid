@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203028) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1265,7 +1265,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["context_intake_session_id", "question_key"], name: "idx_context_intake_responses_session_question", unique: true
     t.index ["context_intake_session_id", "section", "sequence"], name: "idx_context_intake_responses_session_section_seq"
-    t.index ["context_intake_session_id"], name: "index_context_intake_responses_on_context_intake_session_id"
     t.index ["parent_response_id"], name: "index_context_intake_responses_on_parent_response_id"
   end
 
