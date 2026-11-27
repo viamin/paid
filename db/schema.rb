@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201438) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -764,7 +764,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "period_type", limit: 20, null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "active"], name: "index_billing_plans_on_account_id_and_active"
-    t.index ["account_id"], name: "index_billing_plans_on_account_id"
   end
 
   create_table "bounded_delegated_actions", force: :cascade do |t|
