@@ -33,6 +33,7 @@ RSpec.describe Tools::Registry do
       request_layered_verification_audit
       reassess_conflict_repair_scope
       manage_shared_delivery_evidence
+      record_operator_acceptance_report
       approve_layered_verification_review_package
       start_cycle_analysis
       repair_cycle_analysis
@@ -260,6 +261,8 @@ RSpec.describe Tools::Registry do
       expect(names).to include("update_project_settings", "revoke_continuation_grant", "extend_continuation_grant")
       # @spec QUEUE-TIER-008
       expect(names).to include("prioritize_coding_retry")
+      # @spec FOCUSED-RUN-015
+      expect(names).to include("record_operator_acceptance_report")
       expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end

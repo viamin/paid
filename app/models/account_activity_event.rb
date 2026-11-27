@@ -36,6 +36,7 @@ class AccountActivityEvent < ApplicationRecord
     "issue.labels_changed" => "project",
     "pull_request.technical_blocker_recorded" => "project",
     "pull_request.technical_blocker_resolved" => "project",
+    "pull_request.operator_acceptance_report_recorded" => "project",
     "issue.continuation_requested" => "project",
     "issue.closeout_resolved" => "project",
     "issue.closeout_revalidation_failed" => "project",
@@ -263,6 +264,12 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["changed_fields"]).map { |field| "#{field.to_s.humanize} changed" }
     when "project.created"
       Array(metadata.to_h["github_url"]).compact
+    when "pull_request.operator_acceptance_report_recorded"
+      [ "PR ##{metadata_value('pull_request_number')} at #{metadata_value('revision')}",
+        "Comment: #{metadata_value('comment_url')}",
+        "Environment: #{metadata_value('environment')}",
+        "Results: #{metadata_value('results')}",
+        "Unrun capabilities: #{Array(metadata.to_h['unrun_capabilities']).join(', ')}" ].compact_blank
     when "runner.created", "runner.updated",
       "runner.claude_login_started", "runner.claude_login_completed", "runner.claude_login_failed",
       "runner.codex_login_started", "runner.codex_login_completed", "runner.codex_login_failed"

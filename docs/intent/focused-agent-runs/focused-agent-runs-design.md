@@ -135,6 +135,25 @@ phases nor rewrites run timestamps. Other focuses consume nothing. All other cut
 consumers (review threads, changes requested, review-bot status, CI, policy
 and budget gates) keep using completed runs only.
 
+### Explicit operator acceptance reports
+
+An authorized project operator may use `record_operator_acceptance_report` to
+record a trusted PR conversation comment as acceptance evidence rather than a
+coding request. The recorder fetches the comment and current provider head,
+then writes the existing account activity audit event with the project/PR,
+authorized actor, comment identity and body digest, exact head revision,
+environment, results, and unrun capabilities. It creates no `AgentRun`, does
+not alter comment watermarks, counters, budgets, or active owners, and is
+idempotent for the same comment body and revision.
+
+The scanner suppresses only an exact current receipt: same PR, comment ID and
+body digest, and current head revision. A replay, changed comment, stale head,
+untrusted comment, Paid status comment, or later neighboring actionable comment
+therefore remains distinct and follows ordinary trusted-comment admission.
+Purpose is selected by the explicit authorized operation, never inferred from
+keywords or prose. Existing account activity UI/API/MCP audit readers expose
+the receipt and its provenance.
+
 ## Standalone review-feedback routing
 
 Standalone GitHub review bodies use the same latest-review-per-author and

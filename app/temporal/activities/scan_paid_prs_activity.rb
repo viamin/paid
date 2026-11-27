@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module Activities
   # Scans open pull requests with the automation label for signals
   # that require follow-up agent work. Runs after FetchIssuesActivity in
@@ -811,7 +813,7 @@ module Activities
 
       # Only fetch conversation comments if still no triggers.
       if all_triggers.empty? && !skip_comment_signals
-        all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
+        all_triggers.concat(check_conversation_comments(client, project, issue, last_run, pr_data:))
 
         # Only check changes_requested if still no triggers.
         if all_triggers.empty?
@@ -1702,7 +1704,7 @@ module Activities
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
-      triggers.concat(check_conversation_comments(client, project, issue, last_run))
+      triggers.concat(check_conversation_comments(client, project, issue, last_run, pr_data:))
       triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -2439,7 +2441,7 @@ module Activities
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client))
       triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
-      triggers.concat(check_conversation_comments(client, project, issue, focused_run))
+      triggers.concat(check_conversation_comments(client, project, issue, focused_run, pr_data:))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
 
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
@@ -2453,7 +2455,10 @@ module Activities
     end
 
     def conversation_resolution_scores(project, client, issue, focused_run)
-      triggers = check_conversation_comments(client, project, issue, focused_run)
+      pr_data = fetch_pr_data(client, project, issue)
+      return nil if pr_data.nil?
+
+      triggers = check_conversation_comments(client, project, issue, focused_run, pr_data:)
       { "focus_resolved" => triggers.empty? ? 1.0 : 0.0 }
     end
 
@@ -2475,7 +2480,7 @@ module Activities
         human_review_thread_triggers(project, unresolved_threads).empty? &&
         standalone_review_feedback_from_reviews(project, reviews, focused_run, issue: issue, client: client).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
-        check_conversation_comments(client, project, issue, focused_run).empty? &&
+        check_conversation_comments(client, project, issue, focused_run, pr_data:).empty? &&
         check_actionable_labels(project, issue).empty? &&
         check_merge_conflicts(project, issue, pr_data).empty?
 
@@ -3287,10 +3292,16 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
-    def check_conversation_comments(client, project, issue, last_run) # @spec FOCUSED-RUN-010
+    def check_conversation_comments(client, project, issue, last_run, pr_data:) # @spec FOCUSED-RUN-010
+      revision = pr_data&.head&.sha
+      return [] if revision.blank?
+
       cutoff = conversation_feedback_cutoff(project, issue, last_run)
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
+      return [] if comments.empty?
+
+      receipts = recorded_operator_report_identities(project, issue, revision)
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -3300,6 +3311,7 @@ module Activities
         next false if cutoff && c.created_at && c.created_at <= cutoff
         next false if system_generated_comment?(c.body)
         next false if c.body.to_s.strip.length < MIN_COMMENT_LENGTH
+        next false if receipts.include?(operator_report_identity(issue, c, revision))
 
         true
       end
@@ -3307,6 +3319,22 @@ module Activities
       return [] if relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
+    end
+
+    # An operator selects the report purpose through the authorized recorder;
+    # Ruby never guesses it from comment prose. A changed body or head invalidates
+    # that receipt, leaving the comment eligible for normal feedback admission.
+    # Receipts are loaded in one bounded query per scan so a large comment
+    # window adds no per-comment database round trips.
+    # @spec FOCUSED-RUN-015
+    def recorded_operator_report_identities(project, issue, revision)
+      project.account.account_activity_events.where(
+        action: PullRequests::RecordOperatorAcceptanceReport::ACTION, subject: issue
+      ).where("metadata ->> 'revision' = ?", revision).pluck(Arel.sql("metadata ->> 'report_identity'")).to_set
+    end
+
+    def operator_report_identity(issue, comment, revision)
+      [ issue.id, comment.id, Digest::SHA256.hexdigest(comment.body.to_s), revision ].join(":")
     end
 
     # Completion cannot acknowledge feedback arriving after prompt preparation.
@@ -3445,7 +3473,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if standalone_review_feedback_from_reviews(project, reviews, last_run, issue: issue, client: client).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
-      return false if check_conversation_comments(client, project, issue, last_run).any?
+      return false if check_conversation_comments(client, project, issue, last_run, pr_data:).any?
       effective_checks = checks || []
       if checks.nil?
         logger.debug(
