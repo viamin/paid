@@ -83,23 +83,24 @@ ensure_db_pool!(max_threads)
 shutdown = Paid::GoodJobWorker::ShutdownCoordinator.new
 force_exit_thread = nil
 
-shutdown.install_signal_handlers do |action, signal|
+handle_shutdown = lambda do |action, reason|
   if action == :force_exit
-    warn "Received #{signal} during shutdown, forcing GoodJob worker exit"
+    warn "Received #{reason} during shutdown, forcing GoodJob worker exit"
     exit! 1
   end
-
-  warn "Received #{signal}, shutting down GoodJob worker gracefully " \
-       "(timeout=#{shutdown_timeout}s)"
-  Paid::WorkerReadiness.mark_not_ready!
-  Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) }
 
   force_exit_thread ||= Thread.new do
     sleep(forced_exit_timeout)
     warn "GoodJob worker did not exit within #{forced_exit_timeout}s, forcing exit"
     exit! 1
   end
+
+  warn "Shutting down GoodJob worker gracefully (reason=#{reason}, timeout=#{shutdown_timeout}s)"
+  Paid::WorkerReadiness.mark_not_ready!
+  Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) }
 end
+
+shutdown.install_signal_handlers(&handle_shutdown)
 
 GoodJob.capsule.start
 at_exit { Paid::WorkerReadiness.mark_not_ready! }
@@ -110,7 +111,10 @@ health_monitor = Paid::GoodJobWorker::HealthMonitor.new
 health_snapshot = Paid::GoodJobWorker::HealthSnapshot.new
 health_recovery = Paid::GoodJobWorker::RecoveryCoordinator.new(
   readiness: Paid::WorkerReadiness,
-  shutdown: -> { Thread.new { GoodJob.shutdown(timeout: shutdown_timeout) } }
+  shutdown: lambda do
+    action = shutdown.trigger
+    handle_shutdown.call(action, "worker health degraded") if action == :graceful
+  end
 )
 last_health_check_at = Time.at(0)
 

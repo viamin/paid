@@ -96,7 +96,11 @@
   visibility, its heartbeat becomes stale, or runnable work waits beyond the
   configured progress window while a thread in that work's eligible scheduler
   pool is available, the worker
-  SHALL withdraw readiness and request the existing graceful GoodJob shutdown;
+  SHALL withdraw readiness and request the existing graceful GoodJob shutdown
+  with the same forced-exit deadline as signal shutdown. A blocked shutdown
+  SHALL not prevent the watchdog from exiting the process, and a subsequent
+  signal SHALL force exit. A health observation during signal-driven draining
+  SHALL NOT shorten that drain's existing deadline;
   it SHALL preserve active job ownership and SHALL not log job payloads or
   credentials.
   Queue eligibility SHALL honor GoodJob queue expressions, pauses, scheduling,
@@ -105,6 +109,7 @@
   next continuously waiting window. A GoodJob dispatch timestamp SHALL reset
   the eligible pool's progress window before that execution completes.
   *Tests:* `spec/lib/paid/good_job_worker_spec.rb`,
+  `spec/lib/paid/good_job_worker_shutdown_spec.rb`,
   `spec/lib/paid/good_job_worker/health_snapshot_spec.rb`,
   `spec/lib/paid/worker_readiness_spec.rb`.
   *Code:* `lib/paid/good_job_worker.rb`, `lib/paid/worker_readiness.rb`,
