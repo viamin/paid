@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211327) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2678,7 +2678,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "reviewer_run_id", comment: "The independent reviewer AgentRun that produced this verdict, when available."
     t.datetime "updated_at", null: false
     t.index ["issue_id", "pr_head_sha", "evaluated_at"], name: "index_intent_conformance_verdicts_on_issue_head_evaluated_at"
-    t.index ["issue_id"], name: "index_intent_conformance_verdicts_on_issue_id"
     t.index ["outcome"], name: "index_intent_conformance_verdicts_on_outcome"
     t.index ["project_id"], name: "index_intent_conformance_verdicts_on_project_id"
     t.index ["reviewer_run_id"], name: "index_intent_conformance_verdicts_on_reviewer_run_id"
