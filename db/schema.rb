@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205205) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2032,7 +2032,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["failure_category"], name: "index_failure_classifications_on_failure_category"
     t.index ["parent_workflow_id"], name: "index_failure_classifications_on_parent_workflow_id"
     t.index ["project_id", "created_at"], name: "idx_failure_classifications_project_created"
-    t.index ["project_id"], name: "index_failure_classifications_on_project_id"
   end
 
   create_table "feature_intent_approval_revisions", comment: "Immutable RDR-066 approval snapshots for feature intent design revisions.", force: :cascade do |t|
