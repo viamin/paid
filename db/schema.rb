@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_210607) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2516,7 +2516,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "responsible_phase", comment: "Phase that owns the request; NULL for platform requests."
     t.datetime "updated_at", null: false
     t.index ["project_id", "responsible_phase"], name: "idx_on_project_id_responsible_phase_049615cd29"
-    t.index ["project_id"], name: "index_inbox_request_ownerships_on_project_id"
     t.index ["request_key"], name: "index_inbox_request_ownerships_on_request_key", unique: true
   end
 
