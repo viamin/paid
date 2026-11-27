@@ -30,6 +30,11 @@ so setup latency cannot consume the exact remaining budget under assertion.
 The scope restores time afterward; application deadline calculations and both
 timeout expectations remain unchanged (TEST-SUITE-029).
 
+The assignment-update regression starts with an explicit control assignment and
+verifies its persisted state before selecting the other variant. This guarantees
+the existing-row update path is exercised regardless of randomized selection,
+while retaining the same record and all existing assertions (TEST-SUITE-030).
+
 Partition all non-system, non-performance spec files into five deterministic,
 disjoint groups. Assign largest source files first to the least-loaded group,
 using file bytes as a cheap structural estimate, not a correctness judgment or
