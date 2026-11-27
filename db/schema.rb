@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_195543) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -196,7 +196,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "severity", limit: 20, null: false, comment: "Escalation level for the anomaly. Currently warning or critical."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "metric_name"], name: "index_agent_run_anomalies_on_agent_run_id_and_metric_name", unique: true
-    t.index ["agent_run_id"], name: "index_agent_run_anomalies_on_agent_run_id"
     t.index ["anomaly_type"], name: "index_agent_run_anomalies_on_anomaly_type"
     t.index ["project_id", "created_at"], name: "index_agent_run_anomalies_on_project_id_and_created_at"
     t.index ["project_id"], name: "index_agent_run_anomalies_on_project_id"
