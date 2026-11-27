@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204735) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1695,7 +1695,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_egress_allowlist_entry_id"
     t.index ["event_kind"], name: "index_egress_security_events_on_event_kind"
     t.index ["project_id", "occurred_at"], name: "idx_egress_security_events_project_recent", order: { occurred_at: :desc }
-    t.index ["project_id"], name: "index_egress_security_events_on_project_id"
     t.check_constraint "destination_port IS NULL OR destination_port > 0 AND destination_port <= 65535", name: "chk_egress_security_events_port_range"
     t.check_constraint "event_kind::text = ANY (ARRAY['denied_egress'::character varying::text, 'redacted_secret_extraction'::character varying::text, 'allowlist_match'::character varying::text])", name: "chk_egress_security_events_kind_valid"
     t.check_constraint "scheme IS NULL OR (scheme::text = ANY (ARRAY['http'::character varying::text, 'https'::character varying::text]))", name: "chk_egress_security_events_scheme_valid"
