@@ -3571,14 +3571,6 @@ RSpec.describe Activities::RunAgentActivity do
         expect(agent_run.error_message).to include("rate limited")
       end
 
-      it "detects Claude-specific usage limit error" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
-
-        expect(agent_run.reload.status).to eq("rate_limited")
-      end
-
       # @spec RUNNER-FALLBACK-006
       it "uses the Claude error envelope when a nonzero preflight reports a session limit" do
         envelope = JSON.generate(

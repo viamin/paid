@@ -28,14 +28,20 @@ statements. Paid has no deployed production environment.
   inside the current attempt so the outside-window case tests the row-count
   limit. Ordinary logging and split-chunk scenarios remain.
 
-The target changes from 205 to 180 examples. FactoryProf records 235 → 202 run
-factories, 229 → 197 issue factories, and SQL EventProf records 55,199 → 44,912
-SQL events. These counts support the diagnosis; timing determines the gain.
+The final target changes from 205 to 179 examples. The 180-example measured
+revision `73ba64b37` records 235 → 202 run factories, 229 → 197 issue factories,
+and 55,199 → 44,912 SQL events. These counts support the diagnosis; timing
+determines the gain. The final removal deletes an exact duplicate of the retained
+single-runner Claude usage-limit status check; the retained test also checks
+backoff and error persistence. No extra whole-workload speedup is claimed for
+that one-example deletion.
 
 ## Timing
 
-Sequential processes on the same host boot, with identical options within each
-pair. RSpec durations exclude process boot; wall times include it.
+These measurements compare the original 205-example workload with the
+180-example revision, before the last duplicate deletion. Processes run
+sequentially on the same host boot, with identical options within each pair.
+RSpec durations exclude process boot; wall times include it.
 
 | Pair | Original / candidate examples | RSpec seconds | Wall seconds | RSpec reduction |
 | --- | --- | --- | --- | --- |
@@ -48,6 +54,19 @@ All six runs pass with no pending examples. The two profiled pairs average a
 do not establish a consistent 25% reduction, a whole-CI speedup, or global Pareto
 optimality. A host restart interrupted an earlier trial; its empty reports were
 rejected and the original control rerun on the current boot.
+
+A predeclared coverage-enabled original → candidate → candidate → original
+sequence at `73ba64b37`, seed 97531, records 83.30 → 64.58 → 66.78 → 85.68 seconds.
+Means: **84.49 → 65.68 seconds, 22.26% faster**; process wall time is **20.12%
+faster**. All four runs pass and cover the identical 48,785 app/lib lines. This
+fixed order reduces simple warm-up/drift effects but has only two observations
+per variant; it does not establish a confidence interval or whole-CI speedup.
+The gain remains below the 25% aim.
+
+The final duplicate's matched mutation-baseline selection takes 1.88 → 1.69 seconds
+for two → one examples. Total mutation-process time is 25.93 → 28.29 seconds,
+including boot and all five controls/faults. That small selection does not
+establish an additional process-level runtime gain.
 
 Measured source snapshots and launch SHA-256 digests distinguish profiler runs
 from subsequent formatting-only cleanup. The cleanup removes blank lines and two
@@ -69,33 +88,38 @@ They are not exhaustive generated mutation scores.
 | --- | --- | --- | --- | --- |
 | First consolidation and circuit changes | 35 / 16 | 16 → 17 of 23 | 9 pass in both | 0 |
 | Additional cancellation, failure and issue-goal consolidation | 14 / 8 | 7 → 7 of 11 | 4 pass in both | 0 |
-| Final-source output attribution and log-window boundary | 3 / 3 | 2 → 3 of 3 | 2 pass in both | 0 |
+| Output attribution and log-window boundary | 3 / 3 | 2 → 3 of 3 | 2 pass in both | 0 |
+| Final single-runner usage-limit duplicate | 2 / 1 | 4 → 4 of 4 | 1 passes in both | 0 |
 
-No detection was lost in either comparison. The additional detected fault omits
+No detection was lost in any comparison. The additional detected fault omits
 runner preflight: the consolidated example now requires that call rather than
 only stubbing it. Surviving faults remain explicit limitations; some mutate paths
 outside the selected workload. The first comparison predates the six additional
 consolidations, which have their own comparison.
 
-The final-source boundary comparison additionally detects removal of the log
+The boundary comparison additionally detects removal of the log
 limit. The previous outside-window dataset fell outside the attempt-time filter,
 so it could not detect that fault. Both versions detect missing output attribution
 and an incorrectly tiny log window.
 Final spec source SHA-256:
-`c3a675aff94f2f27525aca649b4344bbe5cfcff011d4b7bd9af457cf51bf43f6`.
-Final source passes all 380 examples in the activity file and both companions
+`14e7b90b002b61aa02ca1e0e913ac493ab2b26126b8bbcb4d6cb39c17895343c`.
+Final source passes all 379 examples in the activity file and both companions
 with seed 86420: zero failures, pending examples or outside-example errors.
-Duration: 98.11 seconds; process wall time: 109.65 seconds. Its broader activity
-coverage is 49,277 lines (38.40%); this is separate from the matched target-only
-coverage comparison above.
+Duration: 102.86 seconds; process wall time: 116.47 seconds. Broader activity
+coverage remains the identical 49,277 lines (38.40%). The final 179-example target
+passes with seed 97531 and covers the identical 48,785 app/lib lines: none lost or
+gained against the original 205 examples. Duration: 75.30 seconds; process wall
+time: 85.84 seconds. This standalone acceptance timing is not another matched
+performance comparison.
 
 Five isolation probes pass with seed 24680: mutate settings, runner eligibility,
 runner state, project attributes/association cache and run state, then verify the
 next example sees restored fixtures, fresh run IDs and the outer defaults. An
 initial probe expected bare runner names; correcting it to expect Paid's persisted
 routing keys made the probe match the actual settings contract.
-The same five probes pass on final source with seed 97531. Final lint/coherence
-results are recorded with the publication evidence.
+The same five probes pass at `73ba64b37` with seed 97531. Their fixture hooks are
+unchanged by the final duplicate deletion. Final lint/coherence results are
+recorded with the publication evidence.
 
 ## Tooling and follow-up
 
@@ -116,7 +140,7 @@ cheaper provider-level matrix needs to prove that representative integration
 checks still detect wiring failures.
 
 The final simplicity pass reviews base `8396d1a2b` through spec source
-`c3a675aff94f2f27525aca649b4344bbe5cfcff011d4b7bd9af457cf51bf43f6`.
+`14e7b90b002b61aa02ca1e0e913ac493ab2b26126b8bbcb4d6cb39c17895343c`.
 It removes unnecessary mock return values and uses existing transaction and
 bulk-fixture mechanisms; no new production abstraction, dependency or global
 fixture mechanism is introduced. Changed prose retains the measurement limits
