@@ -217,6 +217,17 @@
 
 ## Safety Controls
 
+- [x] **TOOLCHAIN-PIN-055** — Paid SHALL preserve `json ~> 3.1` and
+  `multi_json >= 1.21.2`, and its selected `temporalio` gem SHALL have no
+  runtime JSON dependency that excludes the full JSON 3 range. A newer SDK
+  candidate SHALL be selected only after a derived, otherwise unchanged
+  Gemfile resolves it in isolation and normal client/converter loading passes;
+  a candidate with published `json < 3` metadata SHALL remain rejected rather
+  than changing those application contracts or installed gem metadata.
+  *Tests:* `spec/config/temporal_sdk_dependency_contract_spec.rb`,
+  `spec/lib/paid/temporal_data_converter_spec.rb`.
+  *Code:* `Gemfile`, `Paid::TemporalDataConverter`.
+
 - [x] **TOOLCHAIN-PIN-050** — When a resolved version was published more
   recently than the configured quarantine period, `bin/update` SHALL report it
   and SHALL NOT apply it, so a compromised release yanked within hours is never
