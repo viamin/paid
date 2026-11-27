@@ -128,3 +128,9 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-022** — When a migration removes a PgHero-reported
+  redundant non-unique index, it SHALL preserve the verified covering index
+  and application rows, use concurrent index operations, and recreate the
+  original index definition on rollback.
+  *Tests:* Duplicate-index repair migration specs carrying this ID.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205245) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2046,7 +2046,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["approved_by_id"], name: "index_feature_intent_approval_revisions_on_approved_by_id"
     t.index ["feature_intent_id", "revision_number"], name: "index_feature_intent_approval_revisions_unique_revision", unique: true
-    t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
   end
 
   create_table "feature_intent_completions", comment: "Completion-cycle state and remote-write receipts for confidence-driven feature delivery.", force: :cascade do |t|
