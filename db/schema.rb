@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211934) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2936,7 +2936,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["project_id", "recommendation_type"], name: "idx_on_project_id_recommendation_type_333faaed2e"
     t.index ["project_id", "status"], name: "index_knowledge_recommendations_on_project_id_and_status"
-    t.index ["project_id"], name: "index_knowledge_recommendations_on_project_id"
   end
 
   create_table "knowledge_runs", force: :cascade do |t|
