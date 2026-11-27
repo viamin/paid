@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_213041) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3232,7 +3232,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_maintenance_findings_on_account_id"
     t.index ["project_id", "recipe_key", "identity_digest"], name: "index_maintenance_findings_on_recurring_identity", unique: true
-    t.index ["project_id"], name: "index_maintenance_findings_on_project_id"
   end
 
   create_table "maintenance_reports", force: :cascade do |t|
