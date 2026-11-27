@@ -2853,55 +2853,30 @@ RSpec.describe Activities::RunAgentActivity do
         allow(git_ops).to receive_messages(head_sha: "pre_agent_sha_abc123", commit_uncommitted_changes: false)
       end
 
-      it "executes the agent CLI inside the container" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
-expect(container_service).to receive(:execute).with(
-             satisfy { |cmd| cmd.is_a?(Array) },
-             hash_including(timeout: anything)
-           ).and_return(exec_success)
-
-        activity.execute(agent_run_id: agent_run.id)
-      end
-
-      # @spec NO-OUTPUT-ISSUE-008
-      it "tags output from the main agent command" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
-        activity.execute(agent_run_id: agent_run.id)
-
-        expect(agent_run.reload.runners_attempted).to include(
-          include("success" => true, "execution_kind" => "main_agent")
-        )
-      end
-
-      it "captures HEAD SHA before running the agent" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
+      # @spec TEMPORAL-ORCHESTRATION-005, NO-OUTPUT-ISSUE-008, TEST-SUITE-032
+      it "executes a successful run and persists its result and attribution" do
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
         expect(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
-
-        activity.execute(agent_run_id: agent_run.id)
-      end
-
-      it "initializes rtk for the runner before preflight" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
+        expect(container_service).to receive(:execute).with(
+          satisfy { |command| command.is_a?(Array) }, hash_including(timeout: anything)
+        ).and_return(exec_success)
         expect(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
-          .with(container_service: container_service, runner_key: anything)
-
-        activity.execute(agent_run_id: agent_run.id)
-      end
-
-      it "marks the run running before runner setup and preflight" do # @spec TEMPORAL-ORCHESTRATION-005
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-        allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner) do
-          expect(agent_run.reload.status).to eq("running")
-        end
-        allow(activity).to receive(:run_runner_preflight!) do
+          .with(container_service: container_service, runner_key: anything) do
+            expect(agent_run.reload.status).to eq("running")
+          end
+        expect(activity).to receive(:run_runner_preflight!) do
           expect(agent_run.reload.status).to eq("running")
         end
 
-        activity.execute(agent_run_id: agent_run.id)
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        aggregate_failures do
+          expect(result).to include(success: true, has_changes: false, final_runner: "claude_code")
+          expect(agent_run.reload).to have_attributes(status: "running", final_runner: "claude_code")
+          expect(agent_run.runners_attempted).to include(
+            include("success" => true, "execution_kind" => "main_agent")
+          )
+        end
       end
 
       it "stamps started_at when an admitted run begins execution" do
@@ -2942,29 +2917,12 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.reload.external_metadata).to include("pre_run_head_sha" => "original_pre_run_sha_123")
       end
 
-      it "starts the agent run before execution" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
-        activity.execute(agent_run_id: agent_run.id)
-
-        expect(agent_run.reload.status).to eq("running")
-      end
-
       it "returns has_changes: true when agent made new commits" do
         allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:has_changes]).to be true
-        expect(result[:success]).to be true
-      end
-
-      it "returns has_changes: false when agent made no changes" do
-        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
-
-        result = activity.execute(agent_run_id: agent_run.id)
-
-        expect(result[:has_changes]).to be false
         expect(result[:success]).to be true
       end
 
@@ -3368,15 +3326,6 @@ expect(container_service).to receive(:execute).with(
         expect_change_detection_retry_logs(logger, operation: "commit_uncommitted_changes")
       end
 
-      it "records the final_runner on success" do
-        allow(git_ops).to receive(:has_changes_since?).and_return(false)
-
-        result = activity.execute(agent_run_id: agent_run.id)
-
-        expect(result[:final_runner]).to eq("claude_code")
-        expect(agent_run.reload.final_runner).to eq("claude_code")
-      end
-
       it "heartbeats during post-run bookkeeping after runner execution" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
@@ -3506,18 +3455,10 @@ expect(container_service).to receive(:execute).with(
         allow(container_service).to receive(:execute).and_return(exec_failure)
       end
 
-      it "raises AllProvidersExhausted when all runners fail" do
+      it "persists execution failure and raises exhaustion" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
-      end
-
-      it "marks the agent run as failed" do
-        begin
-          activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
 
         expect(agent_run.reload.status).to eq("failed")
       end
@@ -3550,24 +3491,19 @@ expect(container_service).to receive(:execute).with(
         expect(state.circuit_state).to eq("closed")
       end
 
-      it "records the runner attempt as cancelled_by_cleanup" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError)
+      it "preserves cleanup state, records cancellation and does not queue processing" do
+        expect(ProcessRunQueueJob).not_to receive(:perform_later)
 
-        attempts = agent_run.reload.runners_attempted
-        expect(attempts.last["error_type"]).to eq("cancelled_by_cleanup")
-        expect(attempts.last["success"]).to be false
-      end
-
-      it "preserves the cleanup error_message and timeout status on the run" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError)
 
         agent_run.reload
-        expect(agent_run.status).to eq("timeout")
-        expect(agent_run.error_message).to start_with(params.fetch(:prefix))
+        aggregate_failures do
+          expect(agent_run.runners_attempted.last).to include("error_type" => "cancelled_by_cleanup", "success" => false)
+          expect(agent_run.status).to eq("timeout")
+          expect(agent_run.error_message).to start_with(params.fetch(:prefix))
+        end
       end
 
       it "stops iterating runners instead of attempting fallbacks" do
@@ -3578,14 +3514,6 @@ expect(container_service).to receive(:execute).with(
         }.to raise_error(Temporalio::Error::ApplicationError)
 
         expect(agent_run.reload.runners_attempted.size).to eq(1)
-      end
-
-      it "does not enqueue ProcessRunQueueJob" do
-        expect(ProcessRunQueueJob).not_to receive(:perform_later)
-
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError)
       end
     end
 
@@ -3737,9 +3665,16 @@ expect(container_service).to receive(:execute).with(
           container_id: "abc123")
       end
 
+      # @spec TEST-SUITE-032
+      before_all do
+        TenantContext.with_system_access do
+          fixture_user = User.find(user.id)
+          fixture_user.runners.find_or_create_by!(runner_key: "cursor")
+          fixture_user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        end
+      end
+
       before do
-        user.runners.find_or_create_by!(runner_key: "cursor")
-        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
         allow(activity).to receive(:logger).and_return(instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil))
         allow(git_ops).to receive_messages(
           head_sha: "pre_agent_sha_abc123",
@@ -3876,96 +3811,21 @@ expect(container_service).to receive(:execute).with(
         expect(diagnostic).not_to include("private-terminal-noise")
       end
 
-      it "keeps completed MCP text content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),
-          stderr: "",
-          exit_code: 0
-        )
+      it "ignores agent-authored MCP and command data during provider classification" do # @spec RUNNER-FALLBACK-015
+        events = [
+          codex_mcp_tool_output(content: "Fixture contains authentication_error, not a provider failure"),
+          codex_mcp_tool_output(arguments: { query: "authentication_error" }, content: "completed without a provider error"),
+          codex_mcp_tool_output(content: "completed", structured_content: { "nested" => [ { "detail" => "authentication_error" } ] }),
+          codex_mcp_tool_output(content: "completed", structured_content: { "nested" => [ { "detail" => "quota exceeded: rate limit reached" } ] }),
+          codex_mcp_tool_output(content: "unavailable", error: { "message" => "authentication_error" }, status: "failed"),
+          codex_command_output(content: "authentication_error in source fixture")
+        ]
+        result = Containers::Provision::Result.success(stdout: events.join("\n"), stderr: "", exit_code: 0)
         allow(container_service).to receive(:execute).and_return(exec_success, result)
 
         expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-
         expect(agent_run.reload).not_to be_auth_expired
         expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
-      end
-
-      it "keeps auth-shaped completed MCP arguments out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_mcp_tool_output(
-            arguments: { query: "authentication_error" },
-            content: "completed without a provider error"
-          ),
-          stderr: "",
-          exit_code: 0
-        )
-        allow(container_service).to receive(:execute).and_return(exec_success, result)
-
-        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-
-        expect(agent_run.reload).not_to be_auth_expired
-        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
-      end
-
-      it "keeps nested MCP structured content out of Codex provider auth classification" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_mcp_tool_output(
-            content: "completed",
-            structured_content: { "nested" => [ { "detail" => "authentication_error" } ] }
-          ),
-          stderr: "",
-          exit_code: 0
-        )
-        allow(container_service).to receive(:execute).and_return(exec_success, result)
-
-        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-
-        expect(agent_run.reload).not_to be_auth_expired
-      end
-
-      it "keeps nested MCP quota and rate-limit results out of provider classification" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_mcp_tool_output(
-            content: "completed",
-            structured_content: { "nested" => [ { "detail" => "quota exceeded: rate limit reached" } ] }
-          ),
-          stderr: "",
-          exit_code: 0
-        )
-        allow(container_service).to receive(:execute).and_return(exec_success, result)
-
-        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-
-        expect(agent_run.reload).not_to be_auth_expired
-        expect(agent_run.runners_attempted).to contain_exactly(hash_including("runner" => "codex", "success" => true))
-      end
-
-      it "keeps a failed MCP tool's auth-shaped error out of provider auth classification" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_mcp_tool_output(
-            content: "unavailable",
-            error: { "message" => "authentication_error" },
-            status: "failed"
-          ),
-          stderr: "",
-          exit_code: 0
-        )
-        allow(container_service).to receive(:execute).and_return(exec_success, result)
-
-        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-        expect(agent_run.reload).not_to be_auth_expired
-      end
-
-      it "preserves command output redaction without classifying it as provider auth" do # @spec RUNNER-FALLBACK-015
-        result = Containers::Provision::Result.success(
-          stdout: codex_command_output(content: "authentication_error in source fixture"),
-          stderr: "",
-          exit_code: 0
-        )
-        allow(container_service).to receive(:execute).and_return(exec_success, result)
-
-        expect(activity.execute(agent_run_id: agent_run.id)).to include(success: true, final_runner: "codex")
-        expect(agent_run.reload).not_to be_auth_expired
       end
 
       it "retains a final provider diagnostic without a trailing newline" do # @spec RUNNER-FALLBACK-015
@@ -4502,54 +4362,53 @@ expect(container_service).to receive(:execute).with(
         expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
       end
 
+      # @spec TEST-SUITE-033
       it "does not trip the circuit breaker for model-not-found (deterministic config) errors" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(
           fallback_enabled: false,
           fallback_runners: [],
-          circuit_breaker_failure_threshold: 3
+          circuit_breaker_failure_threshold: 1
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerExecutionError,
           "Runner model not found error from claude: Error: Model not found: bad-model\nProviderModelNotFoundError"
         )
 
-        3.times do
-          run = create_runner_backed_agent_run(project: project, runner: runner)
-          expect_all_runners_exhausted(activity: activity, agent_run: run)
-        end
+        run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: run)
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
         expect(state).to be_nil.or(satisfy(&:circuit_closed?))
       end
 
+      # @spec TEST-SUITE-033
       it "does not trip the circuit breaker for cli-version-outdated (deterministic config) errors" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(
           fallback_enabled: false,
           fallback_runners: [],
-          circuit_breaker_failure_threshold: 3
+          circuit_breaker_failure_threshold: 1
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerExecutionError,
           "Agent exited with code 1: The 'gpt-5.5' model requires a newer version of Codex CLI"
         )
 
-        3.times do
-          run = create_runner_backed_agent_run(project: project, runner: runner)
-          expect_all_runners_exhausted(activity: activity, agent_run: run)
-        end
+        run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: run)
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
         expect(state).to be_nil.or(satisfy(&:circuit_closed?))
       end
 
+      # @spec TEST-SUITE-033
       it "does not trip the circuit breaker for preflight exit 137 infrastructure failures" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(
           fallback_enabled: false,
           fallback_runners: [],
-          circuit_breaker_failure_threshold: 3
+          circuit_breaker_failure_threshold: 1
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerInfraExecutionError,
@@ -4558,21 +4417,20 @@ expect(container_service).to receive(:execute).with(
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
 
-        3.times do
-          run = create_runner_backed_agent_run(project: project, runner: runner)
-          expect_all_runners_exhausted(activity: activity, agent_run: run)
-        end
+        run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: run)
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
         expect(state).to be_nil.or(satisfy(&:circuit_closed?))
       end
 
+      # @spec TEST-SUITE-033
       it "trips the circuit breaker when preflight exit 137 leaves the container running" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(
           fallback_enabled: false,
           fallback_runners: [],
-          circuit_breaker_failure_threshold: 3
+          circuit_breaker_failure_threshold: 1
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerExecutionError,
@@ -4581,10 +4439,8 @@ expect(container_service).to receive(:execute).with(
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
 
-        3.times do
-          run = create_runner_backed_agent_run(project: project, runner: runner)
-          expect_all_runners_exhausted(activity: activity, agent_run: run)
-        end
+        run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: run)
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
         expect(state).to be_circuit_open
@@ -4808,29 +4664,15 @@ expect(container_service).to receive(:execute).with(
           .and_raise(Containers::Provision::TimeoutError)
       end
 
-      it "raises AllProvidersExhausted after timeout" do
+      it "persists a wall-clock timeout, queues processing and raises exhaustion" do
         expect {
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
-      end
-
-      it "marks the agent run as timed out with wall_clock type" do
-        begin
-          activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
+          .and have_enqueued_job(ProcessRunQueueJob)
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
-      end
-
-      it "enqueues ProcessRunQueueJob" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError)
-          .and have_enqueued_job(ProcessRunQueueJob)
       end
 
       it "does not enqueue ProcessRunQueueJob when another process finished the run first" do
@@ -4854,26 +4696,17 @@ expect(container_service).to receive(:execute).with(
           .and_raise(Containers::Provision::StartupTimeoutError)
       end
 
-      it "marks the agent run as timed out with startup type" do
-        begin
+      it "persists startup timeout diagnostics and raises exhaustion" do
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("startup_timeout")
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
-          "timeout_type" => "startup",
-          "output_received" => false
+          "timeout_type" => "startup", "output_received" => false
         )
-      end
-
-      it "raises AllProvidersExhausted" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
     end
 
@@ -4903,38 +4736,23 @@ expect(container_service).to receive(:execute).with(
           )
       end
 
-      it "reclassifies the run as an execution failure instead of a timeout" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
-
-        agent_run.reload
-        expect(agent_run.status).to eq("failed")
-        expect(agent_run.error_message).to eq("All runners exhausted: claude_code")
-        expect(agent_run.runners_attempted.first).to include(
-          "runner" => "claude_code",
-          "error_type" => "error"
-        )
-        expect(agent_run.runners_attempted.first["error_message"])
-          .to include("known Claude heartbeat/MCP startup bug")
-      end
-
-      it "does not enqueue timeout queue processing for the false-positive timeout" do
+      it "preserves failure classification, queue and circuit state for the heartbeat startup bug" do
         expect {
           expect {
             activity.execute(agent_run_id: agent_run.id)
           }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
         }.not_to have_enqueued_job(ProcessRunQueueJob)
-      end
 
-      it "does not increment the Claude runner circuit for the false-positive timeout" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
-
-        claude_runner_state = user.runner_states.find_by!(runner_name: "claude")
-        expect(claude_runner_state.failure_count).to eq(0)
-        expect(claude_runner_state.circuit_state).to eq("closed")
+        agent_run.reload
+        aggregate_failures do
+          expect(agent_run.status).to eq("failed")
+          expect(agent_run.error_message).to eq("All runners exhausted: claude_code")
+          expect(agent_run.runners_attempted.first).to include("runner" => "claude_code", "error_type" => "error")
+          expect(agent_run.runners_attempted.first["error_message"]).to include("known Claude heartbeat/MCP startup bug")
+          state = user.runner_states.find_by!(runner_name: "claude")
+          expect(state.failure_count).to eq(0)
+          expect(state.circuit_state).to eq("closed")
+        end
       end
     end
 
@@ -4945,12 +4763,10 @@ expect(container_service).to receive(:execute).with(
           .and_raise(Containers::Provision::IdleTimeoutError)
       end
 
-      it "marks the agent run as timed out with idle type" do
-        begin
+      it "persists an idle timeout and raises exhaustion" do
+        expect {
           activity.execute(agent_run_id: agent_run.id)
-        rescue Temporalio::Error::ApplicationError
-          # expected
-        end
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
         agent_run.reload
         expect(agent_run.status).to eq("timeout")
@@ -4962,12 +4778,6 @@ expect(container_service).to receive(:execute).with(
           "idle_timeout_seconds" => described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
           "heartbeat_supported" => true
         )
-      end
-
-      it "raises AllProvidersExhausted" do
-        expect {
-          activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
       end
     end
 
@@ -5690,23 +5500,15 @@ expect(container_service).to receive(:execute).with(
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
       end
 
-      it "uses the shorter issue goal timeout" do
+      it "uses issue goal timeouts and includes curl timeouts in its prompt" do
         expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: described_class::DEFAULT_ISSUE_GOAL_TIMEOUT,
             idle_timeout: described_class::DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT
           )
-        ).and_return(exec_success)
-
-        activity.execute(agent_run_id: agent_run.id)
-      end
-
-      it "includes curl timeouts in the augmented prompt" do
-        expect(container_service).to receive(:execute) do |command, **_opts|
-          prompt = command.last
-          expect(prompt).to include("--connect-timeout 10")
-          expect(prompt).to include("--max-time 30")
+        ) do |command, **_options|
+          expect(command.last).to include("--connect-timeout 10", "--max-time 30")
           exec_success
         end
 
@@ -5965,29 +5767,33 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      # @spec TEST-SUITE-032
+      before_all do
+        TenantContext.with_system_access do
+          fixture_user = User.find(user.id)
+          fixture_user.runners.find_or_create_by!(runner_key: "cursor")
+          fixture_user.runners.find_or_create_by!(runner_key: "copilot")
+          fixture_user.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor copilot])
+        end
+      end
+
       before do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor copilot])
-        user.runners.find_or_create_by!(runner_key: "cursor")
-        user.runners.find_or_create_by!(runner_key: "copilot")
-        user.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor copilot])
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
       end
 
-      it "falls back to next runner on rate limit" do
+      it "falls back on rate limit and records the runner switch" do
         call_count = 0
-        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+        allow(container_service).to receive(:execute) do |_command, **_options|
           call_count += 1
-          if call_count == 1
-            rate_limit_failure
-          else
-            exec_success
-          end
+          call_count == 1 ? rate_limit_failure : exec_success
         end
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:success]).to be true
         expect(result[:final_runner]).to eq("cursor")
+        expect(agent_run.reload.runner_switches).to eq(1)
       end
 
       # @spec MODEL-POLICY-024
@@ -6185,22 +5991,6 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-      it "records runner switch when falling back" do
-        call_count = 0
-        allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          call_count += 1
-          if call_count == 1
-            rate_limit_failure
-          else
-            exec_success
-          end
-        end
-
-        activity.execute(agent_run_id: agent_run.id)
-
-        expect(agent_run.reload.runner_switches).to eq(1)
-      end
-
       # Regression test for the hook-staleness-on-fallback bug
       # (#1163 comment thread): the commit-msg hook is seeded at clone time
       # with the initial runner's trailer. If the agent's first runner
@@ -6285,10 +6075,10 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
+      # @spec TEST-SUITE-034
       it "reclassifies timeout output as rate limited when quota message is within the log scan window" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
-          agent_run.log!("stderr", "Free tier limit reached. Please upgrade for higher usage.")
-          100.times { |index| agent_run.log!("stdout", "runner still warming up: #{index}") }
+          insert_bounded_timeout_logs(agent_run, stdout_count: 100)
           raise Containers::Provision::IdleTimeoutError, "No output received for 300 seconds"
         end
 
@@ -6302,25 +6092,26 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
       end
 
-      def insert_bounded_timeout_logs(agent_run)
+      def insert_bounded_timeout_logs(agent_run, stdout_count: 201)
         now = Time.current
         rows = [ {
           agent_run_id: agent_run.id,
           log_type: "stderr",
           content: "Free tier limit reached. Please upgrade for higher usage.",
-          created_at: now - 5.minutes
+          created_at: now
         } ]
-        rows.concat(Array.new(201) do |index|
+        rows.concat(Array.new(stdout_count) do |index|
           {
             agent_run_id: agent_run.id,
             log_type: "stdout",
             content: "runner still warming up: #{index}",
-            created_at: now - index.seconds
+            created_at: now
           }
         end)
         AgentRunLog.insert_all!(rows)
       end
 
+      # @spec TEST-SUITE-034
       it "does not reclassify timeout when quota message falls outside the bounded log scan window" do
         allow(container_service).to receive(:execute) do |_cmd, **_opts|
           insert_bounded_timeout_logs(agent_run)
