@@ -4075,6 +4075,30 @@ RSpec.describe AgentRun do
       expect(first_attempt.queue_priority_tier).to eq(:operator_coding)
     end
 
+    it "orders a dependency bottleneck ahead of PR review and repair work" do # @spec QUEUE-TIER-011
+      project = create(:project)
+      bottleneck = create(:agent_run, :queued, :automatic, project:, goal: "create_pr", auto_pick: true,
+        dependency_bottleneck_priority_requested_at: Time.current)
+      review = create(:agent_run, :queued, :automatic, :review_goal, project:, source_pull_request_number: 41)
+      repair = create(:agent_run, :queued, :automatic, project:, goal: "create_pr", source_pull_request_number: 42)
+
+      expect(described_class.next_queued_run).to eq(bottleneck)
+      expect(bottleneck.queue_priority_tier).to eq(:dependency_bottleneck)
+      expect([ review, repair ].map(&:queue_priority_tier)).to all(start_with("pr_"))
+    end
+
+    it "distinguishes unobserved admission from a recorded capacity denial" do # @spec QUEUE-TIER-012
+      run = create(:agent_run, :queued, queue_entered_at: 5.minutes.ago)
+
+      expect(run.queue_admission_explanation[:admission]).to eq(state: "unobserved")
+
+      ExecutionAuditEvents::Lifecycle.record(event_name: "execution.rejected", actor_id: "scheduler", agent_run: run,
+        metadata: { reason: "insufficient_docker_capacity" })
+
+      expect(run.queue_admission_explanation[:admission]).to include(state: "denied", reason: "insufficient_docker_capacity")
+      expect(run.queue_admission_explanation[:queue_age_seconds]).to be >= 300
+    end
+
     it "prioritizes PR-continuation work within the same priority tier" do
       project = create(:project)
       _fresh = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)

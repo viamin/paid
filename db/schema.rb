@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_230122) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -344,6 +344,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "created_issue_url", limit: 500
     t.jsonb "cross_repo_issues", default: []
     t.text "custom_prompt"
+    t.datetime "dependency_bottleneck_priority_requested_at", comment: "Current synced dependency evidence that this fresh coding run unblocks active delivery; cleared when the evidence is stale."
     t.string "diagnosis_issue_url", limit: 500
     t.string "diagnosis_status", limit: 50
     t.integer "duration_seconds"

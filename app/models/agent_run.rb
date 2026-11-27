@@ -1275,24 +1275,26 @@ class AgentRun < ApplicationRecord
   # runs because issue creation is lighter-weight and often unblocks
   # downstream PR work. Within each goal type, runs are FIFO by
   # created_at, with id as a stable tiebreaker.
-  QUEUE_PRIORITIES = { # @spec QUEUE-TIER-001
+  QUEUE_PRIORITIES = { # @spec QUEUE-TIER-001 QUEUE-TIER-011
     manual: { label: "Manual", indicator: 1 },
     operator_coding: { label: "Operator-requested coding retry", indicator: 2 },
-    pr_p1: { label: "PR · P1", indicator: 3 },
-    pr_p2: { label: "PR · P2", indicator: 4 },
-    pr_p3: { label: "PR · P3", indicator: 5 },
-    pr_continue: { label: "Auto-continue", indicator: 6 },
-    issue_p1: { label: "P1", indicator: 7 },
-    issue_p2: { label: "P2", indicator: 8 },
-    issue_p3: { label: "P3", indicator: 9 },
-    auto_pick: { label: "Auto-pick", indicator: 10 }
+    dependency_bottleneck: { label: "Dependency bottleneck", indicator: 3 },
+    pr_p1: { label: "PR · P1", indicator: 4 },
+    pr_p2: { label: "PR · P2", indicator: 5 },
+    pr_p3: { label: "PR · P3", indicator: 6 },
+    pr_continue: { label: "Auto-continue", indicator: 7 },
+    issue_p1: { label: "P1", indicator: 8 },
+    issue_p2: { label: "P2", indicator: 9 },
+    issue_p3: { label: "P3", indicator: 10 },
+    auto_pick: { label: "Auto-pick", indicator: 11 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
   QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning create_feature].freeze
 
-  def queue_priority_tier # @spec QUEUE-TIER-002 QUEUE-TIER-007 QUEUE-TIER-009
+  def queue_priority_tier # @spec QUEUE-TIER-002 QUEUE-TIER-007 QUEUE-TIER-009 QUEUE-TIER-011
     return :manual if manual? || operator_audit_priority?
     return :operator_coding if operator_coding_priority?
+    return :dependency_bottleneck if dependency_bottleneck_priority?
 
     category = existing_pr? ? "pr" : "issue"
     case label_priority_tier
@@ -1311,6 +1313,12 @@ class AgentRun < ApplicationRecord
   # @spec QUEUE-TIER-008 QUEUE-TIER-009 QUEUE-TIER-010
   def operator_coding_priority?
     operator_coding_priority_requested_at.present? && trigger_type == "automatic" && goal == "create_pr"
+  end
+
+  # @spec QUEUE-TIER-011
+  def dependency_bottleneck_priority?
+    dependency_bottleneck_priority_requested_at.present? && trigger_type == "automatic" &&
+      goal == "create_pr" && auto_pick? && source_pull_request_number.blank? && continuation_request_id.blank?
   end
 
   # Returns "P1"/"P2"/"P3" if the run's issue or source PR carries one of
@@ -1511,7 +1519,7 @@ class AgentRun < ApplicationRecord
   # trigger_type = 'automatic' is not re-checked below the first WHEN:
   # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
   # the second WHEN is already known to be automatic.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001 QUEUE-TIER-009 QUEUE-TIER-010
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001 QUEUE-TIER-009 QUEUE-TIER-010 QUEUE-TIER-011
     CASE
       WHEN trigger_type = 'manual' OR (
         agent_runs.operator_priority_requested_at IS NOT NULL
@@ -1519,8 +1527,12 @@ class AgentRun < ApplicationRecord
       ) THEN 0
       WHEN agent_runs.operator_coding_priority_requested_at IS NOT NULL
         AND agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'create_pr' THEN 1
-      WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL}) + 1
-      ELSE (#{LABEL_RANK_CASE_SQL}) + 5
+      WHEN agent_runs.dependency_bottleneck_priority_requested_at IS NOT NULL
+        AND agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'create_pr'
+        AND agent_runs.auto_pick = TRUE AND agent_runs.source_pull_request_number IS NULL
+        AND agent_runs.continuation_request_id IS NULL THEN 2
+      WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL}) + 2
+      ELSE (#{LABEL_RANK_CASE_SQL}) + 6
     END
   SQL
   QUEUE_PRIORITY_SQL = Arel.sql(QUEUE_PRIORITY_CASE_SQL).freeze
@@ -1888,6 +1900,18 @@ class AgentRun < ApplicationRecord
       created_at,
       id
     ]
+  end
+
+  # Queue age and rejection history are deliberately separate: a queued row
+  # without a recorded scheduler pass has unobserved admission, not a denial.
+  # @spec QUEUE-TIER-012
+  def queue_admission_explanation(now: Time.current)
+    rejection = ExecutionAuditEvent.for_agent_run(self).by_event_name("execution.rejected").recent.first
+    {
+      queue_age_seconds: [ now - queue_entered_at_for_current_episode, 0 ].max.to_i,
+      queue_priority: queue_priority_label,
+      admission: rejection ? { state: "denied", reason: rejection.metadata["reason"], observed_at: rejection.occurred_at } : { state: "unobserved" }
+    }
   end
 
   def create_issue_goal?
