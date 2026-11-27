@@ -151,6 +151,10 @@
   `app/services/containers/backends/swarm.rb`.
   *Test:* `spec/services/previews/tunnel_manager_spec.rb`.
 
+  Empty preview sets SHALL emit an explicit server services table accepted by
+  Rathole. Server and client Noise configurations SHALL supply a stable private
+  key and its matching pinned public key derived from the shared token.
+
 - [x] **LIVE-PREVIEW-009** — When the preview proxy forwards a request to the
   tunneled container, the system SHALL apply a strict allowlist of upstream
   request headers so browser-attached credentials (Cookie, Authorization, and

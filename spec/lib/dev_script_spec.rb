@@ -351,7 +351,8 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
         cat <<'OUTPUT'
         ruby 100 puma 8.0.2 (tcp://0.0.0.0:3000) [paid]
         ruby 200 ruby bin/temporal_worker
-        ruby 300 ruby bin/temporal_worker
+        ruby 300 ruby --crash-report=log/crashes/temporal-agent-%p.log bin/temporal_worker --mode=agent
+        bash 999 bash bin/dev-temporal-worker --mode=agent
         ruby 400 unrelated ruby process
         OUTPUT
       BASH

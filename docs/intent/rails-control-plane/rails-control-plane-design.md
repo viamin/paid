@@ -322,3 +322,15 @@ the issues it already created instead of duplicating them.
 The RDR's earlier Phlex preference remains deferred. Any future view-layer
 migration should update this segment and the representative ERB evidence rather
 than assuming component-layer adoption already happened.
+
+## Worker crash recovery and shutdown
+
+Development Temporal wrappers retry exit 139 at most three times in five
+minutes with increasing delay. Other exits surface to Overmind. INT and TERM
+send TERM to the child without restarting it, including during boot and
+backoff, when background children may still ignore INT. Each role retains Ruby
+crash reports outside the rotating supervisor log. Repeated native crashes
+still stop the stack for investigation. Startup fails if the directory cannot
+be secured. Memory sampling identifies the worker script independently of
+Ruby interpreter options. GoodJob signal handlers dispatch shutdown to normal
+Ruby threads so readiness and shutdown mutexes are never used in trap context.

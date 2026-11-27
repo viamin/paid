@@ -47,6 +47,9 @@ class CohortTest(unittest.TestCase):
         return cohort.discover_cohort(self.workspace, self.status, proc_root=self.proc)
 
     def test_resolves_nested_wrapper_workers_and_ignores_unrelated_status_rows(self):
+        self.process(11, 10, 101, arguments=["bash", "bin/dev-temporal-worker", "--mode=poll"])
+        self.process(12, 11, 102, arguments=["ruby", "--crash-report=log/crashes/temporal-poll-%p.log",
+                                          "bin/temporal_worker", "--mode=poll"], environment_mode="poll")
         self.assertEqual(self.discover(), {"poll": {"pid": 12, "start_ticks": 102},
                                            "agent": {"pid": 21, "start_ticks": 201}})
 

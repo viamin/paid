@@ -133,6 +133,10 @@ failure-marking and diagnostic-retention paths. No workflow-history structure
 changes, so in-flight runs replay unchanged, and no completion-path work
 moves to the bounded poll/control queue.
 
+Worker boot eagerly loads the Rails application before workflow execution.
+Workflow constant lookup must not enter Zeitwerk autoload synchronization under
+the SDK determinism tracer. This changes no workflow commands or history.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness

@@ -106,6 +106,10 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".server_config_toml" do
+    it "declares services when no previews are active" do # @spec LIVE-PREVIEW-008
+      expect(described_class.server_config_toml).to include("[server.services]\n")
+    end
+
     it "renders a noise-encrypted server config with explicit service bindings" do
       config = described_class.server_config_toml(bindings: [
         { service_name: "preview-abc123", tunnel_port: 8201 }
@@ -116,6 +120,8 @@ RSpec.describe Previews::TunnelManager do
       expect(config).to include('default_token = "paid-preview-test-token"')
       expect(config).to include("[server.transport]")
       expect(config).to include('type = "noise"')
+      expect(config).to include("[server.transport.noise]")
+      expect(config).to match(/local_private_key = "[A-Za-z0-9+\/=]+"/)
       expect(config).to include("[server.services.preview-abc123]")
       expect(config).to include('bind_addr = "0.0.0.0:8201"')
     end
@@ -135,6 +141,22 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".client_config" do
+    it "pins the public key belonging to the server's stable private key" do # @spec LIVE-PREVIEW-008
+      server_config = described_class.server_config_toml
+      private_bytes = Base64.strict_decode64(server_config.match(/local_private_key = "([^"]+)"/)[1])
+      private_key = OpenSSL::PKey.read([ "302e020100300506032b656e04220420" ].pack("H*") + private_bytes)
+      public_bytes = OpenSSL::ASN1.decode(private_key.public_to_der).value.last.value
+
+      client_config = described_class.client_config(
+        tunnel: { session_token: "abc123", tunnel_port: 8201, app_port: 4000 },
+        backend: default_backend, restricted: true
+      )
+
+      expect(described_class.server_config_toml).to eq(server_config)
+      expect(client_config).to include(%(remote_public_key = "#{Base64.strict_encode64(public_bytes)}"))
+      expect(client_config).not_to include("local_private_key")
+    end
+
     it "renders a noise-encrypted client config for the preview app port" do
       allow(Containers::ProxyUrl).to receive(:resolve).with(backend: default_backend, restricted: true).and_return("http://paid-proxy:3000")
 
@@ -149,6 +171,8 @@ RSpec.describe Previews::TunnelManager do
       expect(config).to include('default_token = "paid-preview-test-token"')
       expect(config).to include("[client.transport]")
       expect(config).to include('type = "noise"')
+      expect(config).to include("[client.transport.noise]")
+      expect(config).to match(/remote_public_key = "[A-Za-z0-9+\/=]+"/)
       expect(config).to include("[client.services.preview-abc123]")
       expect(config).to include('local_addr = "127.0.0.1:4000"')
     end

@@ -23,6 +23,12 @@
   *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_client`,
   `Paid.temporal_worker_client`.
 
+- [x] **TEMPORAL-ORCHESTRATION-023** — Before executing workflows, a worker
+  SHALL eagerly load application constants outside workflow execution so
+  deterministic constant lookup does not invoke Zeitwerk synchronization.
+  *Tests:* `spec/lib/paid/temporal_worker_boot_spec.rb`.
+  *Code:* `bin/temporal_worker`.
+
 ## Worker Resource Sizing
 
 - [x] **TEMPORAL-ORCHESTRATION-013** — When a Temporal worker receives a first

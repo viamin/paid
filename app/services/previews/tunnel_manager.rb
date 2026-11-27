@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
+require "base64"
 require "digest"
 require "net/http"
+require "openssl"
 require "securerandom"
 require "set"
 require "shellwords"
@@ -136,14 +138,20 @@ module Previews
         config.fetch(:port_range)
       end
 
+      # @spec LIVE-PREVIEW-008
       def server_config_toml(bindings: [])
         lines = [
           "[server]",
           %(bind_addr = "#{server_bind_host}:#{server_port}"),
           %(default_token = "#{toml_string(shared_token)}"),
           "",
+          "[server.services]",
+          "",
           "[server.transport]",
-          'type = "noise"'
+          'type = "noise"',
+          "",
+          "[server.transport.noise]",
+          %(local_private_key = "#{Base64.strict_encode64(noise_private_key_bytes)}")
         ]
 
         normalize_bindings(bindings).each do |binding|
@@ -174,6 +182,9 @@ module Previews
           "",
           "[client.transport]",
           'type = "noise"',
+          "",
+          "[client.transport.noise]",
+          %(remote_public_key = "#{Base64.strict_encode64(noise_public_key_bytes)}"),
           "",
           "[client.services.#{definition.service_name}]",
           %(local_addr = "#{DEFAULT_LOCAL_APP_HOST}:#{definition.app_port}")
@@ -311,6 +322,17 @@ module Previews
 
       def toml_string(value)
         value.to_s.gsub("\\", "\\\\").gsub('"', '\"')
+      end
+
+      def noise_private_key_bytes
+        OpenSSL::HMAC.digest("SHA256", shared_token, "paid-preview-noise-x25519-v1")
+      end
+
+      def noise_public_key_bytes
+        # RFC 8410 PKCS#8 wrapper for a raw 32-byte X25519 private key.
+        private_key_der = [ "302e020100300506032b656e04220420" ].pack("H*") + noise_private_key_bytes
+        key = OpenSSL::PKey.read(private_key_der)
+        OpenSSL::ASN1.decode(key.public_to_der).value.last.value
       end
 
       def normalize_health_check_path(path)

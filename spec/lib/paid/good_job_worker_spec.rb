@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "open3"
+require "rbconfig"
+require "timeout"
 require_relative "../../../lib/paid/good_job_worker"
 
 RSpec.describe Paid::GoodJobWorker do
@@ -157,6 +160,36 @@ RSpec.describe Paid::GoodJobWorker do
   end
 
   describe Paid::GoodJobWorker::ShutdownCoordinator do
+    let(:signal_worker_source) do
+      <<~RUBY
+        require #{File.expand_path("../../../lib/paid/good_job_worker", __dir__).inspect}
+        coordinator = Paid::GoodJobWorker::ShutdownCoordinator.new
+        coordinator.install_signal_handlers do |action, signal|
+          Mutex.new.synchronize { puts "\#{action}:\#{signal}"; $stdout.flush }
+        end
+        puts "ready"
+        $stdout.flush
+        STDIN.read
+      RUBY
+    end
+
+    it "dispatches signals outside trap context" do # @spec RAILS-CONTROL-PLANE-032
+      Open3.popen3(RbConfig.ruby, "-e", signal_worker_source) do |stdin, stdout, stderr, waiter|
+        Timeout.timeout(5) do
+          expect(stdout.gets).to eq("ready\n")
+          Process.kill("TERM", waiter.pid)
+          expect(stdout.gets).to eq("graceful:TERM\n")
+          Process.kill("INT", waiter.pid)
+          expect(stdout.gets).to eq("force_exit:INT\n")
+          stdin.close
+          expect(waiter.value.success?).to be(true), stderr.read
+        end
+      ensure
+        stdin.close unless stdin.closed?
+        Process.kill("KILL", waiter.pid) if waiter.alive?
+      end
+    end
+
     it "requests graceful shutdown on the first trigger" do
       coordinator = described_class.new
 

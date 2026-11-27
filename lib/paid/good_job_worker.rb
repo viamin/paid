@@ -186,6 +186,13 @@ module Paid
         @started = false
       end
 
+      # @spec RAILS-CONTROL-PLANE-032
+      def install_signal_handlers(&handler)
+        %w[INT TERM].each do |signal|
+          Signal.trap(signal) { Thread.new { handler.call(trigger, signal) } }
+        end
+      end
+
       # @return [Symbol] :graceful on the first trigger, :force_exit after that.
       def trigger
         @mutex.synchronize do

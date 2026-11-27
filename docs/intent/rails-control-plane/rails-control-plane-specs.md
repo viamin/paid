@@ -360,3 +360,19 @@ failures when no tmux socket responds.
 - [D] **RAILS-CONTROL-PLANE-005** — When a Phlex migration is approved, the
   control plane SHALL update this segment to replace the ERB-specific claim with
   the new shipped component-layer behavior.
+
+- [x] **RAILS-CONTROL-PLANE-031** — When a development Temporal worker exits
+  139, its wrapper SHALL retry at most three times within five minutes with
+  increasing delay and retain role-specific Ruby crash reports. Other exits
+  SHALL surface unchanged. INT or TERM SHALL stop the child without recovery,
+  including during boot and restart backoff. If the crash-report directory
+  cannot be secured, the wrapper SHALL fail before launching a worker.
+  *Tests:* `spec/lib/dev_temporal_worker_spec.rb`.
+  *Code:* `bin/dev-temporal-worker`, `Procfile.dev`.
+
+- [x] **RAILS-CONTROL-PLANE-032** — When GoodJob receives INT or TERM, its
+  signal handler SHALL dispatch graceful shutdown outside trap context. A
+  subsequent signal SHALL force exit, and the graceful path SHALL retain its
+  shutdown watchdog and readiness withdrawal.
+  *Tests:* `spec/lib/paid/good_job_worker_spec.rb`.
+  *Code:* `lib/paid/good_job_worker.rb`, `bin/jobs`.

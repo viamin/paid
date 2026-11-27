@@ -476,7 +476,11 @@ dev_supervisor_log_memory_sample() {
   read -r puma_rss_kb temporal_rss_kb < <(
     ps -eo comm=,rss=,args= | awk '
       $1 == "ruby" && /puma .*\[paid\]/ { puma += $2 }
-      $1 == "ruby" && /ruby bin\/temporal_worker/ { temporal += $2 }
+      $1 == "ruby" {
+        for (i = 3; i <= NF; i++) {
+          if ($i ~ /(^|\/)bin\/temporal_worker$/) { temporal += $2; break }
+        }
+      }
       END { printf "%d %d\n", puma, temporal }
     '
   )
