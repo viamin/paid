@@ -193,8 +193,8 @@ Apple preflight and project lookup retain Rails and database checks.
 Reuse stable persisted setup graphs in profiled hotspot groups with the installed
 test-prof `let_it_be` recipe and `refind: true`. Normal factories create the graph
 inside a group transaction; each example refetches fresh model instances and
-rolls its mutations back. Provisioning shares setup only in its provisioning
-scenarios. Other cases retain lazy per-example setup. Preserve the existing system
+rolls its mutations back. Provisioning and command-execution scenarios share
+project setup. Other cases retain lazy per-example setup. Preserve the existing system
 access context during group initialization. Keep issues, agent runs and
 scenario-specific records/settings per example, including creation overrides
 under active-run uniqueness constraints. Preserve association identity within

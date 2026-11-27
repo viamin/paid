@@ -3249,6 +3249,8 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#execute" do
+    include_context "with stable project"
+
     before do
       service.provision
     end
