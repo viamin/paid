@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205728) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2179,7 +2179,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "name", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "feature_intent_id"], name: "idx_on_account_id_feature_intent_id_22e10796a9"
-    t.index ["account_id"], name: "index_feature_intent_facets_on_account_id"
     t.index ["feature_intent_decision_id"], name: "index_feature_intent_facets_on_feature_intent_decision_id"
     t.index ["feature_intent_id", "issue_id"], name: "index_feature_intent_facets_on_feature_intent_id_and_issue_id"
     t.index ["feature_intent_id"], name: "index_feature_intent_facets_on_feature_intent_id"
