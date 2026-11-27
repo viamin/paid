@@ -124,6 +124,11 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+PgHero duplicate-index repairs remove only verified non-unique indexes
+covered by a valid, non-partial B-tree index with the same leading columns.
+Removal and recreation run concurrently; rollback restores the original
+index definition while preserving the covering index and application rows.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
