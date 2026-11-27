@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_201311) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -706,7 +706,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.integer "total_cents", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "status"], name: "index_billing_invoices_on_account_id_and_status"
-    t.index ["account_id"], name: "index_billing_invoices_on_account_id"
     t.index ["billing_period_id"], name: "index_billing_invoices_on_billing_period_id"
     t.index ["external_id"], name: "index_billing_invoices_on_external_id", unique: true, where: "(external_id IS NOT NULL)"
   end
