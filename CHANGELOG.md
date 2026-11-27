@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.17.0](https://github.com/viamin/paid/compare/v1.16.0...v1.17.0) (2026-11-27)
+
+
+### Features
+
+* [P2] knowledge: Knowledge::ContainerizedRunner::ContainerError ([#5445](https://github.com/viamin/paid/issues/5445)) ([07e7e1b](https://github.com/viamin/paid/commit/07e7e1bee26ad8b49b0418746169f07fe2492bce))
+* **closeout:** accept shared delivery evidence without replacement coding ([#5371](https://github.com/viamin/paid/issues/5371)) ([67aae7c](https://github.com/viamin/paid/commit/67aae7c99f489c75dbf217181e7c9d28b33916f6))
+* **queue:** prioritize eligible first implementations without renewing authority ([#5389](https://github.com/viamin/paid/issues/5389)) ([6580796](https://github.com/viamin/paid/commit/6580796a88494e934119af6775c24b9cd4bad21a))
+* RDR-064 P01: Reconcile workspace agent chat design and existing delivery work ([#5424](https://github.com/viamin/paid/issues/5424)) ([94c4c31](https://github.com/viamin/paid/commit/94c4c31d297b648342c45996e477f63ecc6811cc))
+* **runtime:** close admission before worker quiescence ([#5327](https://github.com/viamin/paid/issues/5327)) ([df14e7a](https://github.com/viamin/paid/commit/df14e7adb9cbfdc0ff4abd3534bbf97e5bd5f7f6))
+
+
+### Bug Fixes
+
+* **audit:** persist source closure recovery requests ([#5425](https://github.com/viamin/paid/issues/5425)) ([4e5c5db](https://github.com/viamin/paid/commit/4e5c5db14e78629bd3422bcc5f55888f33fd1863))
+* **audit:** trace source closure request contract ([#5521](https://github.com/viamin/paid/issues/5521)) ([ee3f7eb](https://github.com/viamin/paid/commit/ee3f7eb15ec59bd918f1b4a48abda60081eb4c3c))
+* **auth:** preserve historical actors while enforcing current authority ([#5416](https://github.com/viamin/paid/issues/5416)) ([41f6c6c](https://github.com/viamin/paid/commit/41f6c6c77b2ba0cc80066ca3439e5642394352de))
+* **automation:** enforce conflict-scope authorization at merge boundaries ([#5321](https://github.com/viamin/paid/issues/5321)) ([c1a8643](https://github.com/viamin/paid/commit/c1a864359bb0d75c34f9b4a42181b60fab8c2636))
+* **automation:** retain unseen conversation feedback ([#5320](https://github.com/viamin/paid/issues/5320)) ([1c06a6c](https://github.com/viamin/paid/commit/1c06a6c697d078bdf2d4e5b6dac8b0eb7d53e1bc))
+* **chat:** avoid lost heartbeat stop signals and 30-second waits ([#5499](https://github.com/viamin/paid/issues/5499)) ([92348b7](https://github.com/viamin/paid/commit/92348b77fc2453b93cc83497dceed2c25efa56a5))
+* **ci:** bound ast-grep release downloads ([#5406](https://github.com/viamin/paid/issues/5406)) ([089f011](https://github.com/viamin/paid/commit/089f011680922f2493a469c58cbf7017a28b970e))
+* **ci:** cancel superseded shard recovery ([#5438](https://github.com/viamin/paid/issues/5438)) ([0fa4435](https://github.com/viamin/paid/commit/0fa4435d812aaba0b57aa996892f81fe639042f0))
+* **ci:** check MCP write-tool inventory before expensive PR shards ([#5439](https://github.com/viamin/paid/issues/5439)) ([dd2621e](https://github.com/viamin/paid/commit/dd2621e24d7a36289bf09be9752bc43123376ad2))
+* **ci:** include approval-blocked workflows in CI status ([#5437](https://github.com/viamin/paid/issues/5437)) ([c9fac0c](https://github.com/viamin/paid/commit/c9fac0ce9e014dedd1bfd686214eadd91f241008))
+* **dependencies:** keep unmerged PR prerequisites blocking admission ([#5392](https://github.com/viamin/paid/issues/5392)) ([86b3319](https://github.com/viamin/paid/commit/86b3319a76c08616968e467d4abd62436b99fa28))
+* **dev:** retain worker admission fence across replacement ([#5325](https://github.com/viamin/paid/issues/5325)) ([b3d6310](https://github.com/viamin/paid/commit/b3d6310ce796b89dab221d0f4af138a1fa8df2c0))
+* **queue:** retain resume ownership after workflow start ([#5470](https://github.com/viamin/paid/issues/5470)) ([1e672e4](https://github.com/viamin/paid/commit/1e672e4580a657bf5dc22b047ba73b4dddc7982e))
+* **recovery:** preserve bounded manual issue recovery outside auto-pick ([#5419](https://github.com/viamin/paid/issues/5419)) ([613184f](https://github.com/viamin/paid/commit/613184fe288373b795d5444fa9cbd596048acc9d))
+* **recovery:** prevent manual issue runs from silently stranding outside auto-pick ([#5456](https://github.com/viamin/paid/issues/5456)) ([ecad4d6](https://github.com/viamin/paid/commit/ecad4d6a61cc3a28150639477412b524d4b464a6))
+* **review:** bound dependency preparation and expose unavailable review environments ([#5431](https://github.com/viamin/paid/issues/5431)) ([a8cf544](https://github.com/viamin/paid/commit/a8cf544c6e24a2cc77bdaffd3a80ab8f01456b90))
+* **review:** deliver trusted top-level review findings to PR repair prompts ([#5322](https://github.com/viamin/paid/issues/5322)) ([bc62e8a](https://github.com/viamin/paid/commit/bc62e8af77cc838771f411c8f538d3a307bd68b4))
+* **runtime:** bound existing-PR completion and persist actionable scope-assessment stops ([#5391](https://github.com/viamin/paid/issues/5391)) ([347527d](https://github.com/viamin/paid/commit/347527d9f728bb6019834d9a8bb46d7c3de9b06a))
+* **runtime:** diagnose and fence queued resume setup ([#5388](https://github.com/viamin/paid/issues/5388)) ([723e241](https://github.com/viamin/paid/commit/723e24153e81e6cb3877d494885639b94d00bde8))
+* **runtime:** preserve Codex provider authentication provenance ([#5390](https://github.com/viamin/paid/issues/5390)) ([d53d24a](https://github.com/viamin/paid/commit/d53d24a5a7f933cf1567edcccd9f90d2b81feafe))
+* **runtime:** preserve terminal Codex authentication diagnostics ([#5421](https://github.com/viamin/paid/issues/5421)) ([045bed8](https://github.com/viamin/paid/commit/045bed8556c787f921ec539a51a5e617733051b7))
+* **runtime:** provide a verified isolated job-local Rust SDK capability ([#5394](https://github.com/viamin/paid/issues/5394)) ([58f01ba](https://github.com/viamin/paid/commit/58f01ba05620ac48db9a6fc42c06847c98117789))
+* **runtime:** recognize GoodJob dispatch progress before completion ([#5418](https://github.com/viamin/paid/issues/5418)) ([8f236f8](https://github.com/viamin/paid/commit/8f236f80b7d1437d6d9a2604df101aef3022457d))
+
+
+### Performance Improvements
+
+* **auto-pick:** skip candidate history for empty projects ([#5535](https://github.com/viamin/paid/issues/5535)) ([1427efd](https://github.com/viamin/paid/commit/1427efd4749dcbefb94034012a7a2c0a4eeb5f4d))
+* **dashboard:** reuse held-work exclusion CTE ([#5513](https://github.com/viamin/paid/issues/5513)) ([9fbf8a9](https://github.com/viamin/paid/commit/9fbf8a961c289bc90e6b020ed8e0da0eadd1f379))
+* **dependencies:** short-circuit leaf cycle targets under lock ([#5540](https://github.com/viamin/paid/issues/5540)) ([9acd382](https://github.com/viamin/paid/commit/9acd382289bb3f7b55119e28640c94ef138afa02))
+* **inbox:** preload feature readiness inputs separately ([#5481](https://github.com/viamin/paid/issues/5481)) ([1c0b851](https://github.com/viamin/paid/commit/1c0b851602d8dc5daeb65648d40d03bef417a2ac))
+* **issues:** reuse prepared closeout candidate queries ([#5507](https://github.com/viamin/paid/issues/5507)) ([088588d](https://github.com/viamin/paid/commit/088588d223cbabf30e5d7eb1e93e7357f7e6c429))
+* **spec:** reduce repeated setup and overlapping regression checks ([#5471](https://github.com/viamin/paid/issues/5471)) ([c33dd76](https://github.com/viamin/paid/commit/c33dd7647d7f51070a1d7f5c57af082043f47fb5))
+* **spec:** reuse stable candidate and dashboard configuration ([#5463](https://github.com/viamin/paid/issues/5463)) ([62b1776](https://github.com/viamin/paid/commit/62b17767c801fe81173a9f1027627d4f7fbeea22))
+* **test:** reduce logging and honor configured Qdrant URLs ([#5488](https://github.com/viamin/paid/issues/5488)) ([a890fcd](https://github.com/viamin/paid/commit/a890fcdbed72a89e229aa1aa58a320cfb55ba322))
+* **test:** reuse distinct metrics project fixtures ([#5551](https://github.com/viamin/paid/issues/5551)) ([998d757](https://github.com/viamin/paid/commit/998d7572368c5826c37dc93cc2fb5e3b41d3b9cb))
+* **test:** reuse PostgreSQL query plans safely ([#5475](https://github.com/viamin/paid/issues/5475)) ([519a52f](https://github.com/viamin/paid/commit/519a52f6a352d90ebefc50d18356635e46e4955b))
+* **test:** reuse request fixtures and stabilize timing assertions ([#5505](https://github.com/viamin/paid/issues/5505)) ([db3a26f](https://github.com/viamin/paid/commit/db3a26f081c248565ca600eac8e8a55b3190f789))
+* **test:** reuse setup and consolidate same-input checks ([#5482](https://github.com/viamin/paid/issues/5482)) ([37972b7](https://github.com/viamin/paid/commit/37972b73e12861ccf00255afa63d138975593ab8))
+* **test:** share project setup for container execution ([#5545](https://github.com/viamin/paid/issues/5545)) ([3497e0f](https://github.com/viamin/paid/commit/3497e0f4bc5d929ea05123cb1d4860ca02cf78bc))
+* **tests:** reduce repeated dashboard and dependency graph setup ([#5462](https://github.com/viamin/paid/issues/5462)) ([8d812b8](https://github.com/viamin/paid/commit/8d812b848fd657ba842a9bad25fb9a2202c0f2d2))
+
 ## [1.16.0](https://github.com/viamin/paid/compare/v1.15.0...v1.16.0) (2026-11-25)
 
 
