@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202846) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1216,7 +1216,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["container_id"], name: "index_container_pool_entries_on_container_id", unique: true, where: "(container_id IS NOT NULL)"
     t.index ["project_id", "container_host", "status"], name: "idx_pool_entries_project_host_status"
     t.index ["project_id", "status", "warmed_at"], name: "idx_on_project_id_status_warmed_at_d791387888"
-    t.index ["project_id"], name: "index_container_pool_entries_on_project_id"
     t.index ["workspace_volume"], name: "index_container_pool_entries_on_workspace_volume", unique: true
   end
 
