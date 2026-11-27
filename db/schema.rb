@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211655) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2868,7 +2868,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "artifact_type", "scope_path", "identifier", "collector_type"], name: "idx_knowledge_artifacts_active_unique", unique: true, where: "((status)::text = 'active'::text)"
     t.index ["project_id", "status", "artifact_type"], name: "idx_knowledge_artifacts_on_project_status_type", comment: "Covers GROUP BY artifact_type WHERE project_id AND status for project show page artifact counts"
     t.index ["project_id", "status", "identifier"], name: "idx_knowledge_artifacts_project_status_identifier"
-    t.index ["project_id"], name: "index_knowledge_artifacts_on_project_id"
     t.index ["status"], name: "index_knowledge_artifacts_on_status"
   end
 
