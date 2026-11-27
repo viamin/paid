@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212311) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3032,7 +3032,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["agent_run_id"], name: "index_layered_verification_findings_on_agent_run_id"
     t.index ["obligation_id"], name: "index_layered_verification_findings_on_obligation_id"
     t.index ["project_id", "obligation_external_identity", "correspondence_claim_type", "cause_signature"], name: "index_layered_verification_findings_identity", unique: true
-    t.index ["project_id"], name: "index_layered_verification_findings_on_project_id"
   end
 
   create_table "layered_verification_obligations", force: :cascade do |t|
