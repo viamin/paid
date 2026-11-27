@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204242) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1558,7 +1558,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_design_artifact_associations_on_account_id"
     t.index ["project_id", "artifact_path", "artifact_revision", "issue_identity"], name: "idx_design_artifact_associations_identity", unique: true
-    t.index ["project_id"], name: "index_design_artifact_associations_on_project_id"
   end
 
   create_table "design_artifact_findings", comment: "Durable issue-tree traceability gaps found while reconciling repository design artifacts.", force: :cascade do |t|
