@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200718) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -499,7 +499,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "token_usage_id"
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "idx_api_usage_attempts_account_created"
-    t.index ["account_id"], name: "index_api_usage_attempts_on_account_id"
     t.index ["actor_id"], name: "index_api_usage_attempts_on_actor_id"
     t.index ["agent_run_id"], name: "index_api_usage_attempts_on_agent_run_id"
     t.index ["attempt_id"], name: "idx_api_usage_attempts_idempotency", unique: true
