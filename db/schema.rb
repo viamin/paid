@@ -2906,7 +2906,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_27_211815) do
     t.index ["content_tsvector"], name: "index_knowledge_chunks_on_content_tsvector", using: :gin
     t.index ["knowledge_artifact_id"], name: "index_knowledge_chunks_on_knowledge_artifact_id"
     t.index ["project_id", "status", "knowledge_artifact_id", "sequence"], name: "idx_knowledge_chunks_project_status_artifact_sequence"
-    t.index ["project_id", "status"], name: "index_knowledge_chunks_on_project_id_and_status"
   end
 
   create_table "knowledge_links", force: :cascade do |t|
