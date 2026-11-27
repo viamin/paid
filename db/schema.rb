@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_213749) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3518,7 +3518,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "pull_request_number", "commit_sha", "route_name"], name: "idx_page_load_measurements_capture_route", unique: true
     t.index ["project_id", "pull_request_number", "route_name"], name: "idx_page_load_measurements_pr_route"
     t.index ["project_id", "route_name", "captured_at"], name: "idx_page_load_measurements_route_recent", order: { captured_at: :desc }
-    t.index ["project_id"], name: "index_page_load_measurements_on_project_id"
     t.check_constraint "sample_count >= 1", name: "chk_page_load_measurements_sample_count"
     t.check_constraint "source::text = 'screenshot_capture'::text", name: "chk_page_load_measurements_source_valid"
   end
