@@ -5,10 +5,11 @@ prefix: OUTCOME-FEEDBACK
 
 # Low-Level Design: Outcome Feedback
 
-**Status:** Draft proposal under [RDR-082](../../rdrs/RDR-082-optional-outcome-feedback-for-autonomous-assessments.md).
+**Status:** Finalized, unimplemented delivery contract under
+[RDR-082](../../rdrs/RDR-082-optional-outcome-feedback-for-autonomous-assessments.md).
 No behavior in this segment is claimed shipped. Current approval-gated and
-confidence-driven policies remain authoritative until the accepted decision
-completes its LID handoff.
+confidence-driven policies remain authoritative until a separately admitted,
+guarded implementation satisfies its claims.
 
 ## Purpose and vocabulary
 
@@ -53,12 +54,16 @@ distinct evidence.
 
 ## Persistence and existing integrations
 
-Use durable feedback records and change history as the human source of truth;
-do not overload historical blinded labels or manufacture a human
-`QualityMetric` for an unexamined implementation. Resolve existing feature,
-criterion, run, and assessment identities before choosing the precise schema.
-An external/manual test may be linked to a criterion without representing a
-thumbs-up as recorder-owned evidence that the test executed.
+Use durable feedback records and append-only change history as the human source
+of truth; do not overload historical blinded labels or manufacture a human
+`QualityMetric` for an unexamined implementation. A feedback row records its
+tenant/project, author, target, vote, known feature/criterion and revision
+identities, submitted time, and current generation. Its history records each
+change/withdrawal independently. A criterion is identified by feature,
+immutable criterion key, and criterion revision; known implementation/design
+revision and assessment/verdict/run links are retained exactly or explicitly
+unknown. An external/manual test may be linked to a criterion without
+representing a thumbs-up as recorder-owned evidence that the test executed.
 
 Reuse existing quality collectors and reports where their evidence semantics
 fit. Existing approval/amendment-based delivery telemetry keeps its original
@@ -91,10 +96,18 @@ Existing evaluations and votes survive disabling the new collection surface.
 | Bind feedback to known versions and scope | Treat feature approval as timeless | Prevent old approval from endorsing later implementations or unrelated criteria. |
 | Preserve optional benchmark capability | Maintain mandatory comparison in parallel | Keep controlled evaluation without duplicate operational bureaucracy. |
 
-## Open implementation decisions
+## Implementation boundaries
 
-Before Final, resolve exact criterion/version identity and schema, link
-available assessments without inventing coverage, and specify the existing
-authorized investigation goal plus deduplication/update behavior. Define
-scoring consumers and weights before integrating tuning; the first release
-can retain separate evidence classes without numeric weighting.
+An investigation's sole initial goal is to determine whether a retained
+negative report can be substantiated as an assessment failure. One open
+investigation is deduplicated per feedback generation and target/revision
+identity. Detail changes append feedback history and update that investigation
+context; they do not create parallel work. New corrective work is separately
+deduplicated and admitted.
+
+Feedback text, provider text, and agent-proposed links are untrusted. Code
+enforces tenant/project identity, authorization, rollout guard, budget,
+identity shape, and state. `agent_harness` performs only bounded semantic
+matching and attribution. Scoring consumers and weights require a later,
+versioned decision; the first release keeps separate evidence classes without
+numeric weighting.

@@ -217,6 +217,14 @@ material delta routes to a focused human decision. The accepted authority,
 pilot metrics, and rollback posture are in
 [RDR-080](rdrs/RDR-080-project-delegation-after-settled-intent.md).
 
+For autonomous operation, [RDR-082](rdrs/RDR-082-optional-outcome-feedback-for-autonomous-assessments.md)
+finalizes a future post-delivery evidence policy: optional, revision-bound
+feedback can replace mandatory historical comparison only after its guarded
+implementation ships. It preserves approval-gated conformance, optional
+benchmarks, historical evidence, and ordinary authority controls. Feedback is
+not execution authority, and unexamined default-good is not human approval or
+a tuning signal.
+
 An epic umbrella remains open until its authoritative child work and explicit
 dependencies resolve, then receives a final acceptance audit against its
 approved intent and evidence. The audit may correct bounded gaps or file
