@@ -155,4 +155,22 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
       "Jobs not assigned to any queue in the priority spec: #{unassigned.join(", ")}. " \
       "Add them to expected_queue_assignments."
   end
+
+  # @spec TEST-SUITE-031
+  it "fails an unregistered job and passes once its intended queue is registered" do
+    stub_const("EarlyQueueInventoryProbeJob", Class.new(described_class))
+    job_files = Dir[Rails.root.join("app/jobs/*_job.rb")] + [ Rails.root.join("app/jobs/early_queue_inventory_probe_job.rb").to_s ]
+    job_classes = job_files.map { |file| File.basename(file, ".rb").camelize } - %w[ApplicationJob]
+
+    unassigned = job_classes - expected_queue_assignments.values.flatten
+    expect { expect(unassigned).to be_empty }.to raise_error(
+      RSpec::Expectations::ExpectationNotMetError,
+      /EarlyQueueInventoryProbeJob/
+    )
+
+    registered_assignments = expected_queue_assignments.merge(
+      default: expected_queue_assignments.fetch(:default) + [ "EarlyQueueInventoryProbeJob" ]
+    )
+    expect(job_classes - registered_assignments.values.flatten).to be_empty
+  end
 end
