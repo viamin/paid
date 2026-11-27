@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_200445) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -449,7 +449,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_and_maintenance_goal", where: "((goal)::text = 'maintenance'::text)"
-    t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id", "closeout_criterion_key", "closeout_recipe_version", "closeout_environment", "closeout_target_revision", "closeout_verification_generation"], name: "index_agent_runs_live_closeout_verification_attempt_identity", unique: true, where: "(((goal)::text = 'closeout_verification'::text) AND (closeout_target_revision IS NOT NULL))"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
     t.index ["project_id", "issue_id", "source_pull_request_number", "base_commit_sha", "closeout_mapping_id", "closeout_verification_generation"], name: "index_agent_runs_closeout_verification_attempt_identity", unique: true, where: "((goal)::text = 'closeout_verification'::text)"
