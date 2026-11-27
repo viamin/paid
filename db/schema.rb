@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_203953) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1498,7 +1498,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["decided_by_id"], name: "index_design_amendment_follow_ups_on_decided_by_id"
     t.index ["design_amendment_id", "issue_id"], name: "index_design_amendment_follow_ups_unique_branch", unique: true
-    t.index ["design_amendment_id"], name: "index_design_amendment_follow_ups_on_design_amendment_id"
     t.index ["issue_id"], name: "index_design_amendment_follow_ups_on_issue_id"
     t.index ["status"], name: "index_design_amendment_follow_ups_on_status"
   end
