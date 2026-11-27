@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_202208) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1051,7 +1051,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["agent_run_id"], name: "index_code_scanning_remediation_attempts_on_agent_run_id"
     t.index ["issue_id", "pull_request_number"], name: "idx_code_scanning_remediation_attempts_unique_pr", unique: true
     t.index ["issue_id", "status"], name: "idx_on_issue_id_status_9b22a66bc2"
-    t.index ["issue_id"], name: "index_code_scanning_remediation_attempts_on_issue_id"
   end
 
   create_table "collector_runs", force: :cascade do |t|
