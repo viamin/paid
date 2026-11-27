@@ -165,8 +165,9 @@ instead (POLYGLOT-TEST-006).
   become a prune candidate.
 - **Stale-image cleanup:** `AgentComboImageCleanupJob` (daily GoodJob cron)
   removes combo tags that no active project resolves to and no running
-  container uses, once their `built-at` label is older than 30 days. The base
-  image is never pruned (POLYGLOT-TEST-010).
+  container uses, once their `built-at` label is older than seven days. This
+  bounds disk use while allowing a week of reuse for rebuildable images. The
+  base image is never pruned (POLYGLOT-TEST-010).
 
 ## What this is not
 

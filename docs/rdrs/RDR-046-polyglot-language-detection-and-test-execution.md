@@ -206,7 +206,7 @@ Tags use sorted, hyphen-joined language names for deterministic lookup.
 
 - **Build trigger:** First `Containers::Provision` call for a project whose language set has no matching tag.
 - **Cache invalidation:** Base image patch bumps a version suffix (`paid-agent:ruby-node-python-v2`). Language layers rebuild against the new base. A `Rakefile` task or script triggers cascading rebuilds.
-- **Cleanup:** Images with no project reference for 30 days are eligible for pruning. A scheduled GoodJob task performs cleanup.
+- **Cleanup:** Unreferenced, unused combo images whose `built-at` label is older than seven days are eligible for pruning. A scheduled GoodJob task performs cleanup.
 
 #### Command Map Expansion
 
@@ -422,7 +422,7 @@ Phase 2 and Phase 4 can proceed in parallel after Phase 1. Phase 3 depends on Ph
 - First Elixir project: combo image `paid-agent:elixir-node-ruby-python` is built and tagged
 - Second Elixir project: existing tag is reused, no rebuild
 - Base image patch: cascading rebuild of all dependent combo images
-- Stale image cleanup: image with no project references for 30 days is pruned
+- Stale image cleanup: unreferenced, unused combo image built more than seven days ago is pruned
 
 ### Integration
 

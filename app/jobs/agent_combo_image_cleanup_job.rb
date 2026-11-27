@@ -4,7 +4,7 @@
 #
 # A combo tag is pruned when it is currently unreferenced (no project resolves
 # to it, no running container uses it) and its recorded build timestamp is
-# older than the retention window (30 days). The built-at label is the closest
+# older than the retention window (seven days). The built-at label is the closest
 # available proxy for "unreferenced since": reference-drop events are not
 # tracked, so the job may retain a recently-unreferenced image until its label
 # ages past the window (over-retention) — it never prunes an image younger
@@ -16,8 +16,9 @@
 class AgentComboImageCleanupJob < ApplicationJob
   queue_as :maintenance
 
-  RETENTION = 30.days
+  RETENTION = 7.days
 
+  # @spec POLYGLOT-TEST-010
   def perform
     referenced = referenced_combo_tags
     Containers.all_backends.each do |backend|
