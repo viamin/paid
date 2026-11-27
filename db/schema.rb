@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205044) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1950,7 +1950,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["occurred_at"], name: "idx_connector_events_occurred_at"
     t.index ["project_id", "connector_key", "event_type"], name: "idx_connector_events_project_connector_type"
     t.index ["project_id", "connector_key", "external_event_id"], name: "idx_connector_events_project_external_id", unique: true
-    t.index ["project_id"], name: "index_external_connector_events_on_project_id"
     t.index ["status", "created_at"], name: "idx_connector_events_status_created"
   end
 
