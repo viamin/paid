@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_213354) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3308,7 +3308,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.integer "version", default: 1, null: false
     t.index ["marketplace_entry_id", "version"], name: "index_marketplace_entry_versions_unique_version", unique: true
-    t.index ["marketplace_entry_id"], name: "index_marketplace_entry_versions_on_marketplace_entry_id"
   end
 
   create_table "mcp_server_definitions", force: :cascade do |t|
