@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205405) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2099,7 +2099,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "reviewed_head_sha", comment: "Head SHA the feature's current open decisions/evidence were generated against. When it differs from head_sha, the PR moved after discovery and approval is held until Paid re-evaluates the new head."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "pull_request_number"], name: "index_feature_intent_design_prs_unique_pr", unique: true
-    t.index ["feature_intent_id"], name: "index_feature_intent_design_prs_on_feature_intent_id"
     t.index ["pull_request_number"], name: "index_feature_intent_design_prs_on_pull_request_number"
   end
 
