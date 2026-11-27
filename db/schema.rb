@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205444) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2120,7 +2120,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_feature_intent_facet_assessments_on_account_id"
     t.index ["feature_intent_facet_direction_id", "evidence_revision"], name: "index_facet_assessments_direction_revision"
-    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_3af4455063"
     t.check_constraint "intent_score >= 0 AND intent_score <= 100 OR intent_score IS NULL", name: "facet_assessments_intent_bounds"
     t.check_constraint "status::text = ANY (ARRAY['unknown'::character varying::text, 'pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text, 'superseded'::character varying::text])", name: "facet_assessment_status"
     t.check_constraint "technical_score >= 0 AND technical_score <= 100 OR technical_score IS NULL", name: "facet_assessments_technical_bounds"
