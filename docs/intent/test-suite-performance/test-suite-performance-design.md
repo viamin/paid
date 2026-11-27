@@ -23,6 +23,15 @@ the sections they assert, while default-response and cross-account integration
 examples retain complete dashboard assembly. Avoid recomputing unrelated
 sections in every component example.
 
+Agent-execution activity specs scope persisted run lookup and container reconnect
+setup to examples that execute an agent. Pure runner-name, fallback-order and
+harness-command checks retain every scenario and assertion without inheriting
+project/run factories. Other method-level examples retain their own persisted
+scenario records and external-boundary setup as required.
+Set the execution group's stable Ruby language and disabled-fallback defaults once
+inside its fixture transaction; per-example refetch and rollback restore them
+after scenario-specific language or fallback changes.
+
 ## Execution
 
 The runner startup-budget regression freezes its wall clock within the example,

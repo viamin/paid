@@ -38,3 +38,4 @@ prefix: TEST-SUITE
 - [x] **TEST-SUITE-029** — When the runner startup-budget regression asserts an exact remaining run budget, it SHALL freeze the scenario's wall clock and restore it afterward, preserving exact execution and startup timeout expectations and the application budget calculation.
 
 - [x] **TEST-SUITE-030** — When an assignment-update spec checks a later explicit variant override, it SHALL start with a different explicit variant, verify both persisted states, and retain the existing assignment record so the update path is exercised independently of randomized selection.
+- [x] **TEST-SUITE-031** — When agent-execution specs exercise pure runner naming, fallback ordering, attempt counting or harness-command construction, they SHALL retain their scenario assertions without constructing persisted factory graphs; execution scenarios SHALL retain their run lookup, container reconnect and scenario-specific persistence checks.
