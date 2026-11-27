@@ -5,7 +5,7 @@ prefix: OUTCOME-FEEDBACK
 
 # EARS: Outcome Feedback
 
-Draft requirements for [RDR-082](../../rdrs/RDR-082-optional-outcome-feedback-for-autonomous-assessments.md)
+Finalized requirements for [RDR-082](../../rdrs/RDR-082-optional-outcome-feedback-for-autonomous-assessments.md)
 and the [owning design](outcome-feedback-design.md). Every claim is unimplemented;
 code/test links must be supplied during delivery, with failing-first tests.
 

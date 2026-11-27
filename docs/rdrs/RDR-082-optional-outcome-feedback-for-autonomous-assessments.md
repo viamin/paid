@@ -3,11 +3,16 @@
 ## Metadata
 
 - **Date**: 2026-11-23
-- **Status**: Draft
+- **Status**: Final
 - **Type**: Product workflow and assessment evaluation
-- **Owner decision**: Pending review of an exact revision.
-- **Related issues**: No replacement issue tree has been filed. Existing work
-  must be inventoried before changing its scope or dependencies.
+- **Owner decision**: Accepted on 2026-11-23 for the recommendation merged by
+  [#5339](https://github.com/viamin/paid/pull/5339) at
+  `d2ca47d7a12ad701b24e5bc7eefe65f7b1f9f538`. The acceptance finalizes this
+  policy and its authority boundary; it does not claim implementation evidence,
+  enable a flag, or authorize execution.
+- **Related issues**: [#5341](https://github.com/viamin/paid/issues/5341)
+  owns delivery. Its children remain separately admitted according to the
+  prerequisites recorded below.
 - **Prior RDR impact**: Narrows RDR-067 measured rollout to approval-gated
   operation; complements RDR-070/071 assessment and delivery, RDR-009 tuning,
   and RDR-077/078/080 execution authority. Details below.
@@ -78,9 +83,9 @@ automatically approve every criterion, test, or assessment beneath it.
 
 | Assumption | Status | Verification method | Concrete evidence or plan | If wrong |
 | --- | --- | --- | --- | --- |
-| Feedback can be traced to the implementation the author experienced | Pending | Trace a delivered feature and a later fix through revisions and assessments in the devcontainer | Validate against `FeatureIntent`, `FeatureIntentFacetAssessment`, `IntentConformanceVerdict`, and linked agent runs; retain unknown attribution when identity is unavailable | Collect feedback without assigning assessment penalties until traceability exists. |
-| Quick votes are substantially less burdensome than corpus labeling | Pending | Observe an owner submitting positive and negative feedback, including a report without details | One-click save, visible confirmation, optional details, undo, and no requirement-document selection | Revise the interaction before expanding the pilot. |
-| Existing quality/tuning infrastructure can consume explicit feedback without treating defaults as observations | Pending | Trace an attributed failure and an unexamined implementation through a report and regression evaluation | Inspect `QualityMetric`, existing collectors, and prompt-version evaluation; prove defaults do not enter human-approved counts | Keep feedback reports separate and defer score integration. |
+| Feedback can be traced to the implementation the author experienced | Resolved as a fail-closed contract | The 2026-11-27 read-only trace found project-scoped `FeatureIntent`, immutable approval revisions, exact-head/design `IntentConformanceVerdict` rows, and run-bound `QualityMetric` rows. None represents an experienced implementation revision for a general report. | P02 MUST persist only supplied known identities; unknown remains unknown. P05 may attribute an assessment only after it records the exact feature/criterion, implementation revision, assessment/verdict, and run links. | Save feedback with `attribution: unknown`; do not assign an assessment penalty. |
+| Quick votes are substantially less burdensome than corpus labeling | Resolved as a pilot gate, not a claimed measurement | The accepted recommendation fixes the low-friction contract (immediate save, optional details, change/undo, no document selection); no shipped interaction exists to measure. | P03/P04 MUST demonstrate positive, negative-without-details, change, and undo in the devcontainer with an authorized operator before pilot expansion. | Revise the interaction; do not infer usability from this RDR or broaden the pilot. |
+| Existing quality/tuning infrastructure can consume explicit feedback without treating defaults as observations | Resolved as a separate-evidence boundary | The 2026-11-27 read-only trace found `QualityMetric` has exactly one `human` row per agent run and a composite-score path, not an outcome-feedback source/history contract. | P06 MUST retain feedback and attribution outside `QualityMetric` until a versioned projection has source counts, a deduplication key, and an explicit scoring rule that excludes default good from human-observation counts. | Keep reports separate; no score integration, prompt/model promotion, or threshold change. |
 
 ## Prior-RDR impact
 
@@ -111,7 +116,7 @@ automatically approve every criterion, test, or assessment beneath it.
 
 ## Rollout Guard
 
-This draft is docs-only and changes no runtime policy or flags.
+This final decision is docs-only and changes no runtime policy or flags.
 
 Proposed implementation guard: a project-scoped `outcome_feedback` feature
 flag, default off for new and existing projects. The first implementation
@@ -149,36 +154,121 @@ or measured reviewer accuracy is claimed by this proposal.
 
 ## LID handoff and delivery plan
 
-- **HLD:** [Paid HLD](../high-level-design.md). Reconcile coverage truth,
-  observability, confidence-driven delivery, and human authority after owner
-  acceptance; this draft does not rewrite current platform policy.
-- **Owning LLD/EARS:** Linked above, draft and unchecked. Related segments are
+- **HLD:** [Paid HLD](../high-level-design.md) now records the final
+  autonomous-operation boundary. This decision does not rewrite current
+  platform policy or assert a shipped replacement.
+- **Owning LLD/EARS:** Linked above, finalized as the unimplemented delivery
+  contract. Their unchecked claims remain implementation work. Related segments are
   [measured rollout](../intent/intent-conformance-rollout/intent-conformance-rollout-design.md),
   [quality feedback](../intent/quality-feedback-loops/quality-feedback-loops-design.md),
   and [facet confidence](../intent/facet-confidence/facet-confidence-design.md).
-- **Implementation prerequisite:** Future issues must explicitly state
-  "Blocked by Final RDR-082 and merged OUTCOME-FEEDBACK EARS claims" and name
-  concrete issue dependencies once filed. No implementation tree is created
-  or made eligible by this draft.
+- **Implementation prerequisite:** Each implementation issue must cite Final
+  RDR-082, name the applicable OUTCOME-FEEDBACK claims, and identify concrete
+  preceding issue dependencies. Final RDR-082 is necessary but never sufficient
+  runtime authority: the flag, admission, tenant, project/phase authorization,
+  budget, and review controls still apply.
 - **Delivery slices:** (1) reconcile policy/dependencies and ship feature votes
   with optional problem details; (2) criterion browsing and investigation with
   assessment attribution; (3) reporting/regression integration; (4) closeout
   and owner pilot acceptance. The first slice must deliver a useful feedback
   loop rather than only retire the old form.
-- **Existing work:** Inventory open issues/PRs using current provider and Paid
-  queue state. Continue unrelated work, retain automated assessment work,
-  narrow mixed PRs, and mark obsolete labeling work superseded. Change explicit
-  dependencies only after policy reconciliation. Do not claim old acceptance
-  criteria passed or interrupt active owners merely because a draft exists.
+- **Existing work:** The finalization inventory below is dated evidence, not a
+  command to interrupt owners. Continue unrelated work, retain automated
+  assessment work, narrow mixed work only in its own scope, and do not claim
+  superseded acceptance criteria passed.
 
 ## Finalization record
 
-Pending owner review of this revision, resolution of load-bearing assumptions,
-current issue/PR inventory, and HLD/LLD/EARS handoff. Before Final, record
-contradictions and resolutions, assumption evidence, decisive validation,
-pairwise prior-RDR reconciliation, and why review depth is proportionate under
-the [authoring contract](future-authoring-contract.md). No owner acceptance,
-implementation completion, or runtime adoption is implied.
+### Decision and decisive proof
+
+The repository owner explicitly accepted the exact recommendation merged in
+[#5339](https://github.com/viamin/paid/pull/5339) at
+`d2ca47d7a12ad701b24e5bc7eefe65f7b1f9f538` on 2026-11-23 and asked that the
+RDR be finalized. This is the decision evidence; Final follows the completed
+2026-11-27 LID handoff and bounded read-only evidence below, not merger alone.
+No material recommendation or authority-boundary change was made after that
+acceptance.
+
+### Identity, history, investigation, and trust contract
+
+P02 must use durable, tenant-scoped records whose source-of-truth feedback row
+has an immutable ID and records `project_id`, author, target kind/ID, known
+feature/criterion identity, implementation revision, acceptance/design
+revision, vote, submitted time, and state. A separate append-only history row
+records every change or withdrawal with actor and time; it never overwrites the
+original vote. Known feature identity is `FeatureIntent` plus its project;
+criterion identity must include the feature and its immutable criterion key and
+revision. Known assessment identity is the assessment/verdict ID plus its
+recorded run and exact revision, not a guessed latest record.
+
+The authorized investigation goal is to determine whether a retained negative
+report can be supported as an assessment failure. Feedback text, GitHub text,
+and agent-generated links are untrusted input. Deterministic code validates
+tenant/project membership, identity shape, authorization, flag, budget,
+deduplication, and state; only bounded semantic matching and attribution pass
+through `agent_harness`. A negative report creates at most one open
+investigation per feedback generation and target/revision identity. A detail
+update appends history and updates that investigation's context; it cannot make
+a parallel investigation. A new vote generation after withdrawal/change is
+separate evidence, while a later fix does not rewrite the earlier report.
+
+### Bounded evidence and contradictions resolved
+
+The 2026-11-27 repository trace confirms that `FeatureIntent` is project-bound
+and retains approved design revisions and approval history;
+`IntentConformanceVerdict` binds an issue, project, exact PR head, approved
+design revision, reviewer run, and outcome; and `QualityMetric` is unique by
+`agent_run_id` and metric type. `FeatureIntentFacetAssessment` is tenant-bound
+but has no general experienced-revision contract. Therefore prior text that
+could imply complete attribution from those records is narrowed: the first
+release preserves unknown context, and only explicit linked identities permit
+assessment attribution. The same trace shows existing human metrics are not a
+place to manufacture a default-good observation, resolving the quality-metric
+contradiction by requiring a separate source-preserving projection.
+
+### Pairwise effects and proportionality
+
+- **RDR-067:** Mandatory historical comparison is retired only from autonomous
+  operation after the guarded replacement ships. Approval-gated evaluation,
+  amendments, merge guards, historical ledgers, and optional benchmarks remain.
+  Closed #4594 is historical evaluation work, not failed acceptance evidence.
+- **RDR-070 and RDR-071:** Feedback is post-delivery evidence; it changes
+  neither confidence/readiness nor unresolved-decision and material-follow-up
+  obligations.
+- **RDR-009:** Only attributed, source-preserved regression evidence may enter
+  a future evaluation; raw votes and silence cannot tune or promote anything.
+- **Delivery telemetry:** Its approval/amendment escaped-drift population stays
+  separate. Outcome reports must disclose their own population and coverage.
+- **RDR-077, RDR-078, and RDR-080:** A report and its investigation create no
+  execution, continuation, merge, release, or delegation authority. Any
+  corrective work repeats ordinary admission and bounded authority checks.
+
+This documentation review is proportionate: it resolves the policy boundary,
+identity contract, and affected-work dependencies without simulating a user
+flow that no runtime implementation exists to execute. The required P03–P07
+tests and operating-devcontainer demonstrations remain the decisive evidence
+for behavior and pilot expansion.
+
+### Affected-work inventory (observed 2026-11-27)
+
+GitHub API reads and a read-only Paid database query supplied this snapshot.
+The database held no local `issues` or `agent_runs` rows for issues 412, 4525,
+4594, 4983, and 5339–5348 at the observation time, so no Paid queue/run owner
+exists to interrupt.
+
+| Work | State at observation | Classification and action |
+| --- | --- | --- |
+| #5341 and #5342 | Open | Retained umbrella and finalization record. #5342 supplies this prerequisite; it does not admit runtime work. |
+| #5343–#5348 | Open | Retained ordered delivery work. Their declared dependencies are the only tree dependencies added by this decision. |
+| #5340 | Closed PR | Retained reusable benchmark/evaluation UX repair; related, not a replacement prerequisite. |
+| #4594 | Closed | Narrowed historical solo-maintainer evaluation work. Its mandatory-labeling role is superseded only for autonomous operation; its preserved benchmark and approval-gated evidence remain valid history. |
+| #412 | Closed | Unrelated legacy GitHub reaction/review metric proposal. Reuse its `QualityMetric` vocabulary only where evidence semantics match; do not revive reaction sentiment as outcome feedback. |
+| #4525 | Closed | Unrelated maintenance proposal. Reuse its deduplication and separate-authority principle; no dependency or execution authority follows. |
+| #4983 | Open | Retained related evidence-receipt work. Reuse bounded revision/digest receipts when available; it is not a blanket prerequisite for outcome-feedback delivery. |
+
+No issue was relabeled, reopened, paused, or given a blanket dependency by this
+inventory. Superseding a historical workflow requirement never says that its
+old acceptance criteria passed.
 
 ## Closeout and post-mortem trigger
 
