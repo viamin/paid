@@ -32,6 +32,22 @@ Set the execution group's stable Ruby language and disabled-fallback defaults on
 inside its fixture transaction; per-example refetch and rollback restore them
 after scenario-specific language or fallback changes.
 
+Authentication and fallback execution groups initialize their stable subscription
+runner configuration once in a nested fixture transaction. Load a fresh user for
+group initialization so cached associations on the outer shared fixture cannot
+outlive a nested rollback. Each example refetches its user and creates fresh
+issues, runs and mutable execution state; scenario-specific runner changes roll
+back before the next example.
+
+Circuit classification examples use a one-failure threshold when the assertion
+is whether a failure counts. Separate multi-attempt examples retain the configured
+three-failure transition, cooldown and recovery checks. This avoids repeating an
+entire execution merely to expose the same classification decision.
+Log-window examples may bulk-insert their boundary dataset while ordinary logging
+and chunked-output examples retain the real logging interface. Boundary records
+must belong to the current attempt so the test distinguishes the row-count limit
+from the attempt-time filter.
+
 ## Execution
 
 The runner startup-budget regression freezes its wall clock within the example,
