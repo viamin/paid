@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_204614) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1689,7 +1689,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "source_layer", limit: 40, default: "gateway", null: false, comment: "Which layer emitted the event: gateway, broker, firewall."
     t.datetime "updated_at", null: false
     t.index ["account_id", "occurred_at"], name: "idx_egress_security_events_account_recent", order: { occurred_at: :desc }
-    t.index ["account_id"], name: "index_egress_security_events_on_account_id"
     t.index ["agent_run_id", "occurred_at"], name: "idx_egress_security_events_run_recent", order: { occurred_at: :desc }
     t.index ["agent_run_id"], name: "index_egress_security_events_on_agent_run_id"
     t.index ["egress_allowlist_entry_id"], name: "index_egress_security_events_on_egress_allowlist_entry_id"
