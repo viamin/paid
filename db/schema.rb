@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_211241) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2659,7 +2659,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_intent_conformance_shadow_evaluations_on_created_by_id"
     t.index ["project_id", "purpose", "manifest_digest"], name: "idx_shadow_evaluations_one_per_evidence_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."
-    t.index ["project_id"], name: "index_intent_conformance_shadow_evaluations_on_project_id"
     t.index ["solo_maintainer_id"], name: "idx_on_solo_maintainer_id_9b501cd90c"
   end
 
