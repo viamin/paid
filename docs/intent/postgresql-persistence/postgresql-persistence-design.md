@@ -124,6 +124,11 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Quality gate, pause and recovery event history retain their compound project
+lookup indexes. One concurrent migration removes the three redundant project
+prefixes, preserving all other indexes, audit data, foreign keys and tenant
+policies. Rollback restores the prefixes concurrently.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
