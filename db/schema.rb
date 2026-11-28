@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_082532) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4142,7 +4142,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "user_id", null: false
     t.index ["account_id", "provider", "external_id"], name: "index_provider_identity_mappings_on_provider_identity", unique: true
     t.index ["account_id", "user_id", "provider"], name: "index_provider_identity_mappings_on_user_and_provider", unique: true
-    t.index ["account_id"], name: "index_provider_identity_mappings_on_account_id"
     t.index ["created_by_id"], name: "index_provider_identity_mappings_on_created_by_id"
     t.index ["user_id"], name: "index_provider_identity_mappings_on_user_id"
   end
@@ -5043,7 +5042,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "project_id", "provider", "identity_type", "external_id"], name: "index_trusted_identities_on_scope", unique: true
     t.index ["account_id", "provider", "identity_type", "external_id"], name: "index_trusted_identities_on_account_default", unique: true, where: "(project_id IS NULL)"
-    t.index ["account_id"], name: "index_trusted_provider_identities_on_account_id"
     t.index ["created_by_id"], name: "index_trusted_provider_identities_on_created_by_id"
     t.index ["project_id"], name: "index_trusted_provider_identities_on_project_id"
   end

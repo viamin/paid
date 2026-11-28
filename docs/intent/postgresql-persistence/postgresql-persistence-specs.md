@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-026** — Removing redundant provider-trust account
+  prefix indexes SHALL preserve provider/user identity uniqueness, account-default
+  and project trust uniqueness, trust-admission lookup coverage, other indexes,
+  rows, foreign keys and tenant policies. Removal and rollback SHALL be concurrent.
+  *Tests:* `spec/migrations/remove_redundant_provider_trust_indexes_spec.rb`,
+  `spec/models/provider_identity_mapping_spec.rb`,
+  `spec/services/work_items/trust/admit_spec.rb`.
+  *Code:* `RemoveRedundantProviderTrustIndexes`.
