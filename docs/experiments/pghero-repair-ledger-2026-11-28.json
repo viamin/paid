@@ -6,9 +6,10 @@
   "counts": {
     "implemented_constraint_validation_awaiting_operating_acceptance": 7,
     "implemented_index_removal_awaiting_operating_acceptance": 202,
-    "requires_causal_query_repair_evidence": 19,
+    "requires_causal_query_repair_evidence": 18,
     "implemented_style_guide_aggregation_awaiting_operating_acceptance": 1,
     "implemented_shared_watermark_aggregation_awaiting_operating_acceptance": 2,
+    "implemented_cost_window_aggregation_awaiting_operating_acceptance": 1,
     "requires_representative_cache_workload_evidence": 1,
     "requires_representative_usage_and_dependency_evidence": 16
   },
@@ -4774,7 +4775,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The SELECT ... FOR UPDATE observation establishes slowness but not its cause or a concrete repair scope. Lock contention, transaction duration, and the blocking workload must be investigated before proposing a repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/8349511972625029525",
@@ -4783,7 +4785,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The observations establish slow project queries but not a concrete shared cause or repair. No plans, row/cardinality data, relevant projects indexes, call sites, or representative workload evidence identify whether filtering, wide-row retrieval, locking, or another cause is responsible. Existing issue #5354 concerns dashboard eligibility-breakdown queries, but the supplied evidence does not establish that these query shapes are emitted by that endpoint; its body is also truncated. The FOR UPDATE primary-key query especially cannot be assumed to share the repair of the three active-project scans.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/2709477187845439382",
@@ -4801,7 +4804,7 @@
         "status": "Per-version loop repeats aggregate scans; batch repair needs equality and representative timing proof before implementation or shared cache closeout."
       },
       "implementation_head": "f46b06e7d80f1ca58336e2628ccbeb83c7e48632",
-      "native_ownership_import": "unverified",
+      "native_ownership_import": "verified after successful normal scan 283ef1e2-6887-4576-9a18-82dfc365684a; repair 1167 / #5885 / PR #5886",
       "validation": "50 focused examples passed; final helper/path cleanup 2/0. Read-only account/system grouped results identical for seven real versions."
     },
     {
@@ -4811,7 +4814,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "Obtain safe complete normalized SQL, representative bindings and tenant-scoped query-plan, timing, buffers and wait/trigger evidence before choosing a repair. Existing index names alone do not establish coverage.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/6564859218421093421",
@@ -4820,7 +4824,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The complete INSERT shape establishes a slow bulk insert observation, but supplies no execution plan, constraints/conflict target definition, index-maintenance analysis, representative workload comparison, or causal evidence identifying a repair. Existing partial-closeout index-removal work does not establish that it improves this insert and must not be expanded without evidence.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-6394872564134977196",
@@ -4829,7 +4834,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The predicate is fully shown, but the primary-key equality should already identify one row; no evidence establishes whether latency is due to locking, triggers, index maintenance, or another cause.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-5925980023722500190",
@@ -4851,7 +4857,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement is an atomic counter update by primary key, but no causal evidence or representative development plan/lock analysis supports a specific repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-5891326464486699645",
@@ -4873,7 +4880,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The predicate is fully shown, but no evidence establishes whether the latency comes from locking, triggers, index maintenance, or another cause; an index proposal would not be justified from this finding alone.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-177091446449937240",
@@ -4882,7 +4890,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement is a primary-key update, but no plan, lock/wait evidence, trigger analysis, or representative development measurement establishes the actual repair scope.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-188668504759291600",
@@ -4891,7 +4900,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The query filters by the primary-key id, and the supplied catalog confirms a valid primary-key index exists, so an additional index repair is not established. SELECT ... FOR UPDATE taking 1104.3 ms may be caused by lock contention, transaction scope, or another execution condition; the evidence does not include an execution plan, lock/wait evidence, or the surrounding transaction scope needed to identify a concrete causal repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-4959457864729497765",
@@ -4900,16 +4910,22 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The supplied query text is truncated and does not establish the complete predicates, subqueries, ordering, or actual plan. Obtain the full query, representative development bindings, and EXPLAIN (ANALYZE, BUFFERS) evidence before selecting a causal repair or associating it with an index change.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-5712770983695573652",
       "type": "slow_query",
-      "canonical_issue": null,
-      "claimed_prs": [],
-      "disposition": "requires_causal_query_repair_evidence",
-      "remaining_evidence": "The query shape establishes a slow token_usages aggregation involving three joined ownership paths and a NOT IN subquery, but no plans, relevant catalog definitions, representative usage evidence, or measured alternative establish whether query restructuring or an index change is the repair. The existing token-index-removal PR retains the relevant covering indexes and provides no evidence that its repair resolves this slow query.",
-      "index_removal_prs": []
+      "canonical_issue": 5887,
+      "claimed_prs": [
+        5888
+      ],
+      "disposition": "implemented_cost_window_aggregation_awaiting_operating_acceptance",
+      "remaining_evidence": "CI/review, normal ownership import, operating process exercise, repeated performance and collector disappearance without replacement regression.",
+      "index_removal_prs": [],
+      "implementation_head": "634fbd496ad3fc20ab4da23a3595f30776111a86",
+      "native_ownership_import": "unverified",
+      "validation": "48 focused examples passed; account-scoped read-only repeatable-read full dashboard payload preserved."
     },
     {
       "finding": "primary/slow_query/6329919537469590063",
@@ -4918,7 +4934,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement is a primary-key update, but no evidence identifies the source of the observed latency or verifies a repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-6638057598781140217",
@@ -4927,7 +4944,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement is an atomic counter update by primary key, but no causal evidence or representative development plan/lock analysis supports a specific repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/4404032772284503350",
@@ -4936,7 +4954,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The complete query establishes a slow aggregate over 64 development calls, but supplies neither schema/index context, representative execution plan, nor a concrete causal diagnosis identifying a safe repair. No existing open issue or PR is shown to cover this query.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/1974317521208013964",
@@ -4945,7 +4964,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The observed SQL body is truncated before its predicates, joins, ordering, and scope are established. No concrete causal repair or index/query change can be safely assigned from the supplied evidence.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/-8364764731333282224",
@@ -4954,7 +4974,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The observations establish slow project queries but not a concrete shared cause or repair. No plans, row/cardinality data, relevant projects indexes, call sites, or representative workload evidence identify whether filtering, wide-row retrieval, locking, or another cause is responsible. Existing issue #5354 concerns dashboard eligibility-breakdown queries, but the supplied evidence does not establish that these query shapes are emitted by that endpoint; its body is also truncated. The FOR UPDATE primary-key query especially cannot be assumed to share the repair of the three active-project scans.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/1626970403696543657",
@@ -4963,7 +4984,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement identifies a primary-key update, but no plan, lock/wait evidence, trigger/index-write analysis, or representative development measurement establishes the cause or repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/7066093402514660234",
@@ -4972,7 +4994,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "The full statement identifies a primary-key update, but no plan, lock/wait evidence, trigger/index-write analysis, or representative development measurement establishes the cause or repair.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/slow_query/7683496056364026771",
@@ -4981,7 +5004,8 @@
       "claimed_prs": [],
       "disposition": "requires_causal_query_repair_evidence",
       "remaining_evidence": "Obtain safe complete normalized SQL, representative bindings and tenant-scoped query-plan, timing, buffers and wait/trigger evidence before choosing a repair. Existing index names alone do not establish coverage.",
-      "index_removal_prs": []
+      "index_removal_prs": [],
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
     },
     {
       "finding": "primary/cache_hit_rate/table",
@@ -5176,6 +5200,13 @@
       "pr": 5886,
       "head": "f46b06e7d80f1ca58336e2628ccbeb83c7e48632",
       "note": "Incremental implementation update after the dated full-ref audit; normal import remains unverified."
+    },
+    {
+      "recorded_at": "2026-11-28T12:42:04.555374+00:00",
+      "issue": 5887,
+      "pr": 5888,
+      "head": "634fbd496ad3fc20ab4da23a3595f30776111a86",
+      "note": "Incremental implementation after the dated full-ref audit; normal ownership import unverified."
     }
   ]
 }

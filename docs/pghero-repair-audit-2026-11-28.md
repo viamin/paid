@@ -1684,3 +1684,52 @@ dated observation snapshot; it does not pretend the later PR existed during the
 repeated workload comparison and successful collector disappearance remain
 required. Operating application source and database settings were not changed.
 The cache-warning disposition remains independent and open.
+
+## Cost-summary window repair and live lock evidence
+
+Draft paid-automation PR #5888 implements source #5887 at `634fbd496`, branch
+`fix/pghero-cost-summary-windows`, worktree
+`/tmp/paid-pghero-cost-summary-windows`. The summary previously computed the same
+billable today SUM twice and month SUM twice; one conditional aggregate now
+provides both values for LLM and variable-cost totals. Billable fallback,
+project/tenant attribution, inclusive local boundaries, future-row exclusion,
+empty-window zeros and separate infrastructure calculations remain. Source has
+waiting; `Fixes #5887` and the single query marker are on the PR. Exact-query
+search and native reads found no owner or unfinished scan before publication;
+no audited PR changed this file. Normal ownership import remains unverified.
+
+The original two-example regression failed on four window queries instead of
+one. Final source, window regressions, full cost-dashboard and TokenUsage suites
+passed 48 examples (seed 49348). Cases include local timezone boundaries,
+run-summary exclusion, out-of-window/future rows and existing infrastructure
+accounting. A frozen-clock account-scoped repeatable-read operating comparison
+preserved the complete public dashboard payload. Four actual baseline plans
+measured 347.766 ms versus 129.396 ms grouped account-scoped; system-access plans
+measured 75.884 versus 24.012 ms, with equal period totals. Private
+`cost-window-{query-plans,public-parity}.json` retains evidence. An earlier
+artifact explicitly labels its four-query value as an estimate from two plans;
+the final query-plans artifact records four actual executions. Paired timing
+has cache/order bias and is not sustained acceptance. Staged lint/hooks passed;
+coherence completed with existing advisory gaps. EXEC-USAGE-012 links intent;
+simplicity review added only a small aggregate helper in the existing service.
+Operating source/settings, admission policy and database schema were unchanged.
+CI/review, normal import, operating exercise and collector disappearance remain.
+
+A read-only live lock sample from 12:33:56 to 12:34:29 UTC captured 12 samples
+and 48 visible paid-role session observations with no lock waits. The role lacks
+pg_read_all_stats, so this does not claim full visibility of other roles or rule
+out historical/transient blockers. Normalized statements and metadata are in
+private `live-lock-sampling.json`; raw query literals were not retained. Primary-
+key update and FOR UPDATE findings remain unmatched pending time-aligned blocker
+and timing evidence; no index or shared repair was inferred from their tables.
+
+The actual PR #5604 only changes test setup, not dashboard runtime code. Open
+issue #5354 owns eligibility-breakdown queries and does not establish token-cost
+or global-status coverage. Those scopes remain separate unless causal code and
+acceptance evidence connect them.
+
+Normal style-guide import job `283ef1e2-6887-4576-9a18-82dfc365684a` completed:
+247 findings, two assessed, zero creates/reopens/closures, one update, 32 deferred,
+nil planning error and all categories collected (117,503 ms). A terminal native
+read verified repair 1167 / #5885 / PR #5886. This establishes existing ownership
+reuse and assessment success, not sustained operating acceptance of that PR.
