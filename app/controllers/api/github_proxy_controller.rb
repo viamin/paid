@@ -76,6 +76,10 @@ module Api
       end
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
+      unless valid_review_publication_request?(path, forwarded_body)
+        render json: { error: "Review publication is incomplete" }, status: :unprocessable_content
+        return
+      end
       authorization_token = github_authorization_token(path)
       planning_label_preexisting = planning_label_preexisting?(path, authorization_token)
       response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
@@ -90,7 +94,7 @@ module Api
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
         track_agent_planning_hold(path, response, label_preexisting: planning_label_preexisting)
-        track_review_creation(path, response)
+        track_review_creation(path, response, authorization_token:)
         track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
         log_github_error_response(path, response)
@@ -442,12 +446,12 @@ module Api
       request.headers["X-Paid-Planning-Hold"].present?
     end
 
-    def track_review_creation(path, response)
+    def track_review_creation(path, response, authorization_token:)
       return unless @agent_run
       return unless request.method == "POST"
       return unless @agent_run.review_goal?
 
-      match = %r{\Arepos/[^/]+/[^/]+/pulls/(?<number>\d+)/reviews\z}.match(path)
+      match = %r{\Arepos/(?<owner>[^/]+)/(?<repo>[^/]+)/pulls/(?<number>\d+)/reviews\z}.match(path)
       return unless match
 
       # Only track reviews posted on the run's target PR, not unrelated PRs.
@@ -456,7 +460,12 @@ module Api
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
 
-      record_review_proxy_diagnostic(outcome: "succeeded")
+      publication = published_review_artifact(match, body, authorization_token)
+      record_review_proxy_diagnostic(
+        outcome: publication.status == :clean || publication.status == :contentful_findings || publication.status == :summary ? "succeeded" : publication.status.to_s,
+        publication: publication.diagnostics
+      )
+      return unless publication_delivered?(publication)
 
       if @agent_run.review_posted_at.blank? || @agent_run.review_url.blank?
         review_url = body["html_url"].presence || review_url_for(match[:number], body["id"])
@@ -474,6 +483,40 @@ module Api
       dismiss_stale_changes_requested_reviews(match, body)
     rescue => e
       log_error("github_proxy.track_review_failed", e.message)
+    end
+
+    def valid_review_publication_request?(path, raw_body)
+      return true unless review_creation_request?(path)
+
+      publication = Reviews::Publication::ReviewArtifact.submission(**parse_request_body(raw_body).slice("body", "comments").symbolize_keys)
+      return true unless publication.status == :incomplete
+
+      record_review_proxy_diagnostic(outcome: "publication_incomplete", publication: publication.diagnostics)
+      false
+    end
+
+    def published_review_artifact(path_match, review, authorization_token)
+      request_publication = Reviews::Publication::ReviewArtifact.submission(
+        **parse_request_body(request.raw_post).slice("body", "comments").symbolize_keys
+      )
+      return request_publication unless request_publication.status == :contentful_findings
+
+      head_response = github_get("repos/#{path_match[:owner]}/#{path_match[:repo]}/pulls/#{path_match[:number]}", authorization_token)
+      comments_response = github_get("repos/#{path_match[:owner]}/#{path_match[:repo]}/pulls/#{path_match[:number]}/comments?per_page=100", authorization_token)
+      current_head_sha = parse_response_body(head_response.body)&.dig("head", "sha") if head_response.status.between?(200, 299)
+      provider_comments = parse_response_body(comments_response.body) if comments_response.status.between?(200, 299)
+
+      Reviews::Publication::ReviewArtifact.provider_result(
+        submission: request_publication, review:, comments: provider_comments, current_head_sha:
+      )
+    rescue Faraday::Error
+      Reviews::Publication::ReviewArtifact.provider_result(
+        submission: request_publication, review:, comments: nil, current_head_sha: nil
+      )
+    end
+
+    def publication_delivered?(publication)
+      publication.status.in?([ :clean, :contentful_findings, :summary ])
     end
 
     def track_tdd_return_to_test_review(path, response)
@@ -511,7 +554,7 @@ module Api
     # failure without digging through raw logs (#2779). Each call overwrites
     # the prior snapshot — only the most recent outcome matters for
     # diagnosing why a run finished without a tracked review.
-    def record_review_proxy_diagnostic(outcome:, http_status: nil, error_class: nil, error_message: nil)
+    def record_review_proxy_diagnostic(outcome:, http_status: nil, error_class: nil, error_message: nil, publication: nil)
       return unless @agent_run
 
       @agent_run.update_columns(review_proxy_diagnostics: {
@@ -519,7 +562,8 @@ module Api
         "http_status" => http_status,
         "error_class" => error_class,
         "error_message" => error_message.presence&.to_s&.truncate(GITHUB_ERROR_BODY_LOG_LIMIT),
-        "recorded_at" => Time.current.iso8601
+        "recorded_at" => Time.current.iso8601,
+        "publication" => publication
       }.compact)
     rescue => e
       log_error("github_proxy.review_diagnostic_record_failed", e.message)

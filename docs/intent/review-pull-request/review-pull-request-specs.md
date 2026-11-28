@@ -92,6 +92,23 @@
   {{placeholder}} that appears in its template), `spec/services/prompts/goal_review_pull_request_spec.rb`
   ("renders all declared placeholders").
 
+## Publication integrity (#5417)
+
+- [x] **REVIEW-PR-010** — At the tracked GitHub review-publication boundary,
+  Paid SHALL classify an explicit clean outcome, contentful inline findings,
+  incomplete/malformed publication, and unavailable provider evidence without
+  inferring clean from an absent body or successful HTTP status. It SHALL
+  reject empty or whitespace inline finding bodies and a marker-only non-clean
+  review; preserve a meaningful inline-only review without an optional
+  summary; and verify contentful provider comments and the current reviewed
+  head before marking a review-goal run delivered. It SHALL retain only stable
+  IDs, counts, and lengths in diagnostics, and leave incomplete or unavailable
+  attempts for the existing finite retry/deduplication route.
+  *Code:* `app/services/reviews/publication/review_artifact.rb`,
+  `app/controllers/api/github_proxy_controller.rb`.
+  *Tests:* `spec/services/reviews/publication/review_artifact_spec.rb`,
+  `spec/requests/api/github_proxy_spec.rb`.
+
 ## Dependency capability and truthful limited review (#5398)
 
 - [x] **REVIEW-PR-008** — Before Ruby/Rails validation, the review-goal
