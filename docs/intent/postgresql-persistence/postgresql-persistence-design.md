@@ -124,6 +124,13 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Run-resource ledger index cleanup removes only the nonunique agent-run prefixes
+on provisioning intents and runner-auth materializations. Full unique composite
+indexes retain retry identity and per-container credential provenance; the partial
+request-ID index is not the sole provisioning coverer. All ledger records and
+other indexes remain intact. Upgrade and rollback use concurrent index operations;
+lookup usability checks do not establish representative workload performance.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
