@@ -124,6 +124,13 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+When a valid PostgreSQL btree index has the same leading columns as another
+index, the redundant index is removed with a reversible concurrent migration.
+The retained index preserves the prefix lookup path and any uniqueness contract;
+rollback recreates only the removed nonunique indexes. Runner credential cleanup
+removes both account-only and account/runner prefixes while retaining the full
+unique account/runner/name index and the account/revocation lookup index.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
