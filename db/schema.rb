@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_064551) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4886,7 +4886,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_supervisor_incident_audits_on_account_id"
     t.index ["supervisor_incident_id", "occurred_at"], name: "idx_on_supervisor_incident_id_occurred_at_1a4244e05f"
-    t.index ["supervisor_incident_id"], name: "index_supervisor_incident_audits_on_supervisor_incident_id"
   end
 
   create_table "supervisor_incidents", force: :cascade do |t|
@@ -4911,7 +4910,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "fingerprint"], name: "index_supervisor_incidents_on_account_and_fingerprint", unique: true
     t.index ["account_id", "retention_expires_at"], name: "idx_on_account_id_retention_expires_at_06514e2ffe"
     t.index ["account_id", "status"], name: "index_supervisor_incidents_on_account_id_and_status"
-    t.index ["account_id"], name: "index_supervisor_incidents_on_account_id"
     t.index ["supervisor_snapshot_id"], name: "index_supervisor_incidents_on_supervisor_snapshot_id"
   end
 
@@ -4925,7 +4923,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "retention_expires_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "retention_expires_at"], name: "idx_on_account_id_retention_expires_at_c5e39567b6"
-    t.index ["account_id"], name: "index_supervisor_snapshots_on_account_id"
   end
 
   create_table "tenant_settings", force: :cascade do |t|
