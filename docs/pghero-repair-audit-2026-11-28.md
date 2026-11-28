@@ -1597,3 +1597,50 @@ edited. The final dump contains the intended removal and generated trigger
 ordering only. No physical operating index changed. Normal ownership import,
 full CI, representative workload and operating disappearance remain unverified;
 Issue #5878 stays open for that acceptance.
+
+## Complete current-head replay and durable disposition ledger
+
+The 12:20:45 UTC immutable audit (`pr-all-current/`) covers 202 trusted open PRs,
+169 index-removal PRs and 201 distinct targets. No target is removed twice and
+no current observed covering index is removed. Actual migration sources from all
+169 captured heads passed combined isolated up/down replay at 12:21:46 UTC:
+exactly 201 removals and exact restoration, with 13 seeded application rows,
+other indexes, constraints, RLS, policies, triggers and functions unchanged.
+Private `/tmp/paid-pghero-index-acceptance/current/` retains complete source
+hashes, manifest, external snapshots and passing result. This supersedes the
+161-migration replay for those current heads; it does not establish workload,
+CI or operating migration acceptance. The seven constraint PR heads also still
+match their independently replayed sources and have no runtime changes outside
+migration/schema files.
+
+The [durable ledger](experiments/pghero-repair-ledger-2026-11-28.json) accounts for
+all 248 observations in the 12:12:52 UTC snapshot against those later immutable
+implementation refs: 202 observations have independently replayed index removals,
+seven have replayed constraint validation, two share the implemented watermark
+aggregation, 20 queries require causal repair evidence, 16 unused indexes require
+usage/dependency evidence and one cache warning requires a demonstrated repair.
+The ledger separates isolated validation from outstanding operating acceptance.
+It is a dated snapshot, not a claim that the dynamically changing live backlog
+is closed. Refresh findings, heads and active executions before action.
+
+The longer natural-workload cache sample spans 08:40:03–12:19:57 UTC (13,194 s),
+with unchanged postmaster and reset metadata and monotonic counters for all 245
+compared tables. Table-buffer hit rate over that interval is 95.371%:
+20,806,472 heap reads and 428,666,657 heap hits. Style-guide run exposures account
+for 17,898,360 reads (about 86%); container metrics account for 1,498,643.
+`QualityMetrics::Collect#update_style_guide_version_stats` repeats the exposed
+version aggregate per exposure and matches query 2709477187845439382. This makes
+batch aggregation a concrete investigation lead, not a verified shared cache
+repair. Representative version bindings, before/after plans, result equality and
+timing are still required. Shared-buffer misses may hit OS cache, I/O timing is
+disabled, and investigation traffic is part of this uncontrolled development
+interval. No memory setting was changed. Private
+`cache-workload-{long-end,long-interval}.json` retains the measurements.
+
+Normal catalog-import job `7b8d3832-aacf-4f2d-8d34-5a33836aff92` ran from
+12:19:31 to 12:21:21 UTC: 244 findings, zero creates/updates/reopens/closures,
+31 deferred, zero assessed, all categories collected and an inference timeout.
+It does not extend successful assessment evidence. Import nevertheless succeeded:
+repair 1160 / #5863 / PR #5883 and repair 1165 / #5878 / PR #5884 were verified
+natively after terminal completion (`final-catalog-ownership.json`). Earlier
+successful scans remain the evidence for assessment progress and alias stability.
