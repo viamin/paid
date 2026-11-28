@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+The convention index repair also removes override and recommendation project
+prefixes. Retained compound indexes preserve override identity, pending-only
+recommendation uniqueness and project/status lookup coverage. Before any DDL,
+the migration checks that an existing override prefix has its valid, non-partial
+unique project/key covering index; a missing or changed coverer stops removal.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
@@ -132,3 +138,9 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Project convention detections retain `(project_id, key)` lookup coverage and
+unique `(project_version_id, key, detector_key)` enforcement. A corrective
+migration removes the redundant project and version prefix indexes concurrently,
+with concurrent recreation on rollback. Detection rows, foreign keys and tenant
+policies remain intact.
