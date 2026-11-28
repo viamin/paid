@@ -275,7 +275,10 @@ finding types resolved by the same action. An observation alone does not publish
 work. Existing issue links are imported without creating replacement issues;
 trusted PR closing references preserve explicit shared ownership. Consolidating
 existing repairs retains each source's distinct instructions and rationale under
-the canonical owner. Repeated imports do not append the same source again.
+the canonical owner. Assessments that attach further findings retain both existing
+requirements and the newly assessed instructions and rationale. Exact paragraphs
+are retained once, in order; this is text preservation, not semantic grouping.
+Repeated imports and assessments do not append the same requirements again.
 
 Before publishing new work, the scanner supplies current findings, persisted
 repair coverage, and trusted open GitHub work to a bounded assessment through

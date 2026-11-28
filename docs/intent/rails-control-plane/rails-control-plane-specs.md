@@ -368,7 +368,9 @@ failures when no tmux socket responds.
   close managed repair issues only when every member is no longer observed in
   successfully collected categories. Shared evidence SHALL be rendered together;
   consolidation SHALL retain each source repair's instructions and rationale
-  without appending them again on repeated imports;
+  without appending them again on repeated imports or assessments. Attaching new
+  findings to an existing repair SHALL retain the assessment's instructions and
+  rationale alongside the existing requirements;
   externally managed issues and PRs SHALL NOT be rewritten, reopened, or closed.
   *Tests:* `spec/services/development/pg_hero_overview/issue_filer_sync_spec.rb`.
   *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.

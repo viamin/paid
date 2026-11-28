@@ -199,8 +199,12 @@ module Development
             rationale: plan.fetch("rationale"), github_issue_number: issue, github_pr_number: pr,
             managed_issue: issue.nil? && pr.nil?)
           repair.managed_issue = @snapshot.managed_issue?(@snapshot.issue(issue)) if issue
-          repair.save!
+        else
+          %w[instructions rationale].each do |attribute|
+            repair[attribute] = (repair[attribute].split("\n\n") | plan.fetch(attribute).split("\n\n")).join("\n\n")
+          end
         end
+        repair.save! if repair.new_record? || repair.changed?
         member_rows.each { |row| row.update!(repair: repair, github_issue_number: row.github_issue_number || issue) }
         @plans << plan.merge("action" => issue || pr ? "reuse" : "create")
       end

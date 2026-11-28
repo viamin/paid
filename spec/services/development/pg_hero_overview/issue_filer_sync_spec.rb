@@ -217,6 +217,32 @@ RSpec.describe Development::PgHeroOverview::IssueFiler, "#sync" do
   end
 
   # @spec RAILS-CONTROL-PLANE-034
+  it "retains assessed requirements when new findings join an existing repair" do
+    remote << item(7, body: "<!-- pghero-overview-finding: #{first.identity} -->\nAuthored investigation.")
+    sync([ first ])
+    repair = PgHeroOverviewRepair.find_by!(project: project, github_issue_number: 7)
+    repair.update!(instructions: "Preserve uniqueness\n\nValidate both query plans",
+      rationale: "Existing enforcement contract")
+    proposal.merge!("finding_keys" => [ second.identity ], "owner_issue_number" => 7,
+      "instructions" => "Validate both query plans\n\nInclude unscored rows",
+      "rationale" => "New lookup requires full row coverage")
+
+    sync
+    third = observation("suggested_index/issues/project_id,status,created_at", :suggested_index, :suggested_indexes)
+    proposal["finding_keys"] = [ third.identity ]
+    sync(findings + [ third ])
+
+    expect(repair.reload.instructions).to eq("Preserve uniqueness\n\nValidate both query plans\n\nInclude unscored rows")
+    expect(repair.rationale).to eq("Existing enforcement contract\n\nNew lookup requires full row coverage")
+    expect(repair.title).to eq("Repair 7")
+    expect(repair.findings.count).to eq(3)
+    expect(PgHeroOverviewRepair.where(project: project).count).to eq(1)
+    expect(client).not_to have_received(:create_issue)
+    expect(client).to have_received(:update_issue).with("viamin/paid", 7,
+      body: include("Authored investigation.", "Preserve uniqueness", "Include unscored rows", third.identity))
+  end
+
+  # @spec RAILS-CONTROL-PLANE-034
   it "reassesses a persistent finding after its externally managed owner closes" do
     remote << item(42, pr: true)
     proposal["owner_pr_number"] = 42
