@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid btree index has a leading
+  key that covers a redundant standalone index, the schema SHALL retain the
+  covering index and remove only the redundant index through a reversible
+  concurrent migration. Rolling back the migration SHALL restore the removed
+  standalone index.
+  *Tests:* `spec/migrations/remove_redundant_prompt_versions_prompt_id_index_spec.rb`.
+  *Code:* `RemoveRedundantPromptVersionsPromptIdIndex`.
