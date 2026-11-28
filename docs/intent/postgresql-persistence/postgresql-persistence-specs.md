@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid non-unique composite index
+  covers a redundant non-unique leading-column index, the persistence layer
+  SHALL remove only the redundant index in a reversible concurrent migration
+  and SHALL restore that index on rollback.
+  *Tests:* `spec/migrations/remove_redundant_trusted_measurement_project_index_spec.rb`.
+  *Code:* `RemoveRedundantTrustedMeasurementProjectIndex`.
