@@ -129,10 +129,10 @@
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
 
-- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid unique btree index covers
-  the leading columns of a redundant nonunique index, the persistence layer
-  SHALL remove the redundant index concurrently while retaining the covering
-  index and its uniqueness contract. Rolling back SHALL recreate the removed
-  nonunique index concurrently.
+- [x] **POSTGRESQL-PERSISTENCE-041** — When runner credentials retain valid
+  full btree indexes on `(account_id, runner_key, name)` (unique) and
+  `(account_id, revoked_at)`, a reversible concurrent migration SHALL remove
+  both nonunique prefixes `(account_id)` and `(account_id, runner_key)`, preserve
+  records and retained definitions, and restore both prefixes on rollback.
   *Tests:* `spec/migrations/remove_redundant_runner_credentials_account_runner_key_index_spec.rb`.
   *Code:* `RemoveRedundantRunnerCredentialsAccountRunnerKeyIndex`.
