@@ -6,10 +6,11 @@
   "counts": {
     "implemented_constraint_validation_awaiting_operating_acceptance": 7,
     "implemented_index_removal_awaiting_operating_acceptance": 202,
-    "requires_causal_query_repair_evidence": 18,
+    "requires_causal_query_repair_evidence": 17,
     "implemented_style_guide_aggregation_awaiting_operating_acceptance": 1,
     "implemented_shared_watermark_aggregation_awaiting_operating_acceptance": 2,
     "implemented_cost_window_aggregation_awaiting_operating_acceptance": 1,
+    "implemented_live_counter_input_scope_awaiting_operating_acceptance": 1,
     "requires_representative_cache_workload_evidence": 1,
     "requires_representative_usage_and_dependency_evidence": 16
   },
@@ -4924,7 +4925,7 @@
       "remaining_evidence": "CI/review, normal ownership import, operating process exercise, repeated performance and collector disappearance without replacement regression.",
       "index_removal_prs": [],
       "implementation_head": "634fbd496ad3fc20ab4da23a3595f30776111a86",
-      "native_ownership_import": "unverified",
+      "native_ownership_import": "verified after terminal scan 4ee2bf78-49e6-4b06-a370-667ed4488654; repair 1168 / #5887 / PR #5888; inference itself timed out.",
       "validation": "48 focused examples passed; account-scoped read-only repeatable-read full dashboard payload preserved."
     },
     {
@@ -4950,12 +4951,17 @@
     {
       "finding": "primary/slow_query/4404032772284503350",
       "type": "slow_query",
-      "canonical_issue": null,
-      "claimed_prs": [],
-      "disposition": "requires_causal_query_repair_evidence",
-      "remaining_evidence": "The complete query establishes a slow aggregate over 64 development calls, but supplies neither schema/index context, representative execution plan, nor a concrete causal diagnosis identifying a safe repair. No existing open issue or PR is shown to cover this query.",
+      "canonical_issue": 5889,
+      "claimed_prs": [
+        5890
+      ],
+      "disposition": "implemented_live_counter_input_scope_awaiting_operating_acceptance",
+      "remaining_evidence": "CI/review, normal ownership import, operating process exercise, repeated representative performance and collector disappearance without replacement regression.",
       "index_removal_prs": [],
-      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established."
+      "lock_sample_note": "12:33:56\u201312:34:29 UTC: 12 samples, 48 visible paid-role session observations, zero lock waits. Other roles not fully visible; no historical causal blocker established.",
+      "implementation_head": "20c3d06514666eafd3cce7993f7e96a6a3b2c6e5",
+      "native_ownership_import": "unverified",
+      "validation": "7 focused examples passed; actual EXPLAIN input reduced from five fixture rows to one, full account-scoped read-only public payload preserved."
     },
     {
       "finding": "primary/slow_query/1974317521208013964",
@@ -5206,6 +5212,13 @@
       "issue": 5887,
       "pr": 5888,
       "head": "634fbd496ad3fc20ab4da23a3595f30776111a86",
+      "note": "Incremental implementation after the dated full-ref audit; normal ownership import unverified."
+    },
+    {
+      "recorded_at": "2026-11-28T12:51:29.970799+00:00",
+      "issue": 5889,
+      "pr": 5890,
+      "head": "20c3d06514666eafd3cce7993f7e96a6a3b2c6e5",
       "note": "Incremental implementation after the dated full-ref audit; normal ownership import unverified."
     }
   ]

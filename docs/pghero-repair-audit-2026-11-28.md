@@ -1733,3 +1733,45 @@ Normal style-guide import job `283ef1e2-6887-4576-9a18-82dfc365684a` completed:
 nil planning error and all categories collected (117,503 ms). A terminal native
 read verified repair 1167 / #5885 / PR #5886. This establishes existing ownership
 reuse and assessment success, not sustained operating acceptance of that PR.
+
+## Live-counter input repair and cost ownership import
+
+Source #5889 and draft paid-automation PR #5890 implement query
+4404032772284503350 at `20c3d0651`, branch `fix/pghero-live-stats-input-scope`,
+worktree `/tmp/paid-pghero-live-stats-input-scope`. The aggregate previously
+included historical runs that cannot contribute to any counter. Its input now
+includes running/queued rows of any age or rows completed since local midnight;
+all five counter predicates remain unchanged, including completion timestamps
+beyond now. Account/tenant and synthetic filtering, concurrency-limit field,
+20-second cache and queue-admission policy remain unchanged. The previously
+unmapped counter contract has its own small intent segment and arrow entry,
+DASHBOARD-LIVE-STATS-001–003. Source has waiting; `Fixes #5889`, its single
+observation marker and paid-automation are on the PR.
+
+Read-only repeatable-read plans preserved all five counts. Account-scoped times
+were 60.638 ms original versus 3.342 ms narrowed, shared-buffer hits 16,909 versus
+2,401. System-access comparison was 64.567 versus 29.275 ms. A separate frozen-
+clock public-service comparison used independent process-local MemoryStores to
+avoid a false cache-hit match and returned identical payloads; no shared cache
+was cleared. Private `live-stats-{query-plans,public-parity}.json` retains results.
+Sequential timing/cache-order bias and sustained operating acceptance remain open.
+
+The failing-first PostgreSQL EXPLAIN regression observed five physical input rows
+instead of the required one. Final live-stats tests passed seven examples (seed
+28452), covering one aggregate, historical active/queued work, completion-time
+semantics, cross-account isolation, synthetic/preview exclusion and caching.
+Staged lint/hooks and coherence completed; unrelated advisory gaps remain.
+Simplicity review added only the contributing relation, retaining the existing
+aggregate/cache. Exact-query issue search and the 202-PR diff audit found no
+existing implementation. A native ownership read after the preceding scanner
+was terminal found no owner or unfinished scan, preventing a publication race.
+CI/review, normal import, operating exercise, repeated performance and successful
+collector disappearance remain unverified; operating source/settings were unchanged.
+
+Cost-import job `4ee2bf78-49e6-4b06-a370-667ed4488654` was queued at 12:43:12 UTC
+and started 12:46:42 UTC. It finished with 248 findings, zero creates/reopens/
+closures, two updates, 33 deferred, zero assessed, all categories collected and
+an inference timeout (117,379 ms). This is not successful assessment evidence.
+A post-terminal native read verified repair 1168 / #5887 / PR #5888 nonetheless.
+The durable ledger records that distinction and the later live-counter
+implementation incrementally against its dated observation snapshot.
