@@ -1644,3 +1644,43 @@ It does not extend successful assessment evidence. Import nevertheless succeeded
 repair 1160 / #5863 / PR #5883 and repair 1165 / #5878 / PR #5884 were verified
 natively after terminal completion (`final-catalog-ownership.json`). Earlier
 successful scans remain the evidence for assessment progress and alias stability.
+
+## Style-guide statistics batching
+
+Source #5885 and draft paid-automation PR #5886 implement query
+2709477187845439382 at `f46b06e7d` on branch
+`fix/pghero-style-guide-stat-batching`, worktree
+`/tmp/paid-pghero-style-guide-stat-batching`. No audited open PR changed the owning
+service, exact-query issue search found no open issue and a native read found
+the observation unowned with no unfinished scanner job before publication.
+Source has waiting and the PR declares `Fixes #5885` plus the single observation
+marker. Normal ownership import remains unverified.
+
+Read-only repeatable-read plans used seven actual exposed versions from run
+32275. Account-scoped separate aggregates totalled 2,136.642 ms versus 331.828 ms
+grouped, with identical nonempty results. Shared-buffer accesses fell from
+1,528,085 to 228,789. System-access results also matched (1,852.882 versus
+278.914 ms). The first account binding search had returned empty; the later
+paired account query returned seven nonempty groups, so that first search is
+not evidence of a tenant visibility defect. Private
+`style-guide-{system-bindings,query-plans}.json` retains complete inputs and plans.
+These are sequential paired samples with cache/order bias, not sustained
+operating acceptance or proof that the whole cache warning is repaired.
+
+The implementation captures exposed version IDs, computes one grouped aggregate
+and retains batched exposure/version loading. Automated scored-metric and
+scoreable-run filters, distinct counts, tenant enforcement and rounding remain;
+empty exposed groups reset to zero/null and unexposed versions stay unchanged.
+A failing-first two-example suite failed on two queries instead of one. Final
+source plus quality collection tests passed 50 examples (seed 41031); final test
+helper/path cleanup passed two (9788). Cases distinguish independent version
+scores and exclude human metrics/auth-expired runs. Staged lint and hooks passed;
+coherence completed with existing advisory gaps. QUALITY-LOOPS-010 links intent.
+Simplicity review added no service, index or dependency and retained batch loading.
+
+The durable ledger incrementally records this implementation against the same
+dated observation snapshot; it does not pretend the later PR existed during the
+12:20:45 full-ref audit. CI/review, normal import, operating process exercise,
+repeated workload comparison and successful collector disappearance remain
+required. Operating application source and database settings were not changed.
+The cache-warning disposition remains independent and open.

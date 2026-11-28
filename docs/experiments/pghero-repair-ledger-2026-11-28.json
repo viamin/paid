@@ -6,7 +6,8 @@
   "counts": {
     "implemented_constraint_validation_awaiting_operating_acceptance": 7,
     "implemented_index_removal_awaiting_operating_acceptance": 202,
-    "requires_causal_query_repair_evidence": 20,
+    "requires_causal_query_repair_evidence": 19,
+    "implemented_style_guide_aggregation_awaiting_operating_acceptance": 1,
     "implemented_shared_watermark_aggregation_awaiting_operating_acceptance": 2,
     "requires_representative_cache_workload_evidence": 1,
     "requires_representative_usage_and_dependency_evidence": 16
@@ -4787,16 +4788,21 @@
     {
       "finding": "primary/slow_query/2709477187845439382",
       "type": "slow_query",
-      "canonical_issue": null,
-      "claimed_prs": [],
-      "disposition": "requires_causal_query_repair_evidence",
-      "remaining_evidence": "Although the query identifies several tables, its body is truncated and does not establish the complete predicate and execution scope. A shared quality_metrics table does not demonstrate that any listed index-removal repair addresses this slow query; obtain the complete query and representative development plan/usage evidence before assigning a repair.",
+      "canonical_issue": 5885,
+      "claimed_prs": [
+        5886
+      ],
+      "disposition": "implemented_style_guide_aggregation_awaiting_operating_acceptance",
+      "remaining_evidence": "CI/review, normal ownership import, operating process exercise, repeated representative performance and collector disappearance without replacement regression. Broader cache warning remains independent.",
       "index_removal_prs": [],
       "causal_evidence": {
         "callsite": "app/services/quality_metrics/collect.rb:353",
         "related_evidence": "cache-workload-long-interval.json",
         "status": "Per-version loop repeats aggregate scans; batch repair needs equality and representative timing proof before implementation or shared cache closeout."
-      }
+      },
+      "implementation_head": "f46b06e7d80f1ca58336e2628ccbeb83c7e48632",
+      "native_ownership_import": "unverified",
+      "validation": "50 focused examples passed; final helper/path cleanup 2/0. Read-only account/system grouped results identical for seven real versions."
     },
     {
       "finding": "primary/slow_query/7870786573814768013",
@@ -5161,6 +5167,15 @@
       "disposition": "requires_representative_usage_and_dependency_evidence",
       "remaining_evidence": "Establish a representative observation window and catalog/query dependencies, including covering and search roles, before proposing removal or retention.",
       "index_removal_prs": []
+    }
+  ],
+  "implementation_updates": [
+    {
+      "recorded_at": "2026-11-28T12:32:37.331333+00:00",
+      "issue": 5885,
+      "pr": 5886,
+      "head": "f46b06e7d80f1ca58336e2628ccbeb83c7e48632",
+      "note": "Incremental implementation update after the dated full-ref audit; normal import remains unverified."
     }
   ]
 }
