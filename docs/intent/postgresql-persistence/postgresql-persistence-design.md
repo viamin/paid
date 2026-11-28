@@ -124,6 +124,11 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Prefix-redundant nonunique btree indexes are removed with reversible concurrent
+migrations when a valid retained index has the redundant index's columns as its
+leading key. The migration coverage verifies removal, rollback, reapplication,
+and the retained lookup path before the canonical schema dump is updated.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
