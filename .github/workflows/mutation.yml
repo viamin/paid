@@ -3,6 +3,38 @@ name: Mutation
 on:
   pull_request:
     branches: [ main ]
+    # @spec MUTATION-CI-001 MUTATION-CI-003
+    paths:
+      - 'app/services/tenant_context.rb'
+      - 'app/services/prompts/build_for_issue.rb'
+      - 'app/services/prompts/build_for_pr.rb'
+      - 'app/policies/application_policy.rb'
+      - 'app/policies/operator_console/base_policy.rb'
+      - 'spec/services/tenant_context_spec.rb'
+      - 'spec/services/prompts/build_for_issue_spec.rb'
+      - 'spec/services/prompts/build_for_pr_spec.rb'
+      - 'spec/policies/application_policy_spec.rb'
+      - 'spec/policies/operator_console/base_policy_spec.rb'
+      - 'spec/support/**'
+      - 'spec/factories/**'
+      - 'spec/fixtures/**'
+      - 'spec/spec_helper.rb'
+      - 'spec/rails_helper.rb'
+      - 'config/**'
+      - 'lib/**'
+      - 'db/**'
+      - 'Gemfile'
+      - 'Gemfile.lock'
+      - '.mutant.yml'
+      - '.tool-versions'
+      - '.rspec'
+      - '.simplecov'
+      - 'bin/rspec'
+      - 'bin/rails'
+      - 'Rakefile'
+      - 'config.ru'
+      - '.github/workflows/mutation.yml'
+  # @spec MUTATION-CI-002
   schedule:
     - cron: "17 9 * * *"
 
