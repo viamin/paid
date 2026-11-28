@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid nonunique PostgreSQL
+  btree index has a redundant single-column prefix index, the persistence layer
+  SHALL remove the redundant index with a reversible concurrent migration while
+  retaining the covering index. Migration coverage SHALL verify removal,
+  rollback, reapplication, and a lookup plan using the retained index.
+  *Tests:* `spec/migrations/remove_redundant_service_container_metrics_index_spec.rb`.
+  *Code:* `RemoveRedundantServiceContainerMetricsIndex`.
