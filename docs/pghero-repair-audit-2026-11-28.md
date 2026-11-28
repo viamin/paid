@@ -1297,3 +1297,47 @@ no PR is recorded for either. Inspect their recovery state and any generated
 artifacts before taking them over. Lack of an active agent alone does not prove
 there is no recoverable work. Existing sources and acceptance requirements remain
 open; no additional speculative consolidation was performed.
+
+## Combined isolated migration acceptance and subsequent scan limits
+
+Actual migration files from all 161 index-removal PR heads in the complete audit
+passed combined up/down replay against trusted base
+`3497e0f4bc5d929ea05123cb1d4860ca02cf78bc` at 11:25:51 UTC. Independent
+PostgreSQL snapshots verified exactly 192 intended removals and restoration of
+all original index definitions. Thirteen seeded application rows, all other index
+properties, constraints, table security, policies, triggers and functions remained
+unchanged. All 192 target/coverer catalog pairs matched operating definitions.
+These PRs contained no runtime changes outside migration/schema files.
+
+Seven constraint migrations from PRs #5617, #5618, #5619, #5620, #5621, #5622 and #5624
+passed separate replay at 11:35:02 UTC. Up validated exactly the intended
+seven constraints; down preserved validation. Data and other schema properties
+remained unchanged. The verifier matched a regenerated FK by table and definition
+and reviewed an equivalent enum check expression after schema roundtrip; generated
+FK names and PostgreSQL expression rendering were not assumed stable.
+
+Both runs used a private PostgreSQL 16 database with network disabled. The app
+shared only its loopback network namespace, ran without root or capabilities and
+had no host bind mounts, published ports or operating credentials. Untrusted PR
+migration files executed only there; independent snapshots were taken outside
+the migration process. Private `/tmp/paid-pghero-index-acceptance/` retains exact
+manifests, refs, isolation evidence, snapshots, logs and passing `result.json` and
+`constraint-result.json`. This establishes isolated schema/data acceptance, not
+representative workload performance, full repository CI or operating migration
+acceptance. No physical repair was applied to the operating database.
+
+Repeat scanner job `444b8dfb-bc92-4444-b3b3-59d10b07fb52` ran from 10:58:39 to
+11:00:31 UTC: 250 findings, zero creates, two updates, zero reopens/closures,
+40 deferred and zero assessed, with `AgentHarness::TimeoutError`. A subsequent
+small routing probe also timed out. Neither result proves successful assessment
+or repeat publication stability. Scheduled job
+`7939369b-fbf5-49c7-8950-fa1442269d21` ran at 11:25:08 UTC and failed with a
+GitHub API rate limit error (reported reset 11:26:09 UTC). Refresh capacity and
+unfinished jobs before another normal validation run.
+
+A fresh native recovery read confirms source #5851 completed as PR #5874 with
+commit `78b7ca7dd1101eaf587a6d1207d9527a86ef6314`. Source #5863 remains in
+waiting_recovery with commit `67601f05584e3ff47622e2672127a27edb2c3658` and no
+recorded PR. A GitHub search by its exact branch returned no PR. Its existing
+commit still needs inspection and recovery rather than duplicate implementation.
+These observations supersede the earlier recovery snapshot above.
