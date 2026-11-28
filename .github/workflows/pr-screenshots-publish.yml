@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish:
+  resolve:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
       && (
@@ -17,54 +17,15 @@ jobs:
         || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16.15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     permissions:
-      contents: write
+      contents: read
       actions: read
-      issues: write
-      pull-requests: write
-    env:
-      BUNDLE_FROZEN: "true"
-      RAILS_ENV: test
-      SECRET_KEY_BASE: test-secret-key-base
-      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
-      PAID_DEVELOPMENT_DATABASE: paid_test
-      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
-      PAID_TEST_DATABASE: paid_test
-      DB_HOST: localhost
-      PGHOST: localhost
-      PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
-      TMPDIR: ${{ github.workspace }}/.tmp-build
-      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
-      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
-      npm_config_cache: ${{ github.workspace }}/.cache/npm
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
-      SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
-      SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
-      SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
-      SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
-      SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
-      SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
-      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      issues: read
+      pull-requests: read
+    outputs:
+      run_id: ${{ steps.resolve.outputs.run_id }}
+      artifact_present: ${{ steps.resolve.outputs.artifact_present }}
+      comment_status: ${{ steps.resolve.outputs.comment_status }}
     steps:
       - name: Checkout trusted base-branch code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -72,48 +33,10 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
-      - name: Normalize test master key
-        if: env.RAILS_TEST_KEY == ''
-        env:
-          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
-        run: |
-          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
-            delimiter="ghadelim_$(openssl rand -hex 16)"
-            {
-              echo "RAILS_TEST_KEY<<${delimiter}"
-              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
-              echo "${delimiter}"
-            } >> "$GITHUB_ENV"
-          fi
-
-      - name: Prepare workspace cache directories
-        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
-
       - name: Set up Ruby
         uses: ruby/setup-ruby@78c62f2208e480ce3d5ae4dfd9b9e181acf48b63
         with:
           ruby-version: .tool-versions
-          bundler-cache: true
-
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
-        with:
-          node-version-file: .tool-versions
-          cache: 'yarn'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install JavaScript dependencies
-        run: |
-          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
-          yarn install --frozen-lockfile && bin/yarn-postinstall
-
-      - name: Set up database
-        run: bin/rails db:create db:schema:load
-
-      - name: Bootstrap test defaults
-        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Resolve PR capture run
         id: resolve
@@ -158,6 +81,20 @@ jobs:
             end
 
             JSON.parse(response.body)
+          end
+
+          # @spec SCREENSHOT-CI-005
+          def all_pages(url, headers)
+            results = []
+            page = 1
+            loop do
+              entries = get_json("#{url}?per_page=100&page=#{page}", headers)
+              results.concat(entries)
+              break if entries.size < 100
+
+              page += 1
+            end
+            results
           end
 
           def workflow_runs_url(repo, page: 1)
@@ -261,6 +198,17 @@ jobs:
           search_deadline = pr_updated_at + recent_window_seconds
 
           begin
+            # @spec SCREENSHOT-CI-002 SCREENSHOT-CI-003
+            require_relative "app/services/screenshots/detect_ui_changes"
+            files = all_pages("https://api.github.com/repos/#{repo}/pulls/#{pr_number}/files", headers)
+            ui_changes = Screenshots::DetectUiChanges.call(changed_files: files.map { |file| file.fetch("filename") })
+            unless ui_changes.fetch(:ui_changes?)
+              comments = pr_action == "synchronize" ? all_pages("https://api.github.com/repos/#{repo}/issues/#{pr_number}/comments", headers) : []
+              existing = comments.any? { |comment| comment.fetch("body", "").to_s.include?("<!-- pr-screenshots-comment -->") }
+              write_outputs(path: output_path, comment_status: existing ? "no_ui_changes" : "skip")
+              exit 0
+            end
+
             run = nil
             fallback_run = nil
             poll_attempts.times do
@@ -350,19 +298,121 @@ jobs:
           end
           RUBY
 
+  # @spec SCREENSHOT-CI-004
+  publish:
+    needs: resolve
+    if: needs.resolve.outputs.comment_status != 'skip'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    permissions:
+      contents: write
+      actions: read
+      issues: write
+      pull-requests: write
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      SCREENSHOTS_S3_ACCESS_KEY_ID: ${{ secrets.SCREENSHOTS_S3_ACCESS_KEY_ID }}
+      SCREENSHOTS_S3_SECRET_ACCESS_KEY: ${{ secrets.SCREENSHOTS_S3_SECRET_ACCESS_KEY }}
+      SCREENSHOTS_S3_BUCKET: ${{ secrets.SCREENSHOTS_S3_BUCKET }}
+      SCREENSHOTS_S3_REGION: ${{ secrets.SCREENSHOTS_S3_REGION }}
+      SCREENSHOTS_S3_ENDPOINT: ${{ secrets.SCREENSHOTS_S3_ENDPOINT }}
+      SCREENSHOTS_S3_URL_TTL: ${{ vars.SCREENSHOTS_S3_URL_TTL }}
+      GITHUB_TOKEN: ${{ secrets.SCREENSHOTS_GITHUB_TOKEN || github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout trusted base-branch code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@78c62f2208e480ce3d5ae4dfd9b9e181acf48b63
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
       - name: Download screenshot artifacts
-        if: steps.resolve.outputs.comment_status == 'success' && steps.resolve.outputs.artifact_present == 'true'
+        if: needs.resolve.outputs.comment_status == 'success' && needs.resolve.outputs.artifact_present == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ steps.resolve.outputs.run_id }}
+          run-id: ${{ needs.resolve.outputs.run_id }}
           name: pr-screenshots
           path: screenshots-download
 
       - name: Publish screenshots and refresh PR comment
-        if: steps.resolve.outputs.comment_status != 'skip'
         env:
-          SCREENSHOT_COMMENT_STATUS: ${{ steps.resolve.outputs.comment_status }}
+          SCREENSHOT_COMMENT_STATUS: ${{ needs.resolve.outputs.comment_status }}
         run: |
           export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"
           bin/rails screenshots:publish SCREENSHOT_OUTPUT_DIR=screenshots-download

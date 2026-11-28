@@ -32,7 +32,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   def step(name)
-    job.fetch("steps").find { |job_step| job_step["name"] == name }
+    workflow.fetch("jobs").values.flat_map { |workflow_job| workflow_job.fetch("steps") }.find { |job_step| job_step["name"] == name }
   end
 
   def checkout_step
@@ -214,7 +214,7 @@ RSpec.describe PrScreenshotsPublishWorkflowFile, :no_db do
   end
 
   it "passes only comment status at the final publish step and normalizes the fallback key before publishing" do
-    expect(publish_env).to include("SCREENSHOT_COMMENT_STATUS" => "${{ steps.resolve.outputs.comment_status }}")
+    expect(publish_env).to include("SCREENSHOT_COMMENT_STATUS" => "${{ needs.resolve.outputs.comment_status }}")
     expect(publish_env).not_to have_key("RAILS_MASTER_KEY")
     expect(publish_step.fetch("run")).to include('export RAILS_TEST_KEY="${RAILS_TEST_KEY:-$RAILS_MASTER_KEY_FALLBACK}"')
     expect(publish_step.fetch("run")).to include("bin/rails screenshots:publish")
