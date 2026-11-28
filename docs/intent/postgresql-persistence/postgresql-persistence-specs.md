@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-023** — Removing redundant supervisor prefix
+  indexes SHALL preserve audit, status and retention lookup coverage, incident
+  fingerprint uniqueness, rows, append-only audit guards and tenant policies.
+  Removal and rollback SHALL use concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_supervisor_indexes_spec.rb`,
+  `spec/models/supervisor_incident_spec.rb`,
+  `spec/services/operational_supervisor/purge_expired_spec.rb`.
+  *Code:* `RemoveRedundantSupervisorIndexes`.
