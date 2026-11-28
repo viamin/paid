@@ -1108,8 +1108,13 @@ physical acceptance remains under #5855. All 25 prior aliases were fetched close
 after this successful scan. Private `run-resource-{ownership.json,assessment-progress.json,alias-verification.json,validation-result.log}`
 and `run-resource-validation-manifest.json` record exact evidence. The refreshed
 10:17:37 UTC snapshot has 248 findings, 209 owned, 39 unowned and 177 open scanner
-issues. Follow-up normal job `58d58073-b120-4a26-9232-ec3860b860a0` is queued
-specifically to verify that newest alias after closure; its outcome remains pending.
+issues. Follow-up normal job `58d58073-b120-4a26-9232-ec3860b860a0` began
+at 10:17:59 UTC and reported 249 findings, zero creates/updates/reopens/closures,
+40 deferred, zero assessed, all categories collected and an inference timeout
+after 137,017 ms. All 26 aliases, including #5867, were fetched closed afterward.
+This is failure-path alias stability, not another successful assessment. Private
+`post-run-resource-alias-{validation-result.log,verification.json}` records both
+outcomes. No further blind retry was queued.
 
 ## Constraint repair review and new Paid PR acceptance gap
 
