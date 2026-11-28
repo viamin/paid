@@ -1023,3 +1023,30 @@ records source hashes and results. The live 10:00:22 UTC snapshot has 248 findin
 207 owned, 41 unowned and 176 open scanner issues, with three active Paid runs.
 Physical repair acceptance and complete current finding accounting remain
 outstanding; no blind retry was queued.
+
+## Requirements retained when assessment expands an existing repair
+
+Revision `907314f27` corrects a second preservation gap: assessment could attach
+new findings to an existing repair while dropping the assessment's instructions
+and rationale. Existing requirements and newly assessed exact paragraphs now
+remain together, once and in order, without changing canonical ownership or
+rewriting the repair title. No semantic grouping is performed by this text merge.
+Externally managed work retains its existing no-rewrite lifecycle contract.
+
+The new regression first failed because the added unscored-row requirement was
+absent. The focused scanner suite passed 106 examples, zero failures; final
+issue-filer validation in the operating workspace passed 25 examples, zero
+failures. Both used isolated `paid_test_pghero_repair_filing`, not operating
+finding data. Lint, commit hooks and coherence completed; existing unrelated
+coherence warnings remain. Simplicity/prose review retained the direct paragraph
+union with no new helper or dependency. Original worktree commit `34defb865` and
+operating files contain the same change. No physical migration was needed.
+Normal external assessment on this revision remains unverified; the preceding
+inference timeout is not evidence for this fix.
+
+The refreshed snapshot has four unowned duplicate-index observations: two
+runner_credentials prefixes, service_container_metrics' container prefix and
+service_containers' account prefix. The former auth-materialization observation
+now belongs to repair 1161 / issue #5867. Before implementing any of these,
+refresh all open PRs and active runs, inspect catalog and callers, and compare
+concrete repair coverage. No issue was closed merely from this classification.
