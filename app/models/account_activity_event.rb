@@ -29,6 +29,7 @@ class AccountActivityEvent < ApplicationRecord
     "project.updated" => "project",
     "project.deleted" => "project",
     "project.settings_changed" => "project",
+    "main_ci.transition" => "project",
     "issue.created" => "project",
     "issue.updated" => "project",
     "issue.reopened" => "project",

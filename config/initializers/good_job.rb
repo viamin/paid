@@ -104,6 +104,7 @@ Rails.application.configure do
   # they all enqueue on :00/:05/:10 boundaries, the in-process async_server
   # worker can see a short memory spike large enough to OOM the Rails process.
   config.good_job.cron = {
+    main_ci_recovery: { cron: "* * * * *", class: "MainCiSweepJob" },
     worktree_cleanup: {
       cron: "0 */6 * * *",
       class: "WorktreeOrphanCleanupJob"

@@ -323,6 +323,7 @@ class Project < ApplicationRecord
   has_many :layered_verification_findings, dependent: :delete_all
   # @spec LAYERED-VERIFY-023
   has_many :layered_verification_review_packages, dependent: :delete_all
+  has_one :main_ci_state, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
@@ -2469,6 +2470,7 @@ class Project < ApplicationRecord
       end
     end
 
+    errors.add(:review_settings, "has invalid main CI recovery policy") unless MainCi::Policy.new(self).valid?
     validate_review_methods_config(normalized)
   end
 

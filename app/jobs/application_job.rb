@@ -163,6 +163,7 @@ class ApplicationJob < ActiveJob::Base
 
   def project_id_first?
     [
+      MainCiReconciliationJob,
       AutoReleaseEvaluationJob,
       DependabotAutoMergeJob,
       DependencyBackfillJob,

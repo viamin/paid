@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_035046) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3189,6 +3189,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["session_token"], name: "index_login_sessions_on_session_token", unique: true
   end
 
+  create_table "main_ci_states", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "dispatch_count", default: 0, null: false
+    t.datetime "dispatched_at"
+    t.string "episode_key", limit: 36
+    t.jsonb "evidence", default: {}, null: false, comment: "Redacted main-CI failure and complete verified-baseline provenance."
+    t.datetime "failed_at"
+    t.string "failed_sha", limit: 40
+    t.string "observed_sha", limit: 40
+    t.bigint "project_id", null: false
+    t.bigint "repair_run_id"
+    t.string "status", default: "unverified", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "verified_at"
+    t.string "verified_sha", limit: 40
+    t.index ["account_id"], name: "index_main_ci_states_on_account_id"
+    t.index ["project_id"], name: "index_main_ci_states_on_project_id", unique: true
+    t.index ["repair_run_id"], name: "index_main_ci_states_on_repair_run_id"
+  end
+
   create_table "maintenance_finding_occurrences", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "agent_assessment", limit: 32
@@ -5681,6 +5702,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   add_foreign_key "login_sessions", "integration_credentials"
   add_foreign_key "login_sessions", "runner_credentials"
   add_foreign_key "login_sessions", "users", column: "created_by_id"
+  add_foreign_key "main_ci_states", "accounts"
+  add_foreign_key "main_ci_states", "agent_runs", column: "repair_run_id"
+  add_foreign_key "main_ci_states", "projects"
   add_foreign_key "maintenance_finding_occurrences", "accounts", on_delete: :cascade
   add_foreign_key "maintenance_finding_occurrences", "maintenance_findings", on_delete: :cascade
   add_foreign_key "maintenance_finding_occurrences", "maintenance_reports", on_delete: :cascade
@@ -7151,12 +7175,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -7211,12 +7235,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
-  SQL
-
   create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
@@ -7845,6 +7869,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   execute <<~SQL
     ALTER TABLE "public"."llm_output_metrics" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."llm_output_metrics" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."main_ci_states" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."main_ci_states" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -9939,6 +9968,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
       WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."main_ci_states"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = main_ci_states.project_id) AND (projects.account_id = main_ci_states.account_id)))) AND ((repair_run_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = main_ci_states.repair_run_id) AND (agent_runs.project_id = main_ci_states.project_id))))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = main_ci_states.project_id) AND (projects.account_id = main_ci_states.account_id)))) AND ((repair_run_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM agent_runs
+  WHERE ((agent_runs.id = main_ci_states.repair_run_id) AND (agent_runs.project_id = main_ci_states.project_id))))))));
   SQL
 
   execute <<~SQL

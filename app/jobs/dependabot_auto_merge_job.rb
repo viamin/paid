@@ -356,6 +356,8 @@ class DependabotAutoMergeJob < ApplicationJob
       return false
     end
 
+    return false unless MainCi::MergeGate.allowed?(project: project, number: pr_number, head_sha: head_sha, client: client)
+
     primary_merge_client(client).merge_pull_request(
       project.full_name, pr_number,
       merge_method: project.merge_method,

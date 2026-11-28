@@ -19,10 +19,15 @@ module PullRequests
       value.map { |entry| entry.slice(*FIELDS) }
     end
 
-    def blocked?(issue) = entries(issue).any?
+    def blocked?(issue) = entries(issue).any? || MainCi::MergeGate.blocked?(issue)
 
     def diagnostics(issue)
-      entries(issue).map do |entry|
+      blockers = entries(issue)
+      if MainCi::MergeGate.blocked?(issue)
+        blockers += [ { "key" => "main_ci_recovery", "reason" => "Required default-branch full CI is not verified green.",
+          "release_condition" => "Repair and fully verify current main, or verify the recorded recovery PR." } ]
+      end
+      blockers.map do |entry|
         { "signal" => "technical_merge_blocker", "status" => "failed", "reason_code" => "technical_merge_blocked",
           "sanitized_message" => entry.fetch("reason"), "next_action" => entry.fetch("release_condition"),
           "responsibility" => "agent", "technical_blocker" => entry }
