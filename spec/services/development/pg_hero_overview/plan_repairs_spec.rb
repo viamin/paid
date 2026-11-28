@@ -239,4 +239,24 @@ RSpec.describe Development::PgHeroOverview::PlanRepairs do
 
     expect(reassessed).to eq([ first.identity, second.identity ])
   end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "requires an already assessed frontier observation only once when no new finding is pending" do
+    work_items.concat((1..100).map { |number| { "number" => number, "kind" => "issue", "title" => "Repair", "body" => "x" * 3_000 } })
+    assessments = { first.identity => { "assessed_at" => 2.days.ago.utc.iso8601 },
+      second.identity => { "assessed_at" => 1.day.ago.utc.iso8601 } }
+    proposal["finding_keys"] = [ first.identity ]
+    allow(Llm::Request).to receive(:call) do |**arguments|
+      input = JSON.parse(arguments.fetch(:prompt).split("BEGIN UNTRUSTED JSON EVIDENCE\n", 2).last.split("\nEND UNTRUSTED JSON EVIDENCE", 2).first)
+      response = arguments.fetch(:timeout) == 90 ?
+        { "finding_keys" => [ input.fetch("required_finding"), input["required_reassessment"] ].compact,
+          "work_numbers" => [], "reason" => "Assess the required frontier" } : payload
+      Struct.new(:output).new(JSON.generate(response))
+    end
+
+    result = described_class.new(project: project, findings: findings, work_items: work_items,
+      existing_repairs: [], assessments: assessments).call
+
+    expect(result.fetch("assessed_finding_keys")).to eq([ first.identity ])
+  end
 end

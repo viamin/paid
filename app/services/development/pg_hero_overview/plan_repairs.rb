@@ -27,6 +27,7 @@ module Development
         @required_reassessment = ordered.find do |finding|
           assessments.dig(finding.identity, "assessed_at").present?
         end&.identity
+        @required_reassessment = nil if @required_reassessment == @required_finding
         @work = work_items
         @existing = existing_repairs
       end
