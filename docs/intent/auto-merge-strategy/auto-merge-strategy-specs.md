@@ -225,8 +225,10 @@
   rejected result, unavailable provider evidence, cancellation, pause, trust,
   tenant authorization, cost admission, or concurrent duplicate request SHALL
   fail closed. The normal conflict-repair scope gate SHALL consume only a
-  complete current-head decision record and preserve original evidence when no
-  reassessment exists.
+  complete current-head decision record whose account, project, issue, and
+  optional requester remain bound to its producer, and preserve original
+  evidence when no reassessment exists. Legacy malformed scope rows SHALL NOT
+  become merge proof.
   *Code:* `app/services/conflict_repairs/reassess_scope.rb`,
   `app/models/conflict_repair_scope_evidence.rb`,
   `app/services/pull_requests/conflict_repair_scope_gate.rb`.

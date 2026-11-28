@@ -140,11 +140,13 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
   end
 
   # @spec AUTO-MERGE-011 POSTGRESQL-PERSISTENCE-006
-  it "rejects conflict-repair scope evidence with cross-tenant producer references" do
+  it "rejects mismatched conflict-repair scope producer references" do
     evidence_a = described_class.with_system_access { create_conflict_scope_evidence(account_a) }
-    project_b, issue_b, user_b = described_class.with_system_access do
+    project_b, issue_b, user_b, other_project_a, other_issue_a = described_class.with_system_access do
       project = create(:project, account: account_b)
-      [ project, create(:issue, :pull_request, project:), create(:user, account: account_b) ]
+      other_project = create(:project, account: account_a)
+      [ project, create(:issue, :pull_request, project:), create(:user, account: account_b), other_project,
+        create(:issue, :pull_request, project: other_project) ]
     end
 
     as_restricted_role do
@@ -158,6 +160,29 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
         expect_rls_rejection do
           insert_conflict_scope_evidence(account_a, evidence_a.agent_run, evidence_a.project, evidence_a.issue, user_b)
         end
+        expect_rls_rejection do
+          insert_conflict_scope_evidence(account_a, evidence_a.agent_run, other_project_a, evidence_a.issue)
+        end
+        expect_rls_rejection do
+          insert_conflict_scope_evidence(account_a, evidence_a.agent_run, evidence_a.project, other_issue_a)
+        end
+      end
+    end
+  end
+
+  # @spec AUTO-MERGE-011 POSTGRESQL-PERSISTENCE-014
+  it "admits matching conflict-repair scope evidence under the restricted role" do
+    evidence = described_class.with_system_access { create_conflict_scope_evidence(account_a) }
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ActiveRecord::Base.connection.select_one(
+          "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+        )).to include("rolsuper" => false, "rolbypassrls" => false)
+        expect(ActiveRecord::Base.connection.select_value("SELECT current_setting('paid.bypass_tenant_rls')")).to eq("false")
+        expect {
+          insert_conflict_scope_evidence(account_a, evidence.agent_run, evidence.project, evidence.issue)
+        }.to change(ConflictRepairScopeEvidence, :count).by(1)
       end
     end
   end
