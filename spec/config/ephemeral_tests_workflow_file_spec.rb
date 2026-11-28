@@ -7,6 +7,29 @@ class EphemeralTestsWorkflowFile < Pathname
 end
 
 RSpec.describe EphemeralTestsWorkflowFile, :no_db do
+  # @spec EPHEMERAL-CI-001
+  it "filters workflow events to ephemeral tests and its own configuration" do
+    workflow = Psych.safe_load_file(Rails.root.join(".github/workflows/ephemeral_tests.yml"))
+    expect(workflow.fetch(true).fetch("pull_request")).to include(
+      "types" => %w[opened synchronize reopened],
+      "paths" => [
+        ".ephemeral-tests/**/*_spec.rb", ".ephemeral-tests/**/*_test.js",
+        ".ephemeral-tests/**/*_test.ts", ".github/workflows/ephemeral_tests.yml"
+      ]
+    )
+  end
+
+  # @spec EPHEMERAL-CI-002
+  it "binds result comments to the tested revision and workflow run" do
+    workflow = Psych.safe_load_file(Rails.root.join(".github/workflows/ephemeral_tests.yml"))
+    step = workflow.fetch("jobs").fetch("comment-results").fetch("steps").first
+    expect(step.fetch("env")).to include(
+      "HEAD_SHA" => "${{ github.event.pull_request.head.sha }}",
+      "RUN_URL" => "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+    )
+    expect(step.fetch("run")).to include('Tested revision: \`$HEAD_SHA\`', '[Workflow run]($RUN_URL)')
+  end
+
   def multiline_fallback_key_export?(run_script)
     [
       'echo "RAILS_TEST_KEY<<${delimiter}"',

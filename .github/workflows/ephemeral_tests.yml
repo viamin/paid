@@ -16,6 +16,12 @@ name: Ephemeral PR Tests
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    # @spec EPHEMERAL-CI-001
+    paths:
+      - '.ephemeral-tests/**/*_spec.rb'
+      - '.ephemeral-tests/**/*_test.js'
+      - '.ephemeral-tests/**/*_test.ts'
+      - '.github/workflows/ephemeral_tests.yml'
 
 permissions:
   contents: read
@@ -270,6 +276,8 @@ jobs:
           HAS_TESTS: ${{ needs.detect.outputs.has_tests }}
           RUN_TESTS_RESULT: ${{ needs.run-tests.result }}
           BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           marker="<!-- ephemeral-tests-result -->"
           existing_comment_id=$(gh api \
@@ -299,6 +307,11 @@ jobs:
 
           Ephemeral tests did not complete successfully. Check the logs for details."
           fi
+
+          # @spec EPHEMERAL-CI-002
+          body="${body}
+
+          Tested revision: \`$HEAD_SHA\`. [Workflow run]($RUN_URL)."
 
           if [ -n "$existing_comment_id" ]; then
             gh api \
