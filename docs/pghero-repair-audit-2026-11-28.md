@@ -904,3 +904,67 @@ unverified. Private `query-evidence-retry-validation-result.log` preserves the
 failure. Continue independent repair work and investigate bounded routing/lease
 budgets through the existing Llm::Request and harness interfaces rather than
 loosening evidence checks or adding provider-specific wrappers.
+
+## Routing capacity verified and quality-event repair implemented
+
+Configured routing metadata lists six candidates, which does not establish
+that each can actually execute. A separate 30-second Llm::Request capacity
+probe, run in tenant context from 09:09:46 to 09:10:12 UTC, returned the expected
+response. Attempt metadata shows Claude skipped for a missing managed credential,
+API Codex returning an unsuccessful response after 11.46 seconds, then subscription
+Codex succeeding after 14.44 seconds with a 19-second allocation. No routing
+configuration or provider-specific execution code was changed. This small probe
+is not normal scanner acceptance; private `routing-probe-private.json` records
+only trace metadata and a response boolean.
+
+After that new availability evidence, normal job
+`6e273e90-e88e-4cc8-91b9-e7c02d1f36be` completed successfully at 09:12:32 UTC on
+scanner code revision 74b96fc: 249 findings, eight assessed, one created, zero
+updates/reopens/closures, 43 deferred, no planning error and all categories
+collected. It advanced six older findings and two new observations. All 24
+closed aliases were fetched closed after this run. Evidence is private
+`query-evidence-recovered-{validation-result.log,assessment-progress.json,alias-verification.json}`.
+This is the first verified successful normal assessment on the richer-query
+revision; the two earlier timeouts remain failed assessment evidence.
+
+Seven project UPDATE observations received specific causal-evidence requirements,
+not an inferred missing-index repair. A read-only 09:15:55 UTC catalog/activity
+snapshot confirms a valid unique primary `projects(id)` index and no current
+lock waits or transactions over 30 seconds. The absence of waits in one snapshot
+does not disprove historical contention. Representative bindings, wait/trigger
+or write-overhead measurements remain needed before choosing a repair.
+Private `write-contention-snapshot.json` contains sanitized SQL and catalog
+metadata; no operating UPDATE or EXPLAIN ANALYZE was executed.
+
+Sources #5858 and #5861 had no active Paid runs or related open PRs at the fresh
+preflight. One implemented quality-event migration now removes three project
+prefixes while retaining compound gate filtering and pause/recovery history
+paths. Draft PR #5864 at `1422fdc76d92b89a87cc8b2d1ffc7813862fc739` includes
+both closing references and `paid-automation`. Both sources carry `waiting`;
+only their unclaimed queued runs 32263 and 32264 were cancelled. Original
+instructions/rationale are private `quality-events-source-requirements.json`.
+The independent metric uniqueness/lookup repair #5860 remains separate.
+
+An empty-migration removal regression failed as expected. The final migration
+and gate/pause/recovery model suite passed 35 examples, zero failures in isolated
+`paid_test_pghero_quality_events`. Concurrent redo regenerated schema with only
+three removals and version. Exact retained index definitions/validity, event
+metadata/recovery results, rows, repeated rollback and usable lookup paths were
+checked. Lint, hooks and coherence passed with existing warnings. Simplicity
+review found no additional abstraction needed. Full repository CI, representative
+workload performance and operating migration remain unrun. Ownership import,
+requirements retention and alias consolidation still need normal-scan verification.
+
+Quality-event normal job `3e9675b3-912c-4ccb-997e-80ba529efa30` finished at
+09:20:28 UTC: 248 findings, zero creates, three updates, zero reopens/closures,
+42 deferred, zero assessed, all categories collected and
+`AgentHarness::TimeoutError`. This is incomplete inference, not another healthy
+assessment. Its independent explicit-coverage import succeeded: all three
+findings belong to repair 1157 / canonical issue #5858 / PR #5864. Both source
+instructions and rationale were verified retained, with no active source or PR
+run. Alias #5861 was closed as superseded; physical/representative-workload
+acceptance remains pending under #5858. Post-closure stability of that newest
+alias still needs a later normal scan. The independent #5860 repair remains
+unimplemented. Private `quality-events-ownership.json` and
+`quality-events-validation-result.log` preserve ownership and timeout evidence.
+No further blind retry was queued.
