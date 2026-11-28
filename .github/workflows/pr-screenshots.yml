@@ -1,9 +1,36 @@
 name: PR Screenshots
 run-name: PR Screenshots (#${{ github.event.pull_request.number }})
 
-on:
+"on":
   pull_request:
     types: [ opened, synchronize, reopened, ready_for_review ]
+    # @spec SCREENSHOT-CI-001
+    paths:
+      - 'app/views/**'
+      - 'app/javascript/**'
+      - 'app/assets/stylesheets/**'
+      - 'app/assets/builds/**'
+      - 'app/helpers/**/*_helper.rb'
+      - 'app/components/**'
+      - 'app/frontend/**'
+      - 'config/locales/**/*.yml'
+      - 'app/controllers/**/*_controller.rb'
+      - 'public/**/*.html'
+      - 'public/**/*.png'
+      - 'public/**/*.svg'
+      - 'public/**/*.ico'
+      - 'public/**/*.webmanifest'
+      - '!app/controllers/api/**'
+      - '!app/controllers/concerns/**'
+      - '!app/views/devise/mailer/**'
+      - '!app/views/layouts/mailer.erb'
+      - '!app/views/layouts/mailer.html.erb'
+      - '!app/views/layouts/mailer.text.erb'
+      - '!app/views/pwa/**'
+      - '!config/locales/devise.*'
+      - '!app/controllers/health_controller.rb'
+      - '!app/controllers/operator_console_access_controller.rb'
+      - '!app/controllers/projects/staged_closeout_adoptions_controller.rb'
   # Clean up uploaded screenshots when PRs are closed/merged
   pull_request_target:
     types: [ closed ]
@@ -76,7 +103,9 @@ jobs:
             # Store file list as base64 to preserve newlines
             echo "ui_files=$(echo "$ui_files" | base64 -w 0)" >> "$GITHUB_OUTPUT"
             echo "UI-facing files changed:"
-            echo "$ui_files" | sed 's/^/  /'
+            while IFS= read -r ui_file; do
+              printf '  %s\n' "$ui_file"
+            done <<< "$ui_files"
           else
             echo "has_ui_changes=false" >> "$GITHUB_OUTPUT"
             echo "ui_files=" >> "$GITHUB_OUTPUT"
