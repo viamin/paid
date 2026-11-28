@@ -19,6 +19,17 @@ RSpec.describe RemoveRedundantIndexForPgHero5542 do
     [ index.columns, index.unique, index.using, index.where, index.orders, index.opclasses, index.comment ]
   end
 
+  around do |example|
+    unless indexes.key?(removed_name)
+      connection.add_index :facet_confidence_evaluation_labels, :facet_confidence_evaluation_id, name: removed_name
+    end
+    example.run
+  ensure
+    if indexes.key?(removed_name)
+      connection.remove_index :facet_confidence_evaluation_labels, name: removed_name
+    end
+  end
+
   # @spec POSTGRESQL-PERSISTENCE-022
   it "removes only the redundant index and recreates its definition on rollback" do
     original = definition(indexes.fetch(removed_name))
@@ -30,7 +41,5 @@ RSpec.describe RemoveRedundantIndexForPgHero5542 do
     expect(connection.select_value("SELECT COUNT(*) FROM facet_confidence_evaluation_labels")).to eq(count)
     ActiveRecord::Migration.suppress_messages { migration.migrate(:down) }
     expect(definition(indexes.fetch(removed_name))).to eq(original)
-  ensure
-    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) } unless indexes.key?(removed_name)
   end
 end
