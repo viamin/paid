@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Quality metrics retain unique run/type and full prompt-history compound
+indexes, including unscored metrics excluded from the partial recent-score
+index. A concurrent migration removes only the redundant run and prompt-version
+prefixes; concurrent rollback restores both. Other indexes, score data, foreign
+keys and tenant policies remain intact.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
