@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_063629) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4662,7 +4662,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id"], name: "index_strategies_on_account_id"
     t.index ["current_version_id"], name: "index_strategies_on_current_version_id"
     t.index ["decision_type", "status"], name: "index_strategies_on_decision_type_and_status"
-    t.index ["decision_type"], name: "index_strategies_on_decision_type"
     t.index ["project_id"], name: "index_strategies_on_project_id"
     t.index ["slug", "account_id"], name: "index_strategies_on_slug_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["slug", "project_id"], name: "index_strategies_on_slug_project", unique: true, where: "(project_id IS NOT NULL)"
@@ -4742,7 +4741,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["retired_at"], name: "index_strategy_versions_on_retired_at"
     t.index ["strategy_id", "promotion_state"], name: "index_strategy_versions_on_strategy_and_promotion_state"
     t.index ["strategy_id", "version"], name: "index_strategy_versions_on_strategy_id_and_version", unique: true
-    t.index ["strategy_id"], name: "index_strategy_versions_on_strategy_id"
     t.index ["strategy_id"], name: "index_strategy_versions_one_active_per_strategy", unique: true, where: "(((promotion_state)::text = 'active'::text) AND (retired_at IS NULL))"
   end
 

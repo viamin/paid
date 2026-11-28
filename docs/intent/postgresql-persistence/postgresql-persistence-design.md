@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Strategy lookup indexes retain `(decision_type, status)` and the unique
+`(strategy_id, version)` index. A corrective migration removes their redundant
+single-column prefixes concurrently, with concurrent rollback. Scoped strategy
+uniqueness, single-active-version uniqueness, reference guards and row-security
+policies remain intact.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
