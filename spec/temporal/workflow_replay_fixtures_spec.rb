@@ -5,7 +5,12 @@ require "json"
 require "temporalio/worker"
 require "temporalio/worker/workflow_replayer"
 require "temporalio/workflow_history"
+require "temporalio/testing"
 
+# Warm-process replay coverage: eager loading here means these examples cannot
+# surface failures caused by a cold worker lazily autoloading constants from
+# the workflow thread. Cold-worker coverage lives in
+# spec/temporal/workflow_replay_fixtures_cold_worker_spec.rb.
 Rails.application.eager_load!
 
 RSpec.describe WorkflowReplayFixtures, :no_db do
@@ -81,6 +86,68 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
       ).replay_workflow(history, raise_on_replay_failure: false)
 
       expect(result.replay_failure).to be_nil
+    end
+  end
+
+  describe "evolution workflow codec compatibility" do
+    let(:evolution_workflows) do
+      [ Workflows::CoordinationPolicyEvolutionWorkflow, Workflows::PromptEvolutionWorkflow ].freeze
+    end
+
+    def evolution_replay(workflow_class, data_converter: nil)
+      history = Temporalio::WorkflowHistory.from_history_json(
+        fixture_dir.join("#{workflow_class.name.demodulize.underscore}.json").read
+      )
+      options = { workflows: [ workflow_class ], logger: Logger.new(nil), workflow_failure_exception_types: [ Exception ] }
+      options[:data_converter] = data_converter if data_converter
+      Temporalio::Worker::WorkflowReplayer.new(**options).replay_workflow(history, raise_on_replay_failure: false)
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-022, PROMPT-EVOLUTION-006
+    it "replays both evolution workflows only with Paid's JSON converter" do
+      evolution_workflows.each do |workflow_class|
+        expect(evolution_replay(workflow_class, data_converter: Paid::TemporalDataConverter.new).replay_failure).to be_nil
+        expect(evolution_replay(workflow_class).replay_failure).to be_a(Temporalio::Workflow::NondeterminismError)
+      end
+    end
+
+    def execute_evolution_workflows
+      statuses = []
+      Temporalio::Testing::WorkflowEnvironment.start_time_skipping(
+        data_converter: Paid::TemporalDataConverter.new
+      ) do |environment|
+        worker = Temporalio::Worker.new(
+          client: environment.client,
+          task_queue: Paid.agent_task_queue,
+          activities: described_class.activity_definitions,
+          workflows: evolution_workflows,
+          workflow_failure_exception_types: [ Exception ]
+        )
+        worker_thread = Thread.new { worker.run }
+
+        evolution_workflows.each do |workflow_class|
+          scenario = described_class.scenario_for(workflow_class)
+          handle = environment.client.start_workflow(
+            workflow_class,
+            scenario.input,
+            id: "evolution-codec-#{workflow_class.name.demodulize.underscore}",
+            task_queue: Paid.agent_task_queue
+          )
+
+          statuses << handle.result.fetch("status")
+        end
+      ensure
+        worker_thread&.kill
+        worker_thread&.join
+      end
+      statuses
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-022, PROMPT-EVOLUTION-006
+    it "executes both evolution workflows through a supported Temporal server with the Paid converter" do
+      # Runs warm (see the eager_load! note at the top of this file); the
+      # cold-worker replay spec covers the lazy-load path this cannot reach.
+      expect(execute_evolution_workflows).to all(be_present)
     end
   end
 

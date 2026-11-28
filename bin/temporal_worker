@@ -179,6 +179,7 @@ when "poll"
   [
     # Poll worker: handles GitHubPollWorkflow and its activities on the poll queue.
     # Small activity pool ensures poll cycles are never blocked by agent workloads.
+    # @spec TEMPORAL-ORCHESTRATION-022
     Temporalio::Worker.new(
       client: Paid.temporal_worker_client,
       task_queue: Paid.poll_task_queue,
@@ -200,6 +201,7 @@ when "agent"
   [
     # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
     # Larger activity pool for long-running agent activities.
+    # @spec TEMPORAL-ORCHESTRATION-022
     Temporalio::Worker.new(
       client: Paid.temporal_worker_client,
       task_queue: Paid.agent_task_queue,

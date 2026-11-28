@@ -23,6 +23,39 @@
   *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_client`,
   `Paid.temporal_worker_client`.
 
+- [x] **TEMPORAL-ORCHESTRATION-022** — When a prompt-evolution or
+  coordination-policy-evolution workflow is replayed from a `json/plain`
+  history, the worker and replay verifier SHALL use
+  `Paid::TemporalDataConverter` before workflow code runs. The compatibility
+  path SHALL preserve the workflow's original identity, input scope, activity
+  routing, retry policies, budget decisions, and retained business work; it
+  SHALL NOT cancel, terminate, reset, restart, or mark the execution complete.
+  A `RUNNING` execution or an empty pending-activity list SHALL NOT be reported
+  as proof of forward progress. An opaque historical workflow-task failure is
+  evidence of its recorded failure only: an operator SHALL retain the exact
+  run identity, loaded worker identity, decoded failure, and a before/after
+  progress receipt before any separately authorized recovery action.
+  *Tests:* `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Paid::TemporalDataConverter`, `Paid.temporal_worker_client`,
+  `bin/temporal_worker`.
+
+- [x] **TEMPORAL-ORCHESTRATION-023** — Evolution workflows SHALL resolve
+  autoload-managed application constants at workflow-file load time (worker
+  boot), not from inside workflow execution. A cold worker that lazily
+  resolves them during `execute` runs Zeitwerk's Monitor-locked directory
+  autoload on the workflow thread, which the SDK's illegal-call tracer
+  rejects as nondeterminism, failing the workflow task and leaving the
+  execution retrying. Cold-worker replay verification SHALL boot a separate
+  process without eager loading, follow `bin/temporal_worker`'s
+  activity/workflow require order, prove the evolution service namespaces
+  were still pending autoloads before those requires, and replay each
+  checked-in evolution history with `Paid::TemporalDataConverter` without a
+  replay failure.
+  *Tests:* `spec/temporal/workflow_replay_fixtures_cold_worker_spec.rb`,
+  `script/temporal/replay_cold_worker.rb`.
+  *Code:* `Workflows::CoordinationPolicyEvolutionWorkflow`,
+  `Workflows::PromptEvolutionWorkflow`, `Workflows::StrategyEvolutionWorkflow`.
+
 ## Worker Resource Sizing
 
 - [x] **TEMPORAL-ORCHESTRATION-013** — When a Temporal worker receives a first

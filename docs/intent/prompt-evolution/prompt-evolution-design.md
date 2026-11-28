@@ -31,6 +31,28 @@ and assigned at runtime. The implemented design has two distinct paths:
 The workflow exits early with `no_candidates` or `no_mutations` when there is
 not enough signal to continue.
 
+## Temporal Replay Compatibility
+
+Prompt-evolution histories use Paid's `json/plain` converter at workflow start
+and during replay. The worker must use `Paid.temporal_worker_client`, and the
+replay verifier must use `Paid::TemporalDataConverter`; substituting the SDK
+default converter can produce a different initial command for the same history.
+Compatibility preserves the original workflow/run identity, project scope,
+activity routing, admitted work, and budget decisions. It does not authorize a
+workflow reset, cancellation, termination, replacement evolution pass, or a
+claim that a running execution is healthy. A separately authorized operator
+recovery records the loaded worker identity and pinned-history progress before
+and after recovery.
+
+`Workflows::PromptEvolutionWorkflow` resolves the `PromptEvolution::SampleRuns`
+defaults it forwards to the sampling activity when the workflow file loads at
+worker boot. A cold worker that resolves them from inside `execute` instead
+triggers Zeitwerk's Monitor-locked autoload on the workflow thread, which
+Temporal's illegal-call tracer rejects as nondeterminism, so the workflow task
+fails and the execution keeps retrying without doing business work. The
+cold-worker replay check covers this boot path; the eager-loaded in-process
+replay fixtures cannot.
+
 ## Variant Persistence and Review Gates
 
 `PromptEvolution::CreateVariants` persists each mutation as a pending

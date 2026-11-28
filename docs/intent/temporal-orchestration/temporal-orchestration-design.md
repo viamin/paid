@@ -31,6 +31,43 @@ keyword options and does not enable object additions, matching the JSON 3 API
 and preserving safe, deterministic serialization for clients, workers, and
 checked-in workflow replay histories.
 
+Evolution workflows are especially sensitive to this boundary because their
+first durable command is an activity schedule. A worker or replayer using the
+SDK default converter can decode the same `json/plain` history differently
+from the Paid path and emit a different first command, which Temporal rejects
+as non-deterministic. `Paid.temporal_worker_client` is therefore the only
+worker client path, and replay verification supplies the same converter. The
+codec contract is tested with both `PromptEvolutionWorkflow` and
+`CoordinationPolicyEvolutionWorkflow`: their representative histories replay
+with the Paid converter and fail with the SDK default converter. That test
+establishes the compatibility condition, not the root cause of any opaque
+historical failure. A recovery operator must inspect the pinned execution's
+decoded history and loaded worker identity separately; `RUNNING` status and an
+empty activity list are task-state observations, not liveness or a mandate to
+discard work. Source delivery does not authorize cancellation, termination,
+reset, replacement work, retry changes, budget changes, or completion of an
+existing execution.
+
+A second replay boundary is worker boot temperature. A worker that has not
+eager-loaded the application resolves autoload-managed constants lazily, and
+workflow code that references them from inside `execute` runs Zeitwerk's
+Monitor-locked directory autoload on the workflow thread. Temporal's
+illegal-call tracer rejects that `Monitor#synchronize` call as
+nondeterminism, so the workflow task fails and the execution keeps retrying
+without doing business work. The evolution workflows therefore resolve their
+service constants (for example
+`CoordinationPolicyEvolution::PrepareInputs::POLICY_TYPE` and
+`PromptEvolution::SampleRuns::QUALITY_THRESHOLD`) when the workflow file
+loads during worker boot. The in-process replay fixtures run after
+`Rails.application.eager_load!` and cannot surface this failure, so a separate
+cold-worker verification boots a fresh process without eager loading, follows
+`bin/temporal_worker`'s activity/workflow require order, confirms the
+evolution namespaces were still pending autoloads, and replays the
+coordination-policy, prompt, and strategy evolution histories with the Paid
+converter (`script/temporal/replay_cold_worker.rb`). Recovery coverage claims
+for evolution workflows require that cold check, not only the eager-loaded
+replay.
+
 Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.
