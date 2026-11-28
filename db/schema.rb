@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_071130) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5205,7 +5205,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.bigint "work_item_id", null: false
     t.index ["account_id", "resolved_at"], name: "index_lifecycle_conflicts_on_account_and_resolved"
-    t.index ["account_id"], name: "index_work_item_lifecycle_conflicts_on_account_id"
     t.index ["resolved_by_id"], name: "index_work_item_lifecycle_conflicts_on_resolved_by_id"
     t.index ["work_item_id"], name: "index_work_item_lifecycle_conflicts_on_work_item_id"
   end
@@ -5223,7 +5222,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "project_id", "provider", "paid_state"], name: "index_lifecycle_mappings_on_paid_state", unique: true
     t.index ["account_id", "provider", "native_state"], name: "index_lifecycle_mappings_on_account_native_state", unique: true, where: "(project_id IS NULL)"
     t.index ["account_id", "provider", "paid_state"], name: "index_lifecycle_mappings_on_account_paid_state", unique: true, where: "(project_id IS NULL)"
-    t.index ["account_id"], name: "index_work_item_lifecycle_mappings_on_account_id"
     t.index ["created_by_id"], name: "index_work_item_lifecycle_mappings_on_created_by_id"
     t.index ["project_id"], name: "index_work_item_lifecycle_mappings_on_project_id"
   end
@@ -5235,7 +5233,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "work_item_project_mapping_id", null: false
     t.index ["project_id"], name: "index_work_item_project_mapping_targets_on_project_id"
     t.index ["work_item_project_mapping_id", "project_id"], name: "index_mapping_targets_on_mapping_and_project", unique: true
-    t.index ["work_item_project_mapping_id"], name: "index_mapping_targets_on_mapping"
   end
 
   create_table "work_item_project_mappings", comment: "Maps one provider-native project (e.g. a Linear project) to one or more repository-backed Paid projects.", force: :cascade do |t|
@@ -5250,7 +5247,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "tracker_configuration_id"
     t.datetime "updated_at", null: false
     t.index ["account_id", "provider", "native_project_id"], name: "index_work_item_project_mappings_on_native_identity", unique: true
-    t.index ["account_id"], name: "index_work_item_project_mappings_on_account_id"
     t.index ["created_by_id"], name: "index_work_item_project_mappings_on_created_by_id"
     t.index ["default_execution_project_id"], name: "idx_on_default_execution_project_id_1e58c0e691"
     t.index ["tracker_configuration_id"], name: "index_work_item_project_mappings_on_tracker_configuration_id"
@@ -5282,7 +5278,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.string "url"
     t.index ["account_id", "provider", "resource_type", "external_id"], name: "index_work_items_on_provider_identity", unique: true
-    t.index ["account_id"], name: "index_work_items_on_account_id"
     t.index ["legacy_issue_id"], name: "index_work_items_on_legacy_issue_id", unique: true, where: "(legacy_issue_id IS NOT NULL)"
     t.index ["native_project_id"], name: "index_work_items_on_native_project_id"
     t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
