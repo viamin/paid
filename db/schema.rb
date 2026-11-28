@@ -4755,7 +4755,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_28_055841) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_style_guide_ab_test_assignments_on_agent_run_id"
     t.index ["style_guide_ab_test_id", "agent_run_id"], name: "index_style_guide_ab_test_assignments_unique", unique: true
-    t.index ["style_guide_ab_test_id"], name: "idx_on_style_guide_ab_test_id_653b807c99"
     t.index ["style_guide_ab_test_variant_id"], name: "idx_on_style_guide_ab_test_variant_id_6da5a7dee2"
   end
 

@@ -8,10 +8,11 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
 
   let(:connection) { ActiveRecord::Base.connection }
   let(:migration) { described_class.new }
-  let(:tables) { %i[style_guide_ab_test_variants style_guide_ab_tests style_guide_versions] }
+  let(:tables) { %i[style_guide_ab_test_variants style_guide_ab_tests style_guide_versions style_guide_ab_test_assignments] }
   let(:removed_names) do
     %w[index_style_guide_ab_test_variants_on_style_guide_ab_test_id
-      index_style_guide_ab_tests_on_style_guide_id index_style_guide_versions_on_style_guide_id]
+      index_style_guide_ab_tests_on_style_guide_id index_style_guide_versions_on_style_guide_id
+      idx_on_style_guide_ab_test_id_653b807c99]
   end
 
   around do |example|
@@ -29,7 +30,7 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-019
-  it "removes exactly the three redundant indexes and preserves rows and other index definitions" do
+  it "removes exactly the four redundant indexes and preserves rows and other index definitions" do
     original_rows = rows
     retained = indexes.reject { |name, _| removed_names.include?(name) }
 
@@ -52,7 +53,7 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-019
-  it "preserves variant, control, running-test and version uniqueness" do
+  it "preserves variant, control, running-test, version and assignment uniqueness" do
     migration.up
 
     expect_unique_violation("INSERT INTO style_guide_ab_test_variants (style_guide_ab_test_id, style_guide_version_id, is_control) VALUES (1, 2, false)")
@@ -60,12 +61,14 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
     expect_unique_violation("INSERT INTO style_guide_ab_test_variants (style_guide_ab_test_id, style_guide_version_id, is_control) VALUES (1, 4, true)")
     expect_unique_violation("INSERT INTO style_guide_ab_tests (account_id, style_guide_id, status) VALUES (1, 3, 'running')")
     expect_unique_violation("INSERT INTO style_guide_versions (style_guide_id, version, review_status) VALUES (1, 2, 'draft')")
+    expect_unique_violation("INSERT INTO style_guide_ab_test_assignments (style_guide_ab_test_id, agent_run_id, style_guide_ab_test_variant_id) VALUES (1, 2, 9)")
   end
 
   # @spec POSTGRESQL-PERSISTENCE-019
   it "retains usable full index paths for test and guide lookups" do
     migration.up
     queries = {
+      "style_guide_ab_test_assignments WHERE style_guide_ab_test_id = 1" => %w[index_style_guide_ab_test_assignments_unique],
       "style_guide_ab_test_variants WHERE style_guide_ab_test_id = 1" => %w[index_style_guide_ab_test_variants_on_test_and_version],
       "style_guide_ab_tests WHERE style_guide_id = 2" => %w[index_style_guide_ab_tests_on_style_guide_id_and_status],
       "style_guide_versions WHERE style_guide_id = 1" => %w[index_style_guide_versions_on_style_guide_id_and_version index_style_guide_versions_on_style_guide_id_and_review_status]
@@ -98,6 +101,7 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
     prepare_variants
     prepare_tests
     prepare_versions
+    prepare_assignments
   end
 
   def prepare_variants
@@ -138,5 +142,22 @@ RSpec.describe RemoveRedundantStyleGuideTestIndexes do
     connection.add_index :style_guide_versions, [ :style_guide_id, :review_status ]
     connection.add_index :style_guide_versions, :style_guide_id
     connection.execute("INSERT INTO style_guide_versions (style_guide_id, version, review_status) VALUES (1, 2, 'approved')")
+  end
+  def prepare_assignments
+    connection.create_table(:style_guide_ab_test_assignments) do |table|
+      table.bigint :style_guide_ab_test_id
+      table.bigint :agent_run_id
+      table.bigint :style_guide_ab_test_variant_id
+      table.decimal :quality_score, precision: 5, scale: 4
+    end
+    connection.add_index :style_guide_ab_test_assignments, [ :style_guide_ab_test_id, :agent_run_id ],
+      name: "index_style_guide_ab_test_assignments_unique", unique: true
+    connection.add_index :style_guide_ab_test_assignments, :style_guide_ab_test_id, name: "idx_on_style_guide_ab_test_id_653b807c99"
+    connection.add_index :style_guide_ab_test_assignments, :agent_run_id
+    connection.add_index :style_guide_ab_test_assignments, :style_guide_ab_test_variant_id, name: "idx_on_style_guide_ab_test_variant_id_6da5a7dee2"
+    connection.execute(<<~SQL)
+      INSERT INTO style_guide_ab_test_assignments (style_guide_ab_test_id, agent_run_id, style_guide_ab_test_variant_id, quality_score)
+      VALUES (1, 2, 3, 0.8000)
+    SQL
   end
 end

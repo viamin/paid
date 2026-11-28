@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Style-guide tests, assignments and versions retain their compound lookup indexes and unique
+variant/version and assignment identities. The corrective migration removes four redundant
+prefix indexes concurrently and recreates them concurrently on rollback. Partial
+unique indexes enforcing one control per test and one running test per account
+remain intact, along with stored rows, foreign keys and tenant policies.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
@@ -132,9 +138,3 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
-
-Style-guide tests and versions retain their compound lookup indexes and unique
-variant/version identities. The corrective migration removes three redundant
-prefix indexes concurrently and recreates them concurrently on rollback. Partial
-unique indexes enforcing one control per test and one running test per account
-remain intact, along with stored rows, foreign keys and tenant policies.
