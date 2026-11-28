@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_205124) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1985,7 +1985,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.string "verdict", comment: "completed | clarification_needed | unknown; set when labeled."
     t.index ["facet_confidence_evaluation_id", "case_id"], name: "idx_facet_confidence_evaluation_labels_case", unique: true, comment: "One durable judgment row per case: saves update in place, giving durable save/resume."
-    t.index ["facet_confidence_evaluation_id"], name: "idx_on_facet_confidence_evaluation_id_2126f02a77"
     t.index ["recorded_by_id"], name: "index_facet_confidence_evaluation_labels_on_recorded_by_id"
   end
 
