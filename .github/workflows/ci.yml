@@ -42,6 +42,10 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
+    outputs:
+      contracts_changed: ${{ steps.specialized_changes.outputs.contracts_changed }}
+      migrations_changed: ${{ steps.specialized_changes.outputs.migrations_changed }}
+      performance_changed: ${{ steps.specialized_changes.outputs.performance_changed }}
     env:
       BUNDLE_FROZEN: "true"
       RUBOCOP_CACHE_ROOT: tmp/rubocop
@@ -50,6 +54,53 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect specialized CI inputs
+        id: specialized_changes
+        # @spec SPECIALIZED-CI-001 SPECIALIZED-CI-002 SPECIALIZED-CI-003
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          contracts=false
+          migrations=false
+          performance=false
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            contracts=true
+            migrations=true
+            performance=true
+          else
+            changed_files="$(mktemp)"
+            trap 'rm -f "$changed_files"' EXIT
+            git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$changed_files"
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                config/*|lib/*|db/*|bin/*|Gemfile|Gemfile.lock|Rakefile|config.ru|.tool-versions|.ruby-version|.rspec|.simplecov|package.json|yarn.lock|.yarnrc*|.yarn/*|docker-compose.yml|.github/workflows/ci.yml)
+                  contracts=true
+                  migrations=true
+                  performance=true
+                  ;;
+                app/*)
+                  contracts=true
+                  performance=true
+                  ;;
+                docs/api/*|.github/schemathesis-constraints.txt)
+                  contracts=true
+                  ;;
+                scripts/performance/*|spec/performance/*|docs/performance/*)
+                  performance=true
+                  ;;
+              esac
+            done < "$changed_files"
+          fi
+          {
+            echo "contracts_changed=$contracts"
+            echo "migrations_changed=$migrations"
+            echo "performance_changed=$performance"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Ruby
         id: setup_ruby
@@ -1155,10 +1206,15 @@ jobs:
 
   # @spec MOBILE-API-017
   pact-provider-verification:
+    # @spec SPECIALIZED-CI-004
+    needs: lint
     if: >-
-      github.event_name != 'pull_request'
-      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      (
+        github.event_name != 'pull_request'
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+      && (github.event_name != 'pull_request' || needs.lint.outputs.contracts_changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -1311,10 +1367,15 @@ jobs:
 
   # @spec MOBILE-API-018
   schemathesis:
+    # @spec SPECIALIZED-CI-004
+    needs: lint
     if: >-
-      github.event_name != 'pull_request'
-      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      (
+        github.event_name != 'pull_request'
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+      && (github.event_name != 'pull_request' || needs.lint.outputs.contracts_changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -1505,10 +1566,15 @@ jobs:
             --exclude-operation-id resolveChatToolCall
 
   migrations:
+    # @spec SPECIALIZED-CI-004
+    needs: lint
     if: >-
-      github.event_name != 'pull_request'
-      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      (
+        github.event_name != 'pull_request'
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+      && (github.event_name != 'pull_request' || needs.lint.outputs.migrations_changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -1630,10 +1696,15 @@ jobs:
         run: bundle exec fasterer
 
   performance:
+    # @spec SPECIALIZED-CI-004
+    needs: lint
     if: >-
-      github.event_name != 'pull_request'
-      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      (
+        github.event_name != 'pull_request'
+        || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+      )
+      && (github.event_name != 'pull_request' || needs.lint.outputs.performance_changed == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
