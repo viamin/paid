@@ -3,7 +3,7 @@
 module Development
   module PgHeroOverview
     # Semantic repair selection belongs to the harness; code validates ownership.
-    # @spec RAILS-CONTROL-PLANE-033 RAILS-CONTROL-PLANE-036 RAILS-CONTROL-PLANE-037
+    # @spec RAILS-CONTROL-PLANE-033 RAILS-CONTROL-PLANE-036 RAILS-CONTROL-PLANE-037 RAILS-CONTROL-PLANE-040
     class PlanRepairs
       class InvalidAssessment < StandardError
         attr_reader :reason
@@ -58,7 +58,11 @@ module Development
           Assess development PgHero findings by asking: what repair resolves this finding,
           and which other findings would that same repair resolve? A compound index can cover
           several suggestions; removing one index can resolve duplicate and unused warnings.
-          Shared table names alone do not establish shared repairs. Work bodies may be truncated;
+          Shared table names alone do not establish shared repairs. Inspect table_indexes for
+          alternative covering relations and shared repairs even when chosen covering_index
+          values differ. Catalog presence alone does not establish eligibility: verify full
+          definitions, predicates, keys, validity and uniqueness before relying on an alternative.
+          Work bodies may be truncated;
           defer when they do not establish the actual repair scope. Require a concrete causal
           explanation. Prefer an existing open issue or PR when its actual repair covers the
           finding. Preserve established repair ownership; do not create overlapping work.

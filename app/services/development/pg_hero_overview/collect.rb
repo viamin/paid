@@ -170,6 +170,7 @@ module Development
         end
       end
 
+      # @spec RAILS-CONTROL-PLANE-040
       def collect_indexes(findings, coverage)
         indexes, timed_out = rescue_timeout([]) { database.indexes }
         coverage[:indexes] = timed_out ? :timeout : :collected
@@ -180,6 +181,9 @@ module Development
             title: "Invalid index #{index.fetch(:name)} on #{index.fetch(:schema)}.#{index.fetch(:table)}",
             observed: { schema: index.fetch(:schema), table: index.fetch(:table), index: index.fetch(:name), valid: false })
         end
+        table_indexes = indexes.group_by { |index| index.values_at(:schema, :table) }.transform_values do |entries|
+          entries.sort_by { |index| index.fetch(:name) }.map { |index| index.slice(:name, :definition, :valid, :unique) }
+        end
         database.duplicate_indexes(indexes: indexes).each do |pair|
           unneeded = pair.fetch(:unneeded_index)
           covering = pair.fetch(:covering_index)
@@ -189,7 +193,8 @@ module Development
                         unneeded_index: unneeded.fetch(:name), covering_index: covering.fetch(:name),
                         unneeded_definition: unneeded[:definition], covering_definition: covering[:definition],
                         unneeded_valid: unneeded[:valid], covering_valid: covering[:valid],
-                        unneeded_unique: unneeded[:unique], covering_unique: covering[:unique] }.compact)
+                        unneeded_unique: unneeded[:unique], covering_unique: covering[:unique],
+                        table_indexes: table_indexes.fetch(unneeded.values_at(:schema, :table), []) }.compact)
         end
         indexes
       end

@@ -291,4 +291,32 @@ RSpec.describe Development::PgHeroOverview::PlanRepairs do
       expect { candidate.call }.to raise_error(described_class::InvalidAssessment)
     end
   end
+
+  context "with alternate index coverers" do
+    let(:catalog) do
+      [ { name: "credentials_account_runner_name", valid: true, unique: true,
+          definition: "CREATE UNIQUE INDEX credentials_account_runner_name ON runner_credentials (account_id, runner_key, name)" } ]
+    end
+    let(:first) do
+      finding("duplicate_index/public/credentials_account", { table: "public.runner_credentials",
+        covering_index: "credentials_account_revoked", table_indexes: catalog }).with(type: :duplicate_index, category: :indexes)
+    end
+    let(:second) do
+      finding("duplicate_index/public/credentials_account_runner", { table: "public.runner_credentials",
+        covering_index: "credentials_account_runner_name", table_indexes: catalog }).with(type: :duplicate_index, category: :indexes)
+    end
+
+    # @spec RAILS-CONTROL-PLANE-040
+    it "supplies alternate definitions through the harness and accepts one assessed repair" do
+      proposal.merge!("instructions" => "Remove both redundant prefixes, retaining both full coverers",
+        "rationale" => "The shared unique index covers both prefixes", "evidence" => catalog.first.fetch(:definition))
+      result = planner.call
+
+      expect(Llm::Request).to have_received(:call) do |**arguments|
+        input = JSON.parse(arguments.fetch(:prompt).split("BEGIN UNTRUSTED JSON EVIDENCE\n", 2).last.split("\nEND UNTRUSTED JSON EVIDENCE", 2).first)
+        expect(input.fetch("findings").map { |entry| entry.fetch("observed").fetch("table_indexes") }).to eq([ catalog.map(&:stringify_keys) ] * 2)
+      end
+      expect(result.fetch("repairs").sole.fetch("finding_keys")).to match_array(findings.map(&:identity))
+    end
+  end
 end

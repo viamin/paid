@@ -424,3 +424,16 @@ failures when no tmux socket responds.
   `spec/services/development/pg_hero_overview/scan_spec.rb`.
   *Code:* `Development::PgHeroOverview::Scan`.
   *Design:* `rails-control-plane-design.md`, Scheduling and concurrency.
+
+- [x] **RAILS-CONTROL-PLANE-040** — Duplicate-index assessment SHALL receive
+  definitions, validity and uniqueness for every catalog index on the same schema
+  and table, including partial or invalid alternatives as untrusted evidence.
+  With unchanged chosen-pair evidence, catalog context order SHALL NOT change
+  finding identity or fingerprint. Code SHALL NOT
+  select alternate coverers or group repairs by table names; AI SHALL assess
+  their actual definitions and shared repair scope within existing input budgets.
+  *Tests:* `spec/services/development/pg_hero_overview/collect_spec.rb`,
+  `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`.
+  *Code:* `Development::PgHeroOverview::Collect`,
+  `Development::PgHeroOverview::PlanRepairs`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.

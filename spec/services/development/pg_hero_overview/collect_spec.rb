@@ -337,4 +337,42 @@ RSpec.describe Development::PgHeroOverview::Collect do
       covering_definition: covering[:definition], unneeded_valid: true, covering_valid: true,
       unneeded_unique: false, covering_unique: false)
   end
+
+  context "with alternate catalog indexes" do
+    let(:unneeded) do
+      { schema: "public", table: "issues", name: "issues_project",
+        definition: "CREATE INDEX issues_project ON issues (project_id)", valid: true, unique: false }
+    end
+    let(:chosen) { unneeded.merge(name: "issues_project_status", definition: "CREATE INDEX issues_project_status ON issues (project_id, status)") }
+    let(:alternate) { unneeded.merge(name: "issues_project_kind", definition: "CREATE UNIQUE INDEX issues_project_kind ON issues (project_id, kind)", unique: true) }
+    let(:partial) { alternate.merge(name: "issues_active", definition: "CREATE UNIQUE INDEX issues_active ON issues (project_id, kind) WHERE active") }
+    let(:invalid) { alternate.merge(name: "issues_invalid", definition: "CREATE UNIQUE INDEX issues_invalid ON issues (project_id, kind)", valid: false) }
+    let(:catalog) { [ unneeded, chosen, alternate, partial, invalid ] }
+
+    before do
+      stub_overview_clean
+      allow(database).to receive_messages(
+        indexes: catalog + [ alternate.merge(schema: "other"), alternate.merge(table: "other") ],
+        duplicate_indexes: [ { unneeded_index: unneeded, covering_index: chosen } ])
+    end
+
+    # @spec RAILS-CONTROL-PLANE-040
+    it "retains all same-table alternatives without endorsing partial or invalid indexes" do
+      evidence = collect.call.findings.find { |entry| entry.type == :duplicate_index }.observed
+
+      expect(evidence.fetch(:table_indexes)).to match_array(catalog.map { |index| index.slice(:name, :definition, :valid, :unique) })
+      expect(evidence.fetch(:covering_index)).to eq(chosen.fetch(:name))
+      expect(database).to have_received(:indexes).once
+    end
+
+    # @spec RAILS-CONTROL-PLANE-040
+    it "keeps identity and fingerprint stable when catalog rows arrive in another order" do
+      first = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+      allow(database).to receive(:indexes).and_return(catalog.reverse)
+      second = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+
+      expect(second.identity).to eq("primary/duplicate_index/public/issues_project")
+      expect(second.fingerprint).to eq(first.fingerprint)
+    end
+  end
 end

@@ -268,6 +268,13 @@ from the assessor's evidence when the sanitized query fits. Oversized or redacte
 queries can still require more evidence; the existing assessment budgets and
 readiness checks continue to apply. Finding identity remains the query hash.
 
+Duplicate-index evidence includes every index on the same schema and table,
+with complete definitions, validity and uniqueness in stable name order. PgHero's
+chosen pair remains evidence, not the only possible covering relation. Partial
+and invalid alternatives are retained as facts, not endorsed as coverers. AI
+compares actual definitions and shared repair scope; collection performs no
+semantic eligibility or grouping. Existing assessment budgets remain enforced.
+
 Stable finding identities track observations independently of work ownership.
 A project-scoped repair owns a selected set of observations and one canonical
 issue or pull request. Several findings may share a repair, including different
