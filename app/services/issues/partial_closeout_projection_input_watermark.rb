@@ -69,26 +69,29 @@ module Issues
     end
 
     def merge_signatures(result, watermarks, name, scope, project_column)
-      grouped = scope.group(project_column)
-      counts = grouped.count
-      maximums = grouped.maximum(scope.klass.arel_table[:updated_at])
+      inputs = grouped_inputs(scope, project_column)
       result.each_key do |project_id|
-        timestamp = maximums[project_id]
-        result[project_id] << signature(name, counts.fetch(project_id, 0), timestamp)
+        count, timestamp = inputs.fetch(project_id, [ 0, nil ])
+        result[project_id] << signature(name, count, timestamp)
         watermarks[project_id] = [ watermarks[project_id], timestamp ].compact.max
       end
     end
 
     def merge_runner_signatures(result, watermarks)
       account_ids = projects.map(&:account_id).uniq
-      grouped = Runner.joins(:user).where(users: { account_id: account_ids }).group("users.account_id")
-      counts = grouped.count
-      maximums = grouped.maximum(:updated_at)
+      scope = Runner.joins(:user).where(users: { account_id: account_ids })
+      inputs = grouped_inputs(scope, User.arel_table[:account_id])
       projects.each do |project|
-        timestamp = maximums[project.account_id]
-        result[project.id] << signature("runners", counts.fetch(project.account_id, 0), timestamp)
+        count, timestamp = inputs.fetch(project.account_id, [ 0, nil ])
+        result[project.id] << signature("runners", count, timestamp)
         watermarks[project.id] = [ watermarks[project.id], timestamp ].compact.max
       end
+    end
+
+    def grouped_inputs(scope, group_column)
+      scope.group(group_column)
+        .pluck(group_column, Arel.star.count, scope.klass.arel_table[:updated_at].maximum)
+        .to_h { |key, count, timestamp| [ key, [ count, timestamp ] ] }
     end
 
     def merge_active_analysis_backoff_signatures(result)

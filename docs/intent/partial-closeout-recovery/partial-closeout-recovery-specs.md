@@ -763,6 +763,9 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   recomputation in addition to any recomputation already running; and SHALL keep
   `DefaultCandidateSource.eligible_scope` as the final admission authority at
   continuation preflight, at the dequeue recheck, and at run start. The
+  Each durable input scope SHALL compute its count and latest update in one
+  grouped query per batch without changing fingerprints, including empty groups
+  and deletion of a row older than the latest update. The
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
   mutate `paid_state`.
   PostgreSQL SHALL isolate both checkpoint and entry reads and writes by the
@@ -775,7 +778,8 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `RecomputePartialCloseoutProjectionJob`,
   `PartialCloseoutProjectionReconciliationSweepJob`, `Inbox::Queue`,
   `Inbox::Count`, `Inbox::Availability`.
-  *Test:* `spec/services/issues/stalled_closeout_projection_spec.rb`,
+  *Test:* `spec/services/issues/partial_closeout_projection_input_watermark_spec.rb`,
+  `spec/services/issues/stalled_closeout_projection_spec.rb`,
   `spec/security/partial_closeout_projection_spec.rb`,
   `spec/services/issues/stalled_closeout_projection_invalidation_spec.rb`,
   `spec/jobs/partial_closeout_projection_reconciliation_sweep_job_spec.rb`,
