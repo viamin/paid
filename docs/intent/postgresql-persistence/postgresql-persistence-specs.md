@@ -128,3 +128,13 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — `public.projects` SHALL provide its
+  account_id access path through the valid non-unique
+  `index_projects_on_account_id_and_active` composite index; the redundant
+  single-column `index_projects_on_account_id` SHALL be removed by a
+  reversible concurrent migration that verifies the covering index is present,
+  valid, and leads with account_id before removing anything. Rollback SHALL
+  restore the removed index (PgHero duplicate-index finding, #5850).
+  *Tests:* `spec/migrations/remove_redundant_projects_account_id_index_spec.rb`.
+  *Code:* `RemoveRedundantProjectsAccountIdIndex`.

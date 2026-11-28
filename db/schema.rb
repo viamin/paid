@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_094514) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4048,7 +4048,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id", "github_id"], name: "index_projects_on_account_id_and_github_id", unique: true
     t.index ["account_id", "last_agent_run_at"], name: "index_projects_on_account_id_and_last_agent_run_at"
     t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
-    t.index ["account_id"], name: "index_projects_on_account_id"
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
     t.index ["git_push_fallback_token_id"], name: "index_projects_on_git_push_fallback_token_id"
     t.index ["github_installation_id"], name: "index_projects_on_github_installation_id"
