@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-015** — Removing redundant runner-auth attempt
+  indexes SHALL retain the compound account/time, run/stage/time and project/time
+  lookup indexes and telemetry rows. Removal and rollback SHALL use concurrent
+  index operations without changing tenant policies or foreign keys.
+  *Tests:* `spec/migrations/remove_redundant_runner_auth_attempt_indexes_spec.rb`.
+  *Code:* `RemoveRedundantRunnerAuthAttemptIndexes`.
