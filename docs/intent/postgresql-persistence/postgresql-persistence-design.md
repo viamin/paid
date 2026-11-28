@@ -132,3 +132,10 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Style-guide exposure telemetry retains unique `(agent_run_id, guide_name)`
+coverage, the existing assignment index and `(style_guide_id, created_at)`
+coverage. A corrective migration removes the redundant run and guide prefix
+indexes and the exact duplicate assignment index concurrently. Rollback
+recreates those indexes concurrently. The unrelated version lookup index,
+exposure rows, foreign keys and tenant policies remain intact.
