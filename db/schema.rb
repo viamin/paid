@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_103400) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4397,7 +4397,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "revoked_at"], name: "index_runner_credentials_on_account_id_and_revoked_at"
     t.index ["account_id", "runner_key", "name"], name: "idx_runner_credentials_on_account_runner_key_name", unique: true
-    t.index ["account_id", "runner_key"], name: "index_runner_credentials_on_account_id_and_runner_key"
     t.index ["account_id"], name: "index_runner_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
   end
