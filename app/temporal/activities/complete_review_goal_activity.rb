@@ -16,6 +16,8 @@ module Activities
       return result(agent_run) if agent_run.finished?
 
       track_phase(agent_run_id: agent_run_id, phase_key: "complete_review_goal", phase_group: "post", agent_run: agent_run) do
+        fail_incomplete_publication!(agent_run) if incomplete_publication?(agent_run)
+
         reconciliation = agent_run.review_posted_at.blank? ? reconcile_posted_review(agent_run) : default_reconciliation_result
 
         if agent_run.review_posted_at.blank?
@@ -55,6 +57,22 @@ module Activities
 
     def result(agent_run)
       { agent_run_id: agent_run.id, success: agent_run.successful? }
+    end
+
+    def incomplete_publication?(agent_run)
+      agent_run.review_proxy_diagnostics.dig("publication", "publication_status").in?(
+        %w[incomplete provider_evidence_unavailable]
+      )
+    end
+
+    def fail_incomplete_publication!(agent_run)
+      status = agent_run.review_proxy_diagnostics.dig("publication", "publication_status")
+      agent_run.fail!(error: "Tracked review publication is #{status.tr('_', ' ')}; it was not treated as delivered.")
+      raise Temporalio::Error::ApplicationError.new(
+        agent_run.error_message,
+        type: "ReviewPublication#{status.camelize}",
+        non_retryable: true
+      )
     end
 
     # Returns the reviews found on GitHub during the run's window that were

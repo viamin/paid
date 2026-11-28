@@ -142,6 +142,33 @@ agent's output to the rest of the review loop:
   apostrophes and produce malformed JSON that Rails rejects before
   the request reaches GitHub (regression for #839).
 
+## Publication integrity
+
+The GitHub proxy is the retained publication boundary for containerized review
+runs. A successful HTTP response establishes only that GitHub accepted a
+review resource; it does not establish that an actionable inline finding
+survived with content. Before a review-goal run is treated as delivered, the
+boundary structurally classifies the submitted artifact and the provider's
+bounded evidence as one of: an explicit clean outcome, contentful findings,
+an incomplete publication, or unavailable provider evidence.
+
+A finding comment must have a non-blank body before submission. A non-clean
+payload containing only Paid's marker and header is incomplete, rather than a
+clean outcome. A meaningful body-only summary remains valid when it contains
+no findings; a review with contentful inline comments does not require an
+optional summary. For actionable submissions, the boundary verifies the
+provider's comments for the created review and rejects empty bodies or a
+count mismatch. It also verifies that the review commit remains the current
+PR head before accepting inline findings.
+
+The boundary records only privacy-safe shape diagnostics: stable review and
+comment IDs, counts, body lengths, and classification. It does not retain
+raw review text, prompts, credentials, or arbitrary provider output. An
+incomplete or unavailable publication is not marked as delivered, so the
+existing finite review-goal retry and deduplication policy can recover it
+without deleting an existing review, resetting a cap, fabricating a clean
+marker, or interrupting an active owner.
+
 ## Dependency capability and limited review
 
 Review containers start from a locked checkout but do not imply that its

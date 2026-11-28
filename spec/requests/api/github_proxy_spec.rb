@@ -567,6 +567,14 @@ RSpec.describe "Api::GithubProxy" do
       }.to_json
     end
 
+    def stub_finding_evidence(comments:, head_sha: "head-sha")
+      stub_request(:get, "https://api.github.com/repos/testowner/testrepo/pulls/10")
+        .to_return(status: 200, body: { head: { sha: head_sha } }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "https://api.github.com/repos/testowner/testrepo/pulls/10/comments?per_page=100")
+        .to_return(status: 200, body: comments.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
     it "proxies review creation" do
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: { body: "Looks good", event: "COMMENT" }.to_json,
@@ -627,6 +635,52 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_proxy_diagnostics["outcome"]).to eq("succeeded")
+    end
+
+    # @spec REVIEW-PR-010
+    it "rejects an empty inline finding before forwarding it" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "", event: "COMMENT", comments: [ { path: "app/a.rb", line: 6, body: " \n" } ] }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(WebMock).not_to have_requested(:post, target_url)
+      expect(agent_run.reload.review_proxy_diagnostics.dig("publication", "submitted_body_lengths")).to eq([ 2 ])
+    end
+
+    # @spec REVIEW-PR-010
+    it "does not track a finding when GitHub returns an empty inline body" do
+      published_review = JSON.parse(review_response_body).merge("commit_id" => "head-sha").to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: published_review, headers: { "Content-Type" => "application/json" })
+      stub_finding_evidence(comments: [ { id: 4696785447, pull_request_review_id: 999, body: "" } ])
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "", event: "COMMENT", commit_id: "head-sha",
+                  comments: [ { path: "app/a.rb", line: 6, side: "RIGHT", body: "Guard the path." } ] }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(agent_run.reload.review_posted_at).to be_nil
+      expect(agent_run.review_proxy_diagnostics).to include("outcome" => "incomplete")
+      expect(agent_run.review_proxy_diagnostics.dig("publication", "provider_body_lengths")).to eq([ 0 ])
+    end
+
+    # @spec REVIEW-PR-010
+    it "tracks a contentful current-head inline finding once across duplicate callbacks" do
+      published_review = JSON.parse(review_response_body).merge("commit_id" => "head-sha").to_json
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: published_review, headers: { "Content-Type" => "application/json" })
+      stub_finding_evidence(comments: [ { id: 4696785447, pull_request_review_id: 999, body: "Guard the path." } ])
+      payload = { body: "", event: "COMMENT", commit_id: "head-sha",
+                  comments: [ { path: "app/a.rb", line: 6, side: "RIGHT", body: "Guard the path." } ] }.to_json
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews", params: payload, headers: valid_headers
+      original_time = agent_run.reload.review_posted_at
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews", params: payload, headers: valid_headers
+
+      expect(agent_run.reload.review_posted_at).to be_within(1.second).of(original_time)
+      expect(agent_run.review_proxy_diagnostics.dig("publication", "provider_comment_ids")).to eq([ 4696785447 ])
     end
 
     it "does not track review_posted_at when PR number does not match" do
@@ -743,6 +797,8 @@ RSpec.describe "Api::GithubProxy" do
     end
 
     it "does not log a warning when review includes inline comments" do
+      stub_finding_evidence(comments: [ { id: 1, pull_request_review_id: 999, body: "Fix this" } ])
+
       post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
         params: {
           body: "Some issues",
@@ -1140,6 +1196,7 @@ RSpec.describe "Api::GithubProxy" do
 
       it "does not log a warning when the submitted review includes inline comments" do
         allow(Rails.logger).to receive(:warn)
+        stub_finding_evidence(comments: [ { id: 1, pull_request_review_id: 999, body: "Guard this branch." } ])
 
         post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
           params: {

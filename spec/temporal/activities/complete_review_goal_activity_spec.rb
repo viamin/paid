@@ -73,6 +73,20 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
     end
 
     context "when no review was posted" do
+      # @spec REVIEW-PR-010
+      it "fails incomplete publication evidence without reconciling it as delivery" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_proxy_diagnostics: { "publication" => { "publication_status" => "incomplete" } })
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /publication is incomplete/) { |error|
+          expect(error.type).to eq("ReviewPublicationIncomplete")
+        }
+
+        expect(agent_run.reload).to have_attributes(status: "failed", review_posted_at: nil)
+      end
+
       it "reconciles a GitHub review id from the agent output" do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
         stub_review_lookup(agent_run)
