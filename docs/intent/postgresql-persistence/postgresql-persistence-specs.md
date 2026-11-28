@@ -128,3 +128,13 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-025** — Removing redundant work-item account
+  prefix indexes SHALL preserve provider/native identity and global/project
+  lifecycle uniqueness, conflict and identity lookup coverage, all other indexes,
+  rows, foreign keys and tenant policies. Removal and rollback SHALL use
+  concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_work_item_identity_indexes_spec.rb`,
+  `spec/models/work_item_spec.rb`, `spec/models/work_item_project_mapping_spec.rb`,
+  `spec/models/work_item_lifecycle_mapping_spec.rb`.
+  *Code:* `RemoveRedundantWorkItemIdentityIndexes`.

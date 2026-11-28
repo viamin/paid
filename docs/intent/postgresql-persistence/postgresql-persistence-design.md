@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Work-item identity and lifecycle tables retain their compound account-prefixed
+indexes. A corrective migration removes four redundant single-column account
+indexes concurrently, with concurrent rollback. Provider/native identity,
+project and global lifecycle uniqueness, other indexes, rows, foreign keys and
+tenant policies remain intact.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
