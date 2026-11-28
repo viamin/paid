@@ -10,6 +10,8 @@ module Development
     # @spec RAILS-CONTROL-PLANE-025 RAILS-CONTROL-PLANE-026 RAILS-CONTROL-PLANE-027
     #   RAILS-CONTROL-PLANE-028 RAILS-CONTROL-PLANE-029
     class Scan
+      ADVISORY_LOCK_SQL = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended($1, 0))".freeze
+
       Result = Data.define(:skipped, :created, :updated, :reopened, :closed, :deferred,
         :deferred_keys, :incomplete_categories, :findings, :planning_error, :repair_plans, :dry_run, :assessed_keys) do
         def initialize(planning_error: nil, repair_plans: [], dry_run: false, assessed_keys: [], **attributes)
@@ -48,11 +50,13 @@ module Development
       def call
         return Result.skipped_result unless @environment == "development"
 
-        # GoodJob does not apply its concurrency controls to perform_now.
-        # Hold the owning project's row lock across GitHub lookup and issue
-        # creation so scheduled and manual scans cannot file the same finding.
+        # perform_now bypasses GoodJob concurrency controls. Serialize scans
+        # without blocking project updates during network calls and inference.
         result = nil
-        @project.with_lock(requires_new: @dry_run) do
+        @project.class.transaction(requires_new: @dry_run) do
+          acquire_scan_lock
+          # Retain the dirty-record guard while reloading without FOR UPDATE.
+          @project.lock!(false)
           result = scan.with(dry_run: @dry_run)
           raise ActiveRecord::Rollback if @dry_run
         end
@@ -60,6 +64,12 @@ module Development
       end
 
       private
+
+      # @spec RAILS-CONTROL-PLANE-026 RAILS-CONTROL-PLANE-039
+      def acquire_scan_lock
+        key = ActiveRecord::Relation::QueryAttribute.new("lock_name", "pghero_overview_scan:#{@project.id}", ActiveRecord::Type::String.new)
+        @project.class.connection.exec_query(ADVISORY_LOCK_SQL, "PgHero overview scan lock", [ key ])
+      end
 
       def scan
         # The filer needs a working GitHub client; a silent nil here would

@@ -284,6 +284,7 @@ failures when no tmux socket responds.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
   `spec/jobs/pg_hero_overview_scan_job_spec.rb`,
   `spec/services/development/pg_hero_overview/scan_spec.rb`,
+  `spec/services/development/pg_hero_overview/scan_concurrency_spec.rb`,
   `spec/lib/tasks/development_pghero_rake_spec.rb`.
   *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
   *Design:* `rails-control-plane-design.md`, Development PgHero Overview
@@ -410,3 +411,14 @@ failures when no tmux socket responds.
   *Tests:* `spec/services/development/pg_hero_overview/collect_spec.rb`.
   *Code:* `Development::PgHeroOverview::Collect`.
   *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-039** — Scan exclusion SHALL use a project-specific
+  PostgreSQL advisory lock without requesting an exclusive project row lock across
+  collection, GitHub calls or inference. Same-project entry points SHALL remain serialized;
+  other projects and updates to non-key project fields SHALL proceed independently.
+  Failure SHALL release scan exclusion. Dirty-record rejection and preview rollback SHALL
+  be preserved.
+  *Tests:* `spec/services/development/pg_hero_overview/scan_concurrency_spec.rb`,
+  `spec/services/development/pg_hero_overview/scan_spec.rb`.
+  *Code:* `Development::PgHeroOverview::Scan`.
+  *Design:* `rails-control-plane-design.md`, Scheduling and concurrency.

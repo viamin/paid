@@ -356,9 +356,12 @@ Database errors propagate so GoodJob records the failure.
 The scan runs hourly at a staggered minute, only in development, on the
 maintenance queue. GoodJob concurrency control (total limit 1) prevents
 concurrent scheduled performs. The shared scan entry point additionally holds
-the target project's database row lock across collection, GitHub lookup, and
-issue creation, so manual `perform_now` invocation and scheduled execution
-cannot race to file the same finding. The state rows are also updated
+a transaction-scoped PostgreSQL advisory lock keyed by project across collection,
+GitHub lookup and inference, so manual `perform_now` and scheduled execution cannot
+race to file the same finding. It refreshes the project without a row lock and
+retains Active Record's dirty-record guard. Routine project writes must not wait
+for scanner network calls; other projects use independent scan locks. Commit or
+rollback releases scan exclusion, including failed scans and previews. The state rows are also updated
 transactionally per finding so a retried scan after partial filing resumes from
 the issues it already created instead of duplicating them.
 
