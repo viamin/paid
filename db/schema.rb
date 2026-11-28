@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_055841) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4770,7 +4770,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["style_guide_ab_test_id", "style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_test_and_version", unique: true
     t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_control_per_test", unique: true, where: "(is_control = true)"
-    t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_style_guide_ab_test_id"
     t.index ["style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_style_guide_version_id"
   end
 
@@ -4797,7 +4796,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["status"], name: "index_style_guide_ab_tests_on_status"
     t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_e10519ccd2", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["style_guide_id", "status"], name: "index_style_guide_ab_tests_on_style_guide_id_and_status"
-    t.index ["style_guide_id"], name: "index_style_guide_ab_tests_on_style_guide_id"
     t.index ["winner_variant_id"], name: "index_style_guide_ab_tests_on_winner_variant_id"
   end
 
@@ -4849,7 +4847,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_48d30b1e0e", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["style_guide_id", "review_status"], name: "index_style_guide_versions_on_style_guide_id_and_review_status"
     t.index ["style_guide_id", "version"], name: "index_style_guide_versions_on_style_guide_id_and_version", unique: true
-    t.index ["style_guide_id"], name: "index_style_guide_versions_on_style_guide_id"
   end
 
   create_table "style_guides", force: :cascade do |t|

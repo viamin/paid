@@ -132,3 +132,9 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Style-guide tests and versions retain their compound lookup indexes and unique
+variant/version identities. The corrective migration removes three redundant
+prefix indexes concurrently and recreates them concurrently on rollback. Partial
+unique indexes enforcing one control per test and one running test per account
+remain intact, along with stored rows, foreign keys and tenant policies.

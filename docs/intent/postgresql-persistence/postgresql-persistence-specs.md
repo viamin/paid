@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-019** — Removing redundant style-guide test and
+  version prefix indexes SHALL preserve lookup coverage, variant/version
+  uniqueness, one control per test, one running test per account and stored rows.
+  Removal and rollback SHALL use concurrent index operations without changing
+  tenant policies or foreign keys.
+  *Tests:* `spec/migrations/remove_redundant_style_guide_test_indexes_spec.rb`.
+  *Code:* `RemoveRedundantStyleGuideTestIndexes`.
