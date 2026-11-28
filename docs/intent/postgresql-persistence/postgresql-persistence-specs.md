@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-029** — Removing redundant run-resource ledger
+  indexes SHALL retain the full unique run/kind/attempt provisioning identity and
+  run/runner/container credential provenance indexes. Upgrade and rollback SHALL
+  preserve all other index definitions and ledger rows. Run-prefix and complete
+  identity lookups SHALL remain usable, including provisioning intents without
+  request IDs. Rollback SHALL restore both original prefixes concurrently.
+  *Tests:* `spec/migrations/remove_redundant_run_resource_indexes_spec.rb`.
+  *Code:* `RemoveRedundantRunResourceIndexes`.
