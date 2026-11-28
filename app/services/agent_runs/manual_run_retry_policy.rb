@@ -21,7 +21,7 @@ module AgentRuns
       return Assessment.new(false, :not_failed, attempt) unless agent_run.status.in?(AgentRun::FAILURE_STATUSES)
       return Assessment.new(false, :rate_limit_recovery_owned, attempt) if agent_run.recoverable_rate_limited?
       return Assessment.new(false, :project_retry_disabled, attempt) unless agent_run.project&.retry_failed_manual_runs?
-      return Assessment.new(false, :observable_work_produced, attempt) unless agent_run.no_observable_work?
+      return Assessment.new(false, :implementation_work_produced, attempt) if agent_run.implementation_work_produced?
       return Assessment.new(false, :active_lid_planning_run, attempt) if active_lid_planning_run?(agent_run)
 
       Assessment.new(true, :eligible, attempt)

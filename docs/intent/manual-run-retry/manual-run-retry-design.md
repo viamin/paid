@@ -40,7 +40,7 @@ asks `RetryableAttempts::RetryAttempt` to schedule the delayed job, while
 `AgentRuns::ManualRunRetryPolicy#assess` owns the admission checks.
 
 The policy requires a manual trigger, no issue or source PR attachment, a
-failed status, an enabled project toggle, and no observable work. It excludes
+failed status, an enabled project toggle, and no implementation work. It excludes
 `bootstrap_readiness` and layered-verification goals explicitly. For the
 ordinary manual goals, `AgentRun#issue_goal_requires_issue` requires an
 issue for `enhance_issue`/`analyze_issue`, and
@@ -63,24 +63,25 @@ pending would race it and could produce two concurrent attempts at the same
 work. This mirrors exactly why the issue-driven branch above keeps the
 issue `in_progress` instead of `failed` for the same case.
 
-## Partial-work safety: `AgentRun#no_observable_work?`
+## Partial-work safety: `AgentRun#implementation_work_produced?`
 
 ```ruby
-def no_observable_work?
-  !observable_main_agent_work? && pull_request_number.blank? && created_issue_number.blank?
+def implementation_work_produced?
+  unpublished_result_commit_sha.present? || result_commit_sha.present? || !no_observable_work?
 end
 ```
 
 A blind retry is only safe when nothing was produced yet. `create_issue`/
 `create_feature` runs can create a GitHub issue or open a PR before a later
 step fails (e.g. a post-publish verification gate); retrying those blindly
-risks a duplicate issue or PR. The absence of a successful or timed-out
-persisted `main_agent` runner attempt with recorded output, plus no recorded
-`pull_request_number`/`created_issue_number`, precisely covers the
-dispatch-exhaustion class this feature targets (runner/provider resolution
-failed before any model turn ran) and excludes anything with partial work,
-which is left terminally `failed` for an operator — consistent with issues #4212/#4221
-deliberately treating Inbox visibility of such runs as a separate concern.
+risks a duplicate issue or PR. A published revision, a local revision retained
+after publication rejection, a successful or timed-out persisted `main_agent`
+attempt with recorded output, or a recorded `pull_request_number`/
+`created_issue_number` is implementation work. The inverse precisely covers
+the dispatch-exhaustion class this feature targets (runner/provider resolution
+failed before any model turn ran) and leaves any partial work terminally
+`failed` for an operator — consistent with issues #4212/#4221 deliberately
+treating Inbox visibility of such runs as a separate concern.
 
 ## No failure-class filtering
 

@@ -35,17 +35,20 @@
 
 ## Partial-work safety
 
-- [x] **MANUAL-RUN-RETRY-003** — The system SHALL only schedule a retry when
-  the failed run performed no observable work — no successful or timed-out
-  persisted `main_agent` runner attempt with nonzero recorded output, no recorded
-  `pull_request_number`, and no recorded `created_issue_number`
-  (`AgentRun#no_observable_work?`). Smoke preflight and post-run commands
-  SHALL NOT count as main-agent work. A run with any of those present SHALL
-  stay terminally `failed` for an operator rather than risk a duplicate PR
-  or issue from a blind retry.
-  *Code:* `AgentRun#no_observable_work?`.
+- [x] **MANUAL-RUN-RETRY-003** — The system SHALL only schedule or claim a
+  retry when the failed run produced no implementation work
+  (`AgentRun#implementation_work_produced?`): no retained unpublished local
+  commit, no published commit, no successful or timed-out persisted `main_agent`
+  runner attempt with nonzero recorded output, no recorded
+  `pull_request_number`, and no recorded `created_issue_number`. Smoke
+  preflight and post-run commands SHALL NOT count as main-agent work. A run
+  with any of those present SHALL stay terminally `failed` for an operator
+  rather than risk a duplicate PR or issue from a blind retry.
+  *Code:* `AgentRun#implementation_work_produced?`,
+  `AgentRuns::ManualRunRetryPolicy#assess`.
   *Test:* `spec/models/agent_run_spec.rb`,
-  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
 ## Project-level toggle
 
@@ -63,7 +66,7 @@
 
 - [x] **MANUAL-RUN-RETRY-005** — `RetryFailedManualRunJob#perform` SHALL
   re-check eligibility (including the project toggle and
-  `no_observable_work?`) under a row lock before acting, since state may
+  `implementation_work_produced?`) under a row lock before acting, since state may
   have changed between scheduling and the delayed job firing. On success it
   SHALL mark the original run `"retried"` (the same terminal status
   review-goal bookkeeping already uses for a superseded run) and create a
