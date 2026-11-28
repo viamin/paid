@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-25
+last_updated: 2026-11-28
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  dashboard-live-stats:
+    title: Dashboard Live Statistics
+    path: docs/intent/dashboard-live-stats/dashboard-live-stats-design.md
+    specs: docs/intent/dashboard-live-stats/dashboard-live-stats-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-11-28
   pr-branch-publish-integrity:
     title: PR Branch Publish Integrity
     path: docs/intent/pr-branch-publish-integrity/pr-branch-publish-integrity-design.md
