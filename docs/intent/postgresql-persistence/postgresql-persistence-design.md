@@ -113,6 +113,24 @@ a separate `NOSUPERUSER NOBYPASSRLS` application role owning its isolated
 database. `CREATEDB` and `CREATEROLE` support database setup and restricted-role
 regression tests; they do not grant superuser or tenant-policy bypass.
 
+### Durable delivery-evidence reference inventory
+
+The delivery paths that can turn persisted provenance into closeout or merge
+evidence have distinct ownership contracts. `shared_delivery_evidence_associations`
+is owned by PARTIAL-CLOSEOUT-063: its account, project, target issue, source
+pull request, authorizer, canonical URL, and merged revision are all bound to
+one project; it intentionally does not authorize cross-project delivery.
+`conflict_repair_scope_evidences` is owned by AUTO-MERGE-011: its account,
+project, issue, producer run, optional requester, and revision hashes are
+bound to the producer, and the merge gate rechecks that binding for legacy
+rows. `design_artifact_associations` is owned by DESIGN-RECONCILIATION-001;
+it records project-local reconciliation provenance with a repository-qualified
+issue identity, not an acceptance-proof foreign key. Facet-confidence evidence
+is owned by FACET-CONFIDENCE-002 and feeds confidence assessment rather than a
+delivery or merge acceptance boundary. Each acceptance-proof table has a
+restricted-role SQL write test and consumer-level legacy-row test where it has
+a consumer; no broader operating-data cleanup is part of this inventory.
+
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.
 

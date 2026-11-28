@@ -68,6 +68,16 @@ RSpec.describe PullRequests::ConflictRepairScopeGate do
     expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).not_to be_allowed
   end
 
+  it "rejects legacy reassessment evidence with a mismatched producer project" do # @spec AUTO-MERGE-011
+    run = record_repair(status: "unavailable")
+    evidence = ConflictRepairScopeEvidence.create!(agent_run: run, account: project.account, project:, issue:, pre_run_sha: "pre-repair",
+      integration_base_sha: "base", result_sha: head_sha, provider_head_sha: head_sha, status: "approved",
+      explanation: "fresh decision", base_imported_paths: [], repair_authored_paths: [])
+    evidence.update_column(:project_id, create(:project, account: project.account).id)
+
+    expect(described_class.call(project:, issue:, head_sha:, integration_base_sha: "base")).not_to be_allowed
+  end
+
   it "rejects reassessment evidence whose pre-run SHA differs from its producer" do # @spec AUTO-MERGE-011
     run = record_repair(status: "unavailable")
     evidence = ConflictRepairScopeEvidence.new(agent_run: run, account: project.account, project:, issue:, pre_run_sha: "other-pre-run",

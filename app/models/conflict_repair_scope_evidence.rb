@@ -2,7 +2,7 @@
 
 # A reassessment is new evidence about a preserved producer artifact. It never
 # changes the producer run's terminal state or its original assessment.
-# @spec AUTO-MERGE-011
+# @spec AUTO-MERGE-011 POSTGRESQL-PERSISTENCE-014
 class ConflictRepairScopeEvidence < ApplicationRecord
   STATUSES = %w[approved rejected unavailable].freeze
 
@@ -21,7 +21,10 @@ class ConflictRepairScopeEvidence < ApplicationRecord
     pre_run_sha = agent_run.external_metadata["pre_run_head_sha"]
     return if pre_run_sha.blank?
 
-    where(agent_run:, pre_run_sha:, result_sha: head_sha, provider_head_sha: head_sha, integration_base_sha:)
+    producer = agent_run.project
+    where(agent_run:, account_id: producer.account_id, project_id: producer.id, issue_id: agent_run.issue_id,
+      pre_run_sha:, result_sha: head_sha, provider_head_sha: head_sha, integration_base_sha:)
+      .where("requested_by_id IS NULL OR requested_by_id IN (SELECT id FROM users WHERE account_id = ?)", producer.account_id)
       .order(created_at: :desc, id: :desc).first
   end
 

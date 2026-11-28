@@ -128,3 +128,17 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — Durable evidence and provenance tables
+  SHALL enforce their account, project, producer, requester, and revision
+  references on raw SQL writes by an actual `NOSUPERUSER NOBYPASSRLS` role.
+  Where a consumer accepts persisted evidence, it SHALL independently reject
+  legacy malformed references rather than treating an insertion guard as proof
+  of historic row validity. Associations explicitly authorized across projects
+  retain their owning contract.
+  *Tests:* `spec/security/tenant_context_spec.rb`,
+  `spec/services/pull_requests/conflict_repair_scope_gate_spec.rb`,
+  `spec/models/shared_delivery_evidence_association_spec.rb`.
+  *Code:* `SecureConflictRepairScopeEvidences`,
+  `ConflictRepairScopeEvidence`, `EnableTenantRlsOnSharedDeliveryEvidenceAssociations`,
+  `SharedDeliveryEvidenceAssociation`.
