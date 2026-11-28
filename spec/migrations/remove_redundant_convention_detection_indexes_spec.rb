@@ -118,6 +118,48 @@ RSpec.describe RemoveRedundantConventionDetectionIndexes do
     end
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "refuses removal when the override covering index is missing" do
+    connection.remove_index :project_convention_overrides, name: "index_project_convention_overrides_on_project_id_and_key"
+    before_indexes = related_indexes
+
+    expect { migration.up }.to raise_error(ActiveRecord::IrreversibleMigration, /override covering index/)
+    expect(related_indexes).to eq(before_indexes)
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "refuses removal when the override covering index no longer enforces uniqueness" do
+    connection.remove_index :project_convention_overrides, name: "index_project_convention_overrides_on_project_id_and_key"
+    connection.add_index :project_convention_overrides, %i[project_id key]
+    before_indexes = related_indexes
+
+    expect { migration.up }.to raise_error(ActiveRecord::IrreversibleMigration, /override covering index/)
+    expect(related_indexes).to eq(before_indexes)
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "refuses a partial override coverer that excludes some project lookups" do
+    connection.remove_index :project_convention_overrides, name: "index_project_convention_overrides_on_project_id_and_key"
+    connection.add_index :project_convention_overrides, %i[project_id key], unique: true, where: "project_id = 1"
+
+    expect { migration.up }.to raise_error(ActiveRecord::IrreversibleMigration, /override covering index/)
+    expect(connection.index_exists?(:project_convention_overrides, name: "index_project_convention_overrides_on_project_id")).to be true
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "refuses an invalid unique override coverer left by a failed concurrent build" do
+    connection.remove_index :project_convention_overrides, name: "index_project_convention_overrides_on_project_id_and_key"
+    connection.execute("INSERT INTO project_convention_overrides (project_id, key) VALUES (1, 'language')")
+    expect do
+      connection.add_index :project_convention_overrides, %i[project_id key], unique: true, algorithm: :concurrently
+    end.to raise_error(ActiveRecord::RecordNotUnique)
+    coverer = connection.indexes(:project_convention_overrides).find { |index| index.name == "index_project_convention_overrides_on_project_id_and_key" }
+    expect(coverer.valid?).to be false
+
+    expect { migration.up }.to raise_error(ActiveRecord::IrreversibleMigration, /override covering index/)
+    expect(connection.index_exists?(:project_convention_overrides, name: "index_project_convention_overrides_on_project_id")).to be true
+  end
+
   def related_indexes
     %i[project_convention_overrides project_convention_recommendations].to_h do |table|
       [ table, connection.indexes(table).to_h { |index| [ index.name, [ index.columns, index.unique, index.where ] ] } ]

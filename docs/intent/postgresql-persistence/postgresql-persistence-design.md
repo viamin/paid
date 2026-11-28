@@ -126,7 +126,9 @@ older migration list is not sufficient cleanup for a randomized suite.
 
 The convention index repair also removes override and recommendation project
 prefixes. Retained compound indexes preserve override identity, pending-only
-recommendation uniqueness and project/status lookup coverage.
+recommendation uniqueness and project/status lookup coverage. Before any DDL,
+the migration checks that an existing override prefix has its valid, non-partial
+unique project/key covering index; a missing or changed coverer stops removal.
 
 ## Deferred Work
 
