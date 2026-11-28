@@ -34,6 +34,7 @@ module Development
       SUGGESTED_INDEX_MIN_CALLS = 50
       QUERY_STATS_WINDOW = 3.hours
       QUERY_TEXT_LIMIT = 1_000
+      SLOW_QUERY_TEXT_LIMIT = 16_000
 
       def initialize(environment: Rails.env, database: nil, now: -> { Time.current })
         @environment = environment.to_s
@@ -193,6 +194,7 @@ module Development
         indexes
       end
 
+      # @spec RAILS-CONTROL-PLANE-025 RAILS-CONTROL-PLANE-038
       def collect_query_stats(findings, coverage)
         unless database.query_stats_enabled?
           coverage[:query_stats] = :unavailable
@@ -209,11 +211,12 @@ module Development
         # the window, so slow_queries already judges repeated slowness rather
         # than lifetime cumulative totals (counter resets are absorbed).
         database.slow_queries(query_stats: stats).each do |query|
-          text = filtered_query(query[:query])
+          text = filtered_query(query[:query], limit: nil)
           add_finding(findings, type: :slow_query, key: "slow_query/#{query.fetch(:query_hash)}",
             title: "Slow query: avg #{query[:average_time].round(1)} ms over #{query[:calls]} calls",
             observed: {
-              query: text, average_ms: query[:average_time].round(1), calls: query[:calls],
+              query: text&.truncate_bytes(SLOW_QUERY_TEXT_LIMIT),
+              query_truncated: text.to_s.bytesize > SLOW_QUERY_TEXT_LIMIT, average_ms: query[:average_time].round(1), calls: query[:calls],
               threshold_ms: database.slow_query_ms, threshold_calls: database.slow_query_calls,
               window_hours: QUERY_STATS_WINDOW.to_i / 3600
             })
@@ -278,10 +281,11 @@ module Development
         )
       end
 
-      def filtered_query(text)
+      def filtered_query(text, limit: QUERY_TEXT_LIMIT)
         return nil if text.blank?
 
-        Development::PgHeroQueryText.call(text.to_s).truncate(QUERY_TEXT_LIMIT)
+        filtered = Development::PgHeroQueryText.call(text.to_s)
+        limit ? filtered.truncate(limit) : filtered
       end
 
       def percent_used(sequence)

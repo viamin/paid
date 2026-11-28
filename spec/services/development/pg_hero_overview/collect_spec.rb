@@ -99,6 +99,58 @@ RSpec.describe Development::PgHeroOverview::Collect do
     expect(finding.observed_at).to eq(Time.utc(2026, 11, 21, 12))
   end
 
+  # @spec RAILS-CONTROL-PLANE-038
+  it "retains sanitized slow-query predicates and ordering beyond the display excerpt" do
+    stub_overview_clean
+    columns = (1..120).map { |number| "issues.column_#{number}" }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token' ORDER BY issues.id"
+    allow(database).to receive(:slow_queries).and_return([
+      { query: sql, query_hash: 123_456, calls: 12, average_time: 245.3 }
+    ])
+
+    finding = collect.call.findings.sole
+
+    expect(finding.key).to eq("slow_query/123456")
+    expect(finding.observed[:query]).to eq(Development::PgHeroQueryText.call(sql))
+    expect(finding.observed[:query]).to include("WHERE", "ORDER BY")
+    expect(finding.observed[:query]).not_to include("private-token")
+    expect(finding.observed[:query_truncated]).to be false
+  end
+
+  # @spec RAILS-CONTROL-PLANE-038
+  it "marks oversized sanitized slow SQL as truncated within its byte budget" do
+    stub_overview_clean
+    columns = (1..1_000).map { |number| %Q(issues."café_column_#{number}") }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token'"
+    allow(database).to receive(:slow_queries).and_return([
+      { query: sql, query_hash: 123_456, calls: 12, average_time: 245.3 }
+    ])
+
+    finding = collect.call.findings.sole
+
+    expect(finding.key).to eq("slow_query/123456")
+    expect(finding.observed[:query].bytesize).to be <= 16_000
+    expect(finding.observed[:query].valid_encoding?).to be true
+    expect(finding.observed[:query]).not_to include("private-token")
+    expect(finding.observed[:query_truncated]).to be true
+  end
+
+  # @spec RAILS-CONTROL-PLANE-038
+  it "preserves the existing long-running query excerpt and identity" do
+    stub_overview_clean
+    columns = (1..120).map { |number| "issues.column_#{number}" }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token'"
+    allow(database).to receive(:long_running_queries).and_return([
+      { duration_ms: 90_000, state: "active", backend_type: "client backend", query: sql }
+    ])
+    excerpt = Development::PgHeroQueryText.call(sql).truncate(1_000)
+
+    finding = collect.call.findings.sole
+
+    expect(finding.observed[:query]).to eq(excerpt)
+    expect(finding.key).to eq("long_running_query/#{Digest::SHA256.hexdigest(excerpt)}")
+  end
+
   # @spec RAILS-CONTROL-PLANE-025 RAILS-CONTROL-PLANE-027
   it "redacts literals from long-running query text and excludes autovacuum workers" do
     stub_overview_clean

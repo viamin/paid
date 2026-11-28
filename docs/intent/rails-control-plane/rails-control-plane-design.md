@@ -262,6 +262,12 @@ an informational exclusion with a recorded reason.
 
 ### Repair assessment and ownership
 
+Slow-query evidence retains literal-redacted SQL up to 16,000 bytes and marks
+truncation explicitly. A display excerpt must not remove predicates or ordering
+from the assessor's evidence when the sanitized query fits. Oversized or redacted
+queries can still require more evidence; the existing assessment budgets and
+readiness checks continue to apply. Finding identity remains the query hash.
+
 Stable finding identities track observations independently of work ownership.
 A project-scoped repair owns a selected set of observations and one canonical
 issue or pull request. Several findings may share a repair, including different

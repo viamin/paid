@@ -400,3 +400,13 @@ failures when no tmux socket responds.
   actual candidate and covering index definitions, validity and uniqueness.
   *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`.
   *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-038** — Slow-query assessment evidence SHALL retain
+  literal-redacted SQL up to 16,000 bytes, preserving complete predicates and
+  ordering when they fit. Evidence SHALL explicitly mark truncation beyond that
+  bound without changing finding identity. Redaction failure SHALL NOT expose
+  raw SQL. Other query categories SHALL retain their existing text bounds and
+  identities. Existing assessment input and publication budgets SHALL remain bounded.
+  *Tests:* `spec/services/development/pg_hero_overview/collect_spec.rb`.
+  *Code:* `Development::PgHeroOverview::Collect`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
