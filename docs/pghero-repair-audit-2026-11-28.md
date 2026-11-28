@@ -1232,10 +1232,25 @@ actual payloads, not publication or successful AI consolidation. Private
 retain the measurements and credential example. A first filing run can refresh existing evidence bodies and fingerprints;
 that alone is not unexpected new issue creation.
 
-Normal external job `72b9c0cf-0266-4857-b578-880397fc4445` was enqueued at
-10:37:27 UTC to validate the changed collector and assessment prompt. Its terminal
-outcome and semantic progress remain pending. Source #5871's active Paid run is
-untouched; any existing credential work must be refreshed before consolidation.
+Normal external job `72b9c0cf-0266-4857-b578-880397fc4445`, enqueued at
+10:37:27 UTC, ran from 10:48:00 to 10:50:15 UTC after worker recovery below.
+On scanner code e463769ba it reported 248 findings, five assessed, one created,
+29 evidence updates, zero reopens/closures, 38 deferred, no planning error and
+all categories collected. The detailed scope contained five findings and two work
+items in 28,006 bytes. It reassessed an older query and a 04:14:58 UTC index
+deferral and advanced three never-assessed project queries. It published #5873
+for the catalog-proven service-container metric prefix removal, whose target
+is absent from the complete existing PR removal map. Four project queries were
+reasonedly deferred; neither shared tables nor a possibly related dashboard issue
+were treated as sufficient causal coverage. This is successful assessment, not
+proof of general semantic grouping quality or completed physical acceptance.
+
+All 201 active duplicate findings persisted their table-index context, and all
+26 aliases were fetched closed after terminal completion. Private
+`alternate-coverers-{assessment-progress.json,persisted-evidence.json,alias-verification.json,validation-result.log}`
+records the exact outcomes. Source #5871's active Paid run remains untouched;
+refresh its resulting work before credential consolidation. Repeat successful
+changed-code publication stability still needs verification.
 
 The preceding provider-key handoff job `0dcbedde-302d-431c-ba9e-5212aa1d8c6e`
 finished at 10:32:58 UTC on the earlier scanner code: 250 findings, zero creates,
@@ -1246,3 +1261,39 @@ PR #5868 retains the original source instructions and rationale, with no active
 source run. Private `provider-key-{ownership.json,validation-result.log}` records
 both import and timeout evidence. No physical repair was applied to the operating
 database, and full repository CI remains unverified.
+
+## GoodJob recovery and refreshed complete PR accounting
+
+At 10:44:51 UTC the dedicated GoodJob process 1837378 was alive but its database
+heartbeat was stale since 10:35:49 UTC. There were 51 runnable jobs and no recorded
+jobs executing; the scanner remained queued. An Overmind jobs-only restart request
+did not stop that stale process. A direct TERM to the same worker allowed the
+supervisor to replace it with 2309864. The two Temporal worker processes remained
+1475092 and 1475093 throughout; no active Paid agent run was cancelled or restarted.
+New worker heartbeats and execution counts advanced, runnable work drained and the
+original queued scanner job executed once. The 10:55:34 UTC sample had a fresh
+heartbeat, 98 maintenance executions and three runnable jobs across all queues.
+No claim is made that the underlying reason for the old worker stall is repaired.
+Private `goodjob-health-{observation,after-restart}.json` preserves both states.
+The restart loaded the current operating workspace, including unrelated existing
+runtime changes; scanner source hashes, not a clean full-workspace revision,
+identify the tested patch.
+
+The complete 10:44:51 UTC audit has 193 trusted open PRs, 161 containing explicit
+index removals and 192 distinct removal targets. Every immutable comparison is
+complete; there are no repeated targets or removals of observed covering indexes.
+Private `pr-all-alternate/` records current refs and comparisons. The 10:43:51 UTC
+snapshot has 248 findings, 209 owned, 39 unowned and 177 open scanner issues.
+Its complete `post-alternate/finding-dispositions.json` records 193 findings with
+an implemented index-removal target (including an unused-index observation), seven
+constraint claims requiring causal implementation/acceptance review, nine catalog
+redundancies requiring implementation, 22 queries needing causal evidence, 16
+unused-index observations needing usage/dependency evidence and one cache finding
+needing representative workload evidence. These remain unfinished dispositions,
+not acceptance or completion. The later new issue #5873 is outside that snapshot.
+
+Sources #5851 and #5863 are in waiting_recovery, not completed implementations;
+no PR is recorded for either. Inspect their recovery state and any generated
+artifacts before taking them over. Lack of an active agent alone does not prove
+there is no recoverable work. Existing sources and acceptance requirements remain
+open; no additional speculative consolidation was performed.
