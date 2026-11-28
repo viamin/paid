@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-027** — Removing redundant quality-event project
+  prefix indexes SHALL preserve valid compound gate/history lookup indexes,
+  all other indexes, event/recovery data, foreign keys and tenant policies.
+  Removal and rollback SHALL use concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_quality_event_project_indexes_spec.rb`,
+  `spec/models/quality_gate_event_spec.rb`, `spec/models/quality_pause_event_spec.rb`,
+  `spec/models/quality_recovery_action_spec.rb`.
+  *Code:* `RemoveRedundantQualityEventProjectIndexes`.

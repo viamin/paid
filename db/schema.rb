@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_091208) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4186,7 +4186,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.decimal "threshold_value", precision: 5, scale: 4, null: false, comment: "Specific threshold value that was breached or recovered."
     t.datetime "updated_at", null: false
     t.index ["project_id", "event_type", "created_at"], name: "idx_quality_gate_events_project_type_time"
-    t.index ["project_id"], name: "index_quality_gate_events_on_project_id"
     t.index ["quality_metric_id"], name: "index_quality_gate_events_on_quality_metric_id"
     t.index ["quality_threshold_id"], name: "index_quality_gate_events_on_quality_threshold_id"
   end
@@ -4225,7 +4224,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_quality_pause_events_on_agent_run_id"
     t.index ["project_id", "created_at"], name: "index_quality_pause_events_on_project_id_and_created_at"
-    t.index ["project_id"], name: "index_quality_pause_events_on_project_id"
   end
 
   create_table "quality_recovery_actions", comment: "Tracks remediation steps proposed or executed after a quality gate pause so recovery effectiveness can be measured.", force: :cascade do |t|
@@ -4246,7 +4244,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["action_type"], name: "index_quality_recovery_actions_on_action_type"
     t.index ["agent_run_id"], name: "index_quality_recovery_actions_on_agent_run_id"
     t.index ["project_id", "created_at"], name: "index_quality_recovery_actions_on_project_id_and_created_at"
-    t.index ["project_id"], name: "index_quality_recovery_actions_on_project_id"
     t.index ["prompt_version_id"], name: "index_quality_recovery_actions_on_prompt_version_id"
     t.index ["status"], name: "index_quality_recovery_actions_on_status"
   end
