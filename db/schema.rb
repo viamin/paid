@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_092459) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4204,13 +4204,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "source", default: "agent_run", null: false, comment: "Origin of the metric row so scheduled mutation sweeps stay distinct from per-agent-run quality metrics."
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "metric_type"], name: "index_quality_metrics_on_agent_run_and_type", unique: true
-    t.index ["agent_run_id"], name: "index_quality_metrics_on_agent_run_id"
     t.index ["composite_score"], name: "index_quality_metrics_on_composite_score"
     t.index ["created_at"], name: "index_quality_metrics_on_created_at"
     t.index ["metric_type"], name: "index_quality_metrics_on_metric_type"
     t.index ["prompt_version_id", "created_at"], name: "idx_quality_metrics_prompt_recent_composite", order: { created_at: :desc }, where: "(composite_score IS NOT NULL)"
     t.index ["prompt_version_id", "created_at"], name: "index_quality_metrics_on_prompt_version_and_created_at"
-    t.index ["prompt_version_id"], name: "index_quality_metrics_on_prompt_version_id"
     t.index ["source"], name: "index_quality_metrics_on_source"
   end
 

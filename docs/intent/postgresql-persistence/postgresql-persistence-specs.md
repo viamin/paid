@@ -128,3 +128,14 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-028** — Removing redundant quality-metric run
+  and prompt-version prefixes SHALL preserve run/type uniqueness, full prompt
+  history including unscored metrics, the partial recent-score index, all other
+  indexes, score data, foreign keys and tenant policies. Removal and rollback
+  SHALL use concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_quality_metric_indexes_spec.rb`,
+  `spec/models/quality_metric_spec.rb`,
+  `spec/services/quality_metrics/trend_analysis_spec.rb`,
+  `spec/services/prompt_evolution/sample_runs_spec.rb`.
+  *Code:* `RemoveRedundantQualityMetricIndexes`.
