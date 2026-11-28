@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-020** — Removing redundant token-usage prefix
+  indexes SHALL preserve knowledge-run and request-type lookup coverage, other
+  indexes, usage rows and stored cost/token totals. Removal and rollback SHALL
+  use concurrent index operations without changing tenant policies or foreign keys.
+  *Tests:* `spec/migrations/remove_redundant_token_usage_indexes_spec.rb`.
+  *Code:* `RemoveRedundantTokenUsageIndexes`.
