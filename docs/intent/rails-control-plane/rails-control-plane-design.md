@@ -293,7 +293,10 @@ not a completed assessment. Bounded selection includes a never-assessed
 observation and the least recently assessed pending observation when each exists.
 This reserves progress for older deferrals even while new observations arrive.
 AI may add related findings and plausible owners from the complete indexes;
-selection does not group findings by naming rules.
+selection does not group findings by naming rules. Selection consumes only
+finding identities, work numbers and the deferral reason; extra response metadata
+is ignored. Required fields, known identities and response bounds remain checked,
+and detailed repair partitions retain strict validation.
 Failures and previews do not advance assessment history.
 
 Publication requires an explicit affirmative readiness decision with supporting

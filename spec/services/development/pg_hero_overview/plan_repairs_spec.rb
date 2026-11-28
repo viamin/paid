@@ -259,4 +259,36 @@ RSpec.describe Development::PgHeroOverview::PlanRepairs do
 
     expect(result.fetch("assessed_finding_keys")).to eq([ first.identity ])
   end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "ignores extra selection metadata without treating it as a repair proposal" do
+    work_items.concat((1..100).map { |number| { "number" => number, "kind" => "issue", "title" => "Repair", "body" => "x" * 3_000 } })
+    allow(Llm::Request).to receive(:call) do |**arguments|
+      response = arguments.fetch(:timeout) == 90 ?
+        { "finding_keys" => findings.map(&:identity), "work_numbers" => [], "reason" => "Assess this scope",
+          "required_finding" => first.identity, "repairs" => [ { "title" => "Ignored selection metadata" } ] } : payload
+      candidate = Struct.new(:output).new(JSON.generate(response))
+      expect(arguments.fetch(:response_validator).call(candidate)).to be(true)
+      candidate
+    end
+
+    result = planner.call
+
+    expect(result.fetch("assessed_finding_keys")).to match_array(findings.map(&:identity))
+    expect(result.fetch("repairs")).to eq([ proposal ])
+  end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "still rejects unknown identities, missing fields and oversized metadata during selection" do
+    work_items.concat((1..100).map { |number| { "number" => number, "kind" => "issue", "title" => "Repair", "body" => "x" * 3_000 } })
+    selection = { "finding_keys" => findings.map(&:identity), "work_numbers" => [], "reason" => "Assess scope", "notes" => "Metadata" }
+    invalid = [ selection.merge("finding_keys" => findings.map(&:identity) + [ "primary/unknown" ]),
+      selection.merge("work_numbers" => [ 99_999 ]), selection.except("reason"), selection.merge("notes" => "x" * 20_000) ]
+    invalid.each do |response|
+      allow(Llm::Request).to receive(:call).and_return(Struct.new(:output).new(JSON.generate(response)))
+      candidate = described_class.new(project: project, findings: findings, work_items: work_items, existing_repairs: [])
+
+      expect { candidate.call }.to raise_error(described_class::InvalidAssessment)
+    end
+  end
 end

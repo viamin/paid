@@ -384,7 +384,9 @@ failures when no tmux socket responds.
   selection SHALL include a never-assessed observation when one exists and the
   least recently assessed pending observation when one exists, while permitting
   AI-selected related findings. Incoming observations SHALL NOT indefinitely
-  postpone reassessment of older deferrals. Unselected findings, failed assessments and previews SHALL NOT be
+  postpone reassessment of older deferrals. Extra selection metadata SHALL NOT
+  affect selected evidence or publication; required fields, known identities and
+  response bounds SHALL remain validated. Unselected findings, failed assessments and previews SHALL NOT be
   recorded as completed detailed assessments.
   *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`,
   `spec/services/development/pg_hero_overview/issue_filer_sync_spec.rb`.

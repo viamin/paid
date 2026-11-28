@@ -172,7 +172,9 @@ module Development
       def validate_selection(output)
         reject!("invalid_selection") unless output.is_a?(String) && output.bytesize <= 20_000
         result = JSON.parse(output)
-        reject!("invalid_selection") unless result.is_a?(Hash) && result.keys.sort == %w[finding_keys reason work_numbers]
+        reject!("invalid_selection") unless result.is_a?(Hash)
+        result = result.slice("finding_keys", "reason", "work_numbers")
+        reject!("invalid_selection") unless result.keys.sort == %w[finding_keys reason work_numbers]
         validate_text(result["reason"])
         keys = result["finding_keys"]
         required = [ @required_finding, @required_reassessment ].compact.uniq
