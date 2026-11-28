@@ -5026,6 +5026,27 @@ RSpec.describe AgentRun do
       expect(project).to have_received(:broadcast_agent_run_detail_update).with(agent_run)
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-022
+    it "logs a broadcast render failure with the persisted run ID" do
+      render_error = begin
+        raise "priority badge failed"
+      rescue StandardError
+        ActionView::Template::Error.new(instance_double(ActionView::Template, identifier: "projects/_agent_run"))
+      end
+      allow(project).to receive(:broadcast_agent_runs_update)
+        .and_raise(render_error)
+      allow(Rails.logger).to receive(:error)
+
+      agent_run = nil
+      expect { agent_run = create(:agent_run, project: project) }.not_to raise_error
+      expect(Rails.logger).to have_received(:error).with(hash_including(
+        message: "agent_run.broadcast_failed",
+        agent_run_id: agent_run.id,
+        project_id: project.id,
+        error_class: "ActionView::Template::Error"
+      ))
+    end
+
     it "broadcasts all updates on status change" do
       allow(project).to receive(:broadcast_agent_runs_update)
       allow(project).to receive(:broadcast_agent_runs_list_update)

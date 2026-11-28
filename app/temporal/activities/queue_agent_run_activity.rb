@@ -5,6 +5,7 @@ module Activities
     activity_name "QueueAgentRun"
     GOALS_REQUIRING_TRUSTED_ISSUE = %w[create_pr].freeze
 
+    # @spec TEMPORAL-ORCHESTRATION-022
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -23,6 +24,10 @@ module Activities
       action_evidence = normalized_action_evidence(input[:action_evidence])
 
       project = Project.find(project_id)
+      unless schema_ready?(project)
+        return { queued: false, skipped: true, reason: "schema_not_ready" }
+      end
+
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       if trigger_type.nil? && goal == "create_pr" && source_pull_request_number.present?
         trigger_type = AgentRun.retry_trigger_type_for(
@@ -203,6 +208,7 @@ module Activities
           existing_goal: agent_run.goal,
           cross_goal: agent_run.goal != goal
         )
+        ProcessRunQueueJob.perform_later if agent_run.queued?
         return { agent_run_id: agent_run.id, queued: false, duplicate: true,
                  cross_goal: agent_run.goal != goal }
       end
@@ -232,6 +238,20 @@ module Activities
     end
 
     private
+
+    # @spec TEMPORAL-ORCHESTRATION-022
+    def schema_ready?(project)
+      ActiveRecord::Migration.check_all_pending!
+      true
+    rescue ActiveRecord::PendingMigrationError => error
+      logger.error(
+        message: "queue_agent_run.schema_not_ready",
+        project_id: project.id,
+        error_class: error.class.name,
+        error: error.message
+      )
+      false
+    end
 
     def normalized_action_evidence(evidence)
       evidence.is_a?(Hash) ? evidence.stringify_keys : {}

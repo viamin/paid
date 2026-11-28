@@ -23,7 +23,8 @@ RSpec.describe Activities::QueueAgentRunActivity do
       ActiveJob::Base.queue_adapter = original_adapter
     end
 
-    it "creates an agent run with queued status" do
+    # @spec TEMPORAL-ORCHESTRATION-022
+    it "creates an agent run with queued status and dispatches it immediately" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
       expect(result[:agent_run_id]).to be_present
@@ -36,6 +37,42 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.issue).to eq(issue)
       expect(agent_run.agent_type).to eq("claude_code")
       expect(agent_run.runner).to eq(user.runners.find_by!(runner_key: "claude"))
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-022
+    it "dispatches a committed run when a UI broadcast render fails" do
+      render_error = begin
+        raise "priority badge failed"
+      rescue StandardError
+        ActionView::Template::Error.new(instance_double(ActionView::Template, identifier: "projects/_agent_run"))
+      end
+      allow(Project).to receive(:find).with(project.id).and_return(project)
+      allow(project).to receive(:broadcast_agent_runs_update).and_raise(render_error)
+      allow(Rails.logger).to receive(:error)
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result).to include(queued: true)
+      expect(AgentRun.find(result[:agent_run_id])).to have_attributes(status: "queued", project: project)
+      expect(ProcessRunQueueJob).to have_been_enqueued
+      expect(Rails.logger).to have_received(:error).with(hash_including(
+        message: "agent_run.broadcast_failed",
+        agent_run_id: result[:agent_run_id],
+        project_id: project.id,
+        error_class: "ActionView::Template::Error"
+      ))
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-022
+    it "does not admit work while migrations are pending" do
+      allow(ActiveRecord::Migration).to receive(:check_all_pending!)
+        .and_raise(ActiveRecord::PendingMigrationError.new("pending migration"))
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+      expect(result).to eq(queued: false, skipped: true, reason: "schema_not_ready")
+      expect(AgentRun.where(project: project, issue: issue)).to be_empty
+      expect(ProcessRunQueueJob).not_to have_been_enqueued
     end
 
     it "accepts a custom agent_type" do
@@ -527,7 +564,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:agent_run_id]).to eq(existing.id)
         expect(result[:duplicate]).to be true
         expect(AgentRun.where(project: project, issue: issue).count).to eq(1)
-        expect(ProcessRunQueueJob).not_to have_been_enqueued
+        expect(ProcessRunQueueJob).to have_been_enqueued
       end
 
       # @spec ISSUE-ENHANCEMENT-011
@@ -583,7 +620,8 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(existing.expected_draft_review_count).to eq(5)
       end
 
-      it "returns existing run when a queued run exists for the same PR" do
+      # @spec TEMPORAL-ORCHESTRATION-022
+      it "re-dispatches the existing queued run for the same PR without duplicating it" do
         existing = create(:agent_run, :queued, project: project,
           source_pull_request_number: 42, custom_prompt: "Fix it")
 
@@ -595,7 +633,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
 
         expect(result[:agent_run_id]).to eq(existing.id)
         expect(result[:duplicate]).to be true
-        expect(ProcessRunQueueJob).not_to have_been_enqueued
+        expect(ProcessRunQueueJob).to have_been_enqueued
       end
 
       it "treats a rate_limited run as in-flight and does not mint a duplicate for the same issue" do
