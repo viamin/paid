@@ -124,6 +124,11 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+PostgreSQL index maintenance removes a redundant index only when a valid
+non-unique composite index has the redundant index's columns as its leading
+prefix. Such changes use reversible concurrent migrations to retain the query
+access path while avoiding an unnecessary blocking index operation.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
