@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_035822) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3615,6 +3615,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   end
 
   create_table "pghero_overview_findings", comment: "Development PgHero Overview scan state; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.jsonb "assessment", default: {}, null: false
     t.integer "consecutive_observations", default: 0, null: false
     t.datetime "created_at", null: false
     t.text "database", null: false
@@ -3624,10 +3625,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "github_issue_number"
     t.datetime "issue_last_updated_at"
     t.datetime "last_seen_at", null: false
+    t.jsonb "observation", default: {}, null: false
     t.bigint "project_id", null: false
+    t.bigint "repair_id"
     t.datetime "resolved_at"
     t.datetime "updated_at", null: false
     t.index ["project_id", "database", "finding_key"], name: "index_pghero_overview_findings_on_project_db_finding_key", unique: true
+    t.index ["repair_id"], name: "index_pghero_overview_findings_on_repair_id"
+  end
+
+  create_table "pghero_overview_repairs", comment: "Project-scoped development database repair ownership.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "database", null: false
+    t.bigint "github_issue_number"
+    t.bigint "github_pr_number"
+    t.text "instructions", default: "", null: false
+    t.datetime "issue_last_updated_at"
+    t.boolean "managed_issue", default: true, null: false
+    t.bigint "project_id", null: false
+    t.text "rationale", default: "", null: false
+    t.text "repair_key", null: false
+    t.datetime "resolved_at"
+    t.text "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "database", "repair_key"], name: "index_pghero_repairs_on_project_database_key", unique: true
   end
 
   create_table "pghero_queries", comment: "Normalized SQL for development database diagnostics; system-wide, not tenant-owned.", force: :cascade do |t|
@@ -5718,7 +5739,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "pghero_overview_findings", "pghero_overview_repairs", column: "repair_id"
   add_foreign_key "pghero_overview_findings", "projects"
+  add_foreign_key "pghero_overview_repairs", "projects"
   add_foreign_key "pghero_query_stats", "pghero_queries", column: "query_id"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
@@ -7151,12 +7174,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -7211,12 +7234,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
-  SQL
-
   create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL

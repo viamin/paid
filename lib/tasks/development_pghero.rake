@@ -10,4 +10,9 @@ namespace :development do
   task pg_hero_overview_scan: :environment do
     PgHeroOverviewScanJob.perform_now
   end
+  desc "Preview repair assessment without GitHub writes or committed scanner state"
+  task pg_hero_overview_preview: :environment do
+    results = PgHeroOverviewScanJob.perform_now(dry_run: true)
+    puts JSON.pretty_generate(Array(results).map(&:to_h))
+  end
 end

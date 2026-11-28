@@ -26,6 +26,8 @@ module Development
             new_row.last_seen_at = @now.call
             new_row.consecutive_observations = 0
           end
+          row.observation = finding.to_h.as_json
+          row.resolved_at = nil
           row.finding_type = finding.type.to_s
           row.first_seen_at = @now.call if row.first_seen_at.nil?
           row.consecutive_observations = stale?(row) ? 1 : row.consecutive_observations + 1

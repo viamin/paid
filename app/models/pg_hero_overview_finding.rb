@@ -10,6 +10,9 @@ class PgHeroOverviewFinding < ApplicationRecord
   self.table_name = "pghero_overview_findings"
 
   belongs_to :project
+  belongs_to :repair, class_name: "PgHeroOverviewRepair", optional: true, inverse_of: :findings
+
+  validate :repair_matches_observation
 
   # Scans older than this with no observation are stale state (e.g. the
   # scanner was disabled for a long period); persistence counters should not
@@ -21,6 +24,12 @@ class PgHeroOverviewFinding < ApplicationRecord
 
   scope :stale, -> { where(arel_table[:last_seen_at].lt(STALE_AFTER.ago)) }
   scope :open_issues, -> { where.not(github_issue_number: nil).where(resolved_at: nil) }
+
+  def repair_matches_observation
+    return if repair.nil? || (repair.project_id == project_id && repair.database == database)
+
+    errors.add(:repair, "must belong to the same project and database")
+  end
 
   def tracked_issue? = github_issue_number.present? && resolved_at.nil?
 end

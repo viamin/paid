@@ -26,17 +26,19 @@ class PgHeroOverviewScanJob < ApplicationJob
 
   retry_on GithubClient::Error, wait: :polynomially_longer, attempts: 4
 
-  def perform
+  def perform(dry_run: false)
     return unless Rails.env.development?
 
+    results = []
     TenantContext.with_system_access do
       Account.find_each do |account|
         project = TenantContext.with(account) { self_repo_project(account) }
         next unless project
 
-        Development::PgHeroOverview::Scan.new(project: project).call
+        results << Development::PgHeroOverview::Scan.new(project: project, dry_run: dry_run).call
       end
     end
+    results
   end
 
   private

@@ -99,6 +99,58 @@ RSpec.describe Development::PgHeroOverview::Collect do
     expect(finding.observed_at).to eq(Time.utc(2026, 11, 21, 12))
   end
 
+  # @spec RAILS-CONTROL-PLANE-038
+  it "retains sanitized slow-query predicates and ordering beyond the display excerpt" do
+    stub_overview_clean
+    columns = (1..120).map { |number| "issues.column_#{number}" }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token' ORDER BY issues.id"
+    allow(database).to receive(:slow_queries).and_return([
+      { query: sql, query_hash: 123_456, calls: 12, average_time: 245.3 }
+    ])
+
+    finding = collect.call.findings.sole
+
+    expect(finding.key).to eq("slow_query/123456")
+    expect(finding.observed[:query]).to eq(Development::PgHeroQueryText.call(sql))
+    expect(finding.observed[:query]).to include("WHERE", "ORDER BY")
+    expect(finding.observed[:query]).not_to include("private-token")
+    expect(finding.observed[:query_truncated]).to be false
+  end
+
+  # @spec RAILS-CONTROL-PLANE-038
+  it "marks oversized sanitized slow SQL as truncated within its byte budget" do
+    stub_overview_clean
+    columns = (1..1_000).map { |number| %Q(issues."café_column_#{number}") }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token'"
+    allow(database).to receive(:slow_queries).and_return([
+      { query: sql, query_hash: 123_456, calls: 12, average_time: 245.3 }
+    ])
+
+    finding = collect.call.findings.sole
+
+    expect(finding.key).to eq("slow_query/123456")
+    expect(finding.observed[:query].bytesize).to be <= 16_000
+    expect(finding.observed[:query].valid_encoding?).to be true
+    expect(finding.observed[:query]).not_to include("private-token")
+    expect(finding.observed[:query_truncated]).to be true
+  end
+
+  # @spec RAILS-CONTROL-PLANE-038
+  it "preserves the existing long-running query excerpt and identity" do
+    stub_overview_clean
+    columns = (1..120).map { |number| "issues.column_#{number}" }.join(", ")
+    sql = "SELECT #{columns} FROM issues WHERE token = 'private-token'"
+    allow(database).to receive(:long_running_queries).and_return([
+      { duration_ms: 90_000, state: "active", backend_type: "client backend", query: sql }
+    ])
+    excerpt = Development::PgHeroQueryText.call(sql).truncate(1_000)
+
+    finding = collect.call.findings.sole
+
+    expect(finding.observed[:query]).to eq(excerpt)
+    expect(finding.key).to eq("long_running_query/#{Digest::SHA256.hexdigest(excerpt)}")
+  end
+
   # @spec RAILS-CONTROL-PLANE-025 RAILS-CONTROL-PLANE-027
   it "redacts literals from long-running query text and excludes autovacuum workers" do
     stub_overview_clean
@@ -268,6 +320,59 @@ RSpec.describe Development::PgHeroOverview::Collect do
   def reset_pghero_config
     %i[config databases file_config].each do |name|
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")
+    end
+  end
+  # @spec RAILS-CONTROL-PLANE-037
+  it "supplies actual catalog evidence for duplicate-index repair assessment" do
+    stub_overview_clean
+    unneeded = { schema: "public", table: "issues", name: "issues_project",
+      definition: "CREATE INDEX issues_project ON issues USING btree (project_id)", valid: true, unique: false }
+    covering = { schema: "public", table: "issues", name: "issues_project_status",
+      definition: "CREATE INDEX issues_project_status ON issues USING btree (project_id, status)", valid: true, unique: false }
+    allow(database).to receive(:duplicate_indexes).and_return([ { unneeded_index: unneeded, covering_index: covering } ])
+
+    finding = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+
+    expect(finding.observed).to include(unneeded_definition: unneeded[:definition],
+      covering_definition: covering[:definition], unneeded_valid: true, covering_valid: true,
+      unneeded_unique: false, covering_unique: false)
+  end
+
+  context "with alternate catalog indexes" do
+    let(:unneeded) do
+      { schema: "public", table: "issues", name: "issues_project",
+        definition: "CREATE INDEX issues_project ON issues (project_id)", valid: true, unique: false }
+    end
+    let(:chosen) { unneeded.merge(name: "issues_project_status", definition: "CREATE INDEX issues_project_status ON issues (project_id, status)") }
+    let(:alternate) { unneeded.merge(name: "issues_project_kind", definition: "CREATE UNIQUE INDEX issues_project_kind ON issues (project_id, kind)", unique: true) }
+    let(:partial) { alternate.merge(name: "issues_active", definition: "CREATE UNIQUE INDEX issues_active ON issues (project_id, kind) WHERE active") }
+    let(:invalid) { alternate.merge(name: "issues_invalid", definition: "CREATE UNIQUE INDEX issues_invalid ON issues (project_id, kind)", valid: false) }
+    let(:catalog) { [ unneeded, chosen, alternate, partial, invalid ] }
+
+    before do
+      stub_overview_clean
+      allow(database).to receive_messages(
+        indexes: catalog + [ alternate.merge(schema: "other"), alternate.merge(table: "other") ],
+        duplicate_indexes: [ { unneeded_index: unneeded, covering_index: chosen } ])
+    end
+
+    # @spec RAILS-CONTROL-PLANE-040
+    it "retains all same-table alternatives without endorsing partial or invalid indexes" do
+      evidence = collect.call.findings.find { |entry| entry.type == :duplicate_index }.observed
+
+      expect(evidence.fetch(:table_indexes)).to match_array(catalog.map { |index| index.slice(:name, :definition, :valid, :unique) })
+      expect(evidence.fetch(:covering_index)).to eq(chosen.fetch(:name))
+      expect(database).to have_received(:indexes).once
+    end
+
+    # @spec RAILS-CONTROL-PLANE-040
+    it "keeps identity and fingerprint stable when catalog rows arrive in another order" do
+      first = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+      allow(database).to receive(:indexes).and_return(catalog.reverse)
+      second = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+
+      expect(second.identity).to eq("primary/duplicate_index/public/issues_project")
+      expect(second.fingerprint).to eq(first.fingerprint)
     end
   end
 end
