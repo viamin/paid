@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_212015) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2957,7 +2957,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["operation_type", "status", "failure_reason"], name: "index_knowledge_runs_on_failure_diagnostics"
     t.index ["project_id", "status", "completed_at"], name: "index_knowledge_runs_on_project_id_and_status"
-    t.index ["project_id"], name: "index_knowledge_runs_on_project_id"
     t.index ["proxy_token"], name: "index_knowledge_runs_on_proxy_token", unique: true
   end
 

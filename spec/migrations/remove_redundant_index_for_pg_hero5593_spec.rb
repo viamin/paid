@@ -1,0 +1,40 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require Rails.root.join("db/migrate/20261127212015_remove_redundant_index_for_pg_hero5593")
+
+RSpec.describe RemoveRedundantIndexForPgHero5593 do
+  self.use_transactional_tests = false
+
+  let(:connection) { ActiveRecord::Base.connection }
+  let(:migration) { described_class.new }
+  let(:removed_name) { "index_knowledge_runs_on_project_id" }
+  let(:covering_name) { "index_knowledge_runs_on_project_id_and_status" }
+
+  def indexes
+    connection.indexes(:knowledge_runs).to_h { |index| [ index.name, index ] }
+  end
+
+  def definition(index)
+    [ index.columns, index.unique, index.using, index.where, index.orders, index.opclasses, index.comment ]
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-022
+  it "removes only the redundant index and recreates its definition on rollback" do
+    # Schema-loaded test databases already reflect the migrated catalog, so
+    # roll back to the pre-migration catalog before capturing definitions.
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) } unless indexes.key?(removed_name)
+    original = definition(indexes.fetch(removed_name))
+    covering = definition(indexes.fetch(covering_name))
+    count = connection.select_value("SELECT COUNT(*) FROM knowledge_runs")
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:up) }
+    expect(indexes).not_to have_key(removed_name)
+    expect(definition(indexes.fetch(covering_name))).to eq(covering)
+    expect(connection.select_value("SELECT COUNT(*) FROM knowledge_runs")).to eq(count)
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) }
+    expect(definition(indexes.fetch(removed_name))).to eq(original)
+  ensure
+    # Leave the catalog migrated so later examples see the current schema.
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:up) } if indexes.key?(removed_name)
+  end
+end
