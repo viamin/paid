@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — PostgreSQL migrations removing a
+  redundant single-column foreign-key index SHALL retain a valid unique btree
+  composite index with that foreign key as its leftmost column, and rollback
+  SHALL restore the removed nonunique index.
+  *Tests:* `spec/migrations/remove_redundant_worktrees_project_id_index_spec.rb`.
+  *Code:* `RemoveRedundantWorktreesProjectIdIndex`.

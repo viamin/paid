@@ -124,6 +124,11 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Redundant PostgreSQL indexes are removed with reversible concurrent migrations
+only when a retained valid composite btree index provides the same leftmost
+column lookup coverage. The retained index keeps any required uniqueness
+constraint, and migration coverage verifies both forward removal and rollback.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
