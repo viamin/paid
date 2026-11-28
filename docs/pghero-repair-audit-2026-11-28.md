@@ -1556,3 +1556,44 @@ successful assessment for the exercised scope, not operating performance
 acceptance of the proposed watermark implementation. Private snapshot
 `post-watermark/snapshot.json` predates that import and must not be presented as
 a later terminal snapshot.
+
+## Service-container prefix handoff
+
+The 12:12:52 UTC snapshot (`post-remediation/snapshot.json`) has 248 findings,
+213 owned, 35 unowned, 179 repairs and 179 open scanner issues; all categories
+collected. It predates the following handoff and is not a closeout snapshot.
+Source #5878 was the remaining catalog prefix without known implementation.
+Its queued run 32304 was cancelled under lock only after checking no workflow,
+start timestamp, container or runner handle; active Paid runs were untouched.
+Source has waiting, and draft #5884 has `Fixes #5878` and paid-automation.
+
+Feature branch `fix/pghero-service-container-account-index`, worktree
+`/tmp/paid-pghero-service-container-account-index`, commit `e00b30594` removes only
+the account prefix while retaining full account/name uniqueness. Guards reject
+changed original uniqueness/keys/predicate and missing, partial, invalid,
+differently keyed, nonunique or non-btree coverers. Rollback restores the prefix.
+Rails generated the migration. Failing-first no-op replay had nine examples,
+eight failures; implementation plus ServiceContainer models passed 33 examples
+(seed 56451). The tests use real private-schema indexes, including a failed
+concurrent build for invalidity, and verify records, rollback, reapplication and
+per-account name uniqueness. Staged lint/hooks passed and coherence completed
+with existing advisory gaps. POSTGRESQL-PERSISTENCE-043 links the contract;
+simplicity review added no runtime abstraction.
+
+Independent isolated full-schema up/down replay passed at 12:17:29 UTC: exactly
+one target removed/restored, 13 seeded application rows and all other indexes,
+constraints, RLS, policies, triggers and functions preserved. Private
+`/tmp/paid-pghero-index-acceptance/service-container/manifest.json` matches the
+published migration hash and links #5884. The first attempt failed before up
+when a snapshot returned empty output; its failure receipt/log were retained.
+A direct retry returned a full snapshot, no replay process remained, and the
+subsequent replay passed. This is not a migration failure or permission to
+restart a live unobserved replay.
+
+Schema comparison caught the earlier remediation index removal still present
+in the shared private test database. Its private rollback restored that index
+before regenerating the service-container dump; no schema file was manually
+edited. The final dump contains the intended removal and generated trigger
+ordering only. No physical operating index changed. Normal ownership import,
+full CI, representative workload and operating disappearance remain unverified;
+Issue #5878 stays open for that acceptance.
