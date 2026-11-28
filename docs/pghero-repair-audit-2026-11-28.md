@@ -890,3 +890,17 @@ Normal retry `694b52d3-9a89-42fb-bf8b-988015b28c3f` was enqueued at 09:04:00 UTC
 after the prior job was confirmed terminal. Its receipt is private
 `query-evidence-retry-validation-receipt.json`; assessment success and post-change
 alias stability still require verification.
+
+Retry `694b52d3-9a89-42fb-bf8b-988015b28c3f` finished at 09:05:52 UTC with another
+incomplete assessment: 248 findings, zero creates/updates/reopens/closures,
+43 deferred, zero assessed, all categories collected and
+`AgentHarness::TimeoutError`. Again no detailed assessment began. Correlated
+logs show managed Codex credential-1 lease waits of 72.16 seconds, 4.96 seconds
+and zero remaining time. This supports an execution-capacity/lease-wait
+investigation; it does not establish a permanent lock or justify interrupting
+active Paid runs. No further blind retry was queued. The collector's persisted
+evidence is verified, but successful assessment on revision 74b96fc remains
+unverified. Private `query-evidence-retry-validation-result.log` preserves the
+failure. Continue independent repair work and investigate bounded routing/lease
+budgets through the existing Llm::Request and harness interfaces rather than
+loosening evidence checks or adding provider-specific wrappers.
