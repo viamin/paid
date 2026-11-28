@@ -132,3 +132,9 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Project convention detections retain `(project_id, key)` lookup coverage and
+unique `(project_version_id, key, detector_key)` enforcement. A corrective
+migration removes the redundant project and version prefix indexes concurrently,
+with concurrent recreation on rollback. Detection rows, foreign keys and tenant
+policies remain intact.

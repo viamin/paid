@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_051941) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3792,9 +3792,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.jsonb "value", default: {}, null: false, comment: "Normalized detected convention payload."
     t.index ["project_id", "key"], name: "index_project_convention_detections_on_project_id_and_key"
-    t.index ["project_id"], name: "index_project_convention_detections_on_project_id"
     t.index ["project_version_id", "key", "detector_key"], name: "idx_project_convention_detections_unique_detector", unique: true
-    t.index ["project_version_id"], name: "index_project_convention_detections_on_project_version_id"
   end
 
   create_table "project_convention_overrides", comment: "Explicit per-project overrides for detected repository conventions.", force: :cascade do |t|
