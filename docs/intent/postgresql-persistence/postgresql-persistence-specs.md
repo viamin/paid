@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-021** — Removing redundant strategy prefix
+  indexes SHALL preserve decision-type and strategy-version lookup coverage,
+  version uniqueness, single-active-version uniqueness, rows and tenant policies.
+  Removal and rollback SHALL use concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_strategy_indexes_spec.rb`.
+  *Code:* `RemoveRedundantStrategyIndexes`.
