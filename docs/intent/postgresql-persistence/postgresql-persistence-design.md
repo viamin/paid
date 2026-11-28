@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+When a valid composite btree index has the same leading columns as a redundant
+nonunique index, a concurrent corrective migration removes only the redundant
+index and restores it concurrently on rollback. The retained index continues
+to provide the leading-column lookup path while preserving its uniqueness
+constraint.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

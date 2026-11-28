@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid unique composite btree
+  index covers a redundant nonunique leading-column index, a migration SHALL
+  remove only the redundant index concurrently, retain the composite index, and
+  restore the removed index concurrently on rollback.
+  *Tests:* `spec/migrations/remove_redundant_provider_api_keys_user_id_index_spec.rb`.
+  *Code:* `RemoveRedundantProviderApiKeysUserIdIndex`.
