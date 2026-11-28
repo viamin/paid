@@ -1372,3 +1372,43 @@ container cleanup, but retained file-change records contain paths rather than
 patch bodies and command output is truncated. Private recovery log evidence is
 retained in `recovery-full-logs-32268.json`. Do not claim that implementation was
 published or its full source recovered.
+
+## Verified credential ownership and refreshed repair inventory
+
+Normal job `d1a6414a-da50-46ea-96c4-b9191c054b8a` ran 11:52:46–11:54:20 UTC:
+244 findings, two assessed, one create, three updates, zero reopens/closures,
+33 deferred, nil planning error and all categories collected. Both credential
+prefixes now belong to repair 1162 / canonical #5870 / PR #5872; original
+instructions and rationales from both sources remain verbatim. A fresh active-run
+guard found neither source executing. Alias #5871 was closed with canonical links
+and its original body preserved. Canonical #5870 remains open for physical
+acceptance. New #5878 covers the previously unowned service-container account
+prefix; its target was absent from the complete prior implementation inventory.
+Private `credential-handoff-{receipt,ownership}.json` records publication/import.
+The preceding small routing probe timed out, demonstrating why a small probe alone
+cannot establish the outcome of a normal scan.
+
+The 11:55:27 UTC immutable audit (`pr-all-credential/`) covers 197 open trusted PRs,
+165 index-removal PRs and 197 distinct targets, with no repeated removals or
+removals of current observed coverers. The 11:52:13 UTC snapshot has 246 findings,
+210 owned, 36 unowned and 178 open scanner issues; it predates the successful scan
+and alias closure above. Its explicit ledger accounts for every finding, with
+193 matching the exact immutable heads exercised by combined isolated acceptance.
+Changed/new heads are not credited with that earlier replay. Three remaining
+catalog sources have recorded commits but no PR: #5790 (timeout, ce44e362f), #5822 (timeout, 9163e9474), #5863 (waiting_recovery, 67601f055). Each lacks a live
+container/handle and needs artifact recovery before replacement work.
+
+Two deferred model-selection queries (`-5925980023722500190` and
+`-5891326464486699645`) trace to `PartialCloseoutProjectionInputWatermark`:
+`merge_signatures` separately executes count and maximum over the same joined
+scope. No current audited PR changes that file. A SELECT-only tenant-scoped
+operating EXPLAIN ANALYZE sample measured count 17.099 ms, maximum 12.173 ms,
+and combined aggregation 12.137 ms. This identifies a shared repair candidate,
+not representative improvement acceptance: sequential warm-cache bias, empty-group
+semantics, tenant isolation and implementation remain to verify. Private
+`watermark-query-evidence.json` and `watermark-shared-repair-disposition.json`
+retain plans and the explicit remaining evidence.
+
+Repeat normal job `1ff79061-1571-4f9a-abba-46818d5f8d00` started 11:55:08 UTC;
+its assessment selected eight findings and one work item in 7,645 bytes. Terminal
+assessment, closed-alias stability and repeat publication remain unverified.
