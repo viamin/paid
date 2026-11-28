@@ -1445,3 +1445,39 @@ need integration cleanup; #5880 has mock-only permanent specs, while #5879's
 coverer guard needs invalid/partial-index review. These are explicit remaining
 review requirements, not proof that each PR is ready to merge. Normal ownership
 import remains to verify. No physical operating migration was run.
+
+## Unused-index retention dependencies and recovery-import observation
+
+Read-only catalog evidence at 12:01 UTC enriched all 17 current unused-index
+observations. Four are observed coverers for five separate prefix findings:
+
+| Retained unused index | Prefix findings it covers |
+| --- | --- |
+| `idx_knowledge_artifacts_on_project_type_scope_id_ctype_status` | `index_knowledge_artifacts_on_project_id` |
+| `idx_knowledge_audit_events_on_project_created_at_id` | `index_knowledge_audit_events_on_project_id` |
+| `idx_knowledge_chunks_project_status_artifact_sequence` | `index_knowledge_chunks_on_project_id`, `index_knowledge_chunks_on_project_id_and_status` |
+| `index_service_container_metrics_on_container_and_recorded` | `index_service_container_metrics_on_service_container_id` |
+
+The explicit ledger retains these indexes while prefix-removal repairs depend
+on them. Removal would first require an alternative path and updates to all
+related acceptance requirements, plus representative usage evidence. Neither
+same-table grouping nor zero scans establishes a safe combined repair. Catalog
+facts, definitions and constraint dependencies are in private
+`unused-catalog-evidence.json`; per-finding requirements are in
+`post-credential/finding-dispositions.json`.
+
+At 12:00:33 UTC `track_counts` was enabled, 280 of 1,408 indexes had nonzero scans,
+and aggregate scans were 429,465,690. The database `stats_reset` was null, so the
+start of a representative observation window is unproven. These facts rule out
+all statistics simply being disabled; they do not establish workload coverage or
+justify any of the zero-scan removals. Private `unused-window-evidence.json`
+retains the sample. No statistics were reset and no operating index was changed.
+
+Normal recovery-import job `2d387806-4ac2-45fc-a143-bc3e8dc200c4` was enqueued
+11:59:41 UTC. At 12:01 UTC it remained queued behind an executing
+`PartialCloseoutAcceptanceAuditSweepJob` in the single-thread maintenance queue.
+The worker had fresh heartbeats and advancing execution counters; no restart or
+duplicate enqueue was attempted. Ownership reads before execution still had null
+PR references for #5790 and #5822, so import remains unverified. PR #5605's body
+now records the two earlier successful terminal scans instead of calling them
+queued; broad semantic correctness and physical operating acceptance remain open.
