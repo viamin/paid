@@ -23,8 +23,11 @@ RSpec.describe SystemWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-021
-  it "does not group system-test runs into a cancellation-prone concurrency queue" do
-    expect(workflow).not_to have_key("concurrency")
+  it "supersedes system-test runs per PR without cancelling in-progress main runs" do
+    expect(workflow.fetch("concurrency")).to eq(
+      "group" => "system-tests-${{ github.workflow }}-${{ github.ref }}",
+      "cancel-in-progress" => "${{ github.event_name == 'pull_request' }}"
+    )
   end
 
   # @spec TEST-SUITE-022

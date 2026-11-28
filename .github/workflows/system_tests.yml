@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# @spec TEST-SUITE-021
+concurrency:
+  group: system-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # @spec TEST-SUITE-021
   system:

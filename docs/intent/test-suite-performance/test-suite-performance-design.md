@@ -136,11 +136,12 @@ hosted service time to settle. Any other failure exits immediately, and
 exhaustion of the bounded attempts still fails the job. The recovery does not
 skip examples or reinterpret assertion failures.
 
-System-test workflow runs do not use GitHub Actions workflow concurrency. GitHub
-keeps at most one pending run in a concurrency group and cancels a superseded
-pending run even when cancellation of in-progress work is disabled. Leaving
-these required runs ungrouped ensures each pull-request check can reach a
-terminal result rather than being cancelled while queued.
+System-test workflow concurrency is scoped by workflow and pull-request ref.
+A newer run for the same pull request cancels its queued or in-progress predecessor,
+so obsolete revisions do not consume browser-runner capacity. Different pull
+requests remain independent. Pushes to main use their own ref group and do not
+cancel in-progress work. A cancelled run supplies no passing evidence; the latest
+pull-request run must complete successfully for the current revision.
 
 Allow the system-test job GitHub's six-hour maximum at the job boundary.
 Dependency setup is separately bounded, while the browser suite can exceed the
