@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When the PostgreSQL catalog confirms
+  that a composite B-tree index has the redundant single-column index's column
+  as its leading key, a reversible concurrent migration SHALL remove only the
+  redundant index and SHALL restore it during rollback.
+  *Tests:* `spec/migrations/remove_redundant_project_delegation_intent_checkpoint_index_spec.rb`.
+  *Code:* `RemoveRedundantProjectDelegationIntentCheckpointIndex`.
