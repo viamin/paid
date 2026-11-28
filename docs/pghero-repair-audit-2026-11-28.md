@@ -1092,7 +1092,48 @@ Simplicity/prose review found no additional abstraction necessary.
 
 Physical migration, representative workload measurements and full repository CI
 remain unrun in the operating environment. Normal job
-`47290059-6bd7-4a98-a075-ecce577adef6` was enqueued at 10:11:51 UTC to verify
-ownership import and source-requirement retention. Its outcome remains pending;
-no superseded source has been closed yet. Private
-`run-resource-validation-manifest.json` records revision, hashes and actual tests.
+`47290059-6bd7-4a98-a075-ecce577adef6` ran from 10:13:50 to 10:15:35 UTC on
+scanner code `907314f27`: 248 findings, three assessed, two created, two updated,
+zero reopens/closures, 39 deferred, no planning error and all categories collected.
+It reassessed two older 04:14:58 UTC deferrals and one never-assessed aggregate
+query. The two new issues #5870/#5871 cover different runner_credentials prefixes
+and retain different covering indexes; no existing removal target overlapped.
+The aggregate query received specific plan/schema/representative-evidence needs.
+This is successful normal assessment evidence, not merely a zero-create count.
+
+Both run-resource members now share repair 1156 / canonical #5855 / PR #5869,
+with both sources' instructions and rationale verified retained. No source or PR
+run was active at the closeout guard. Alias #5867 was closed as superseded;
+physical acceptance remains under #5855. All 25 prior aliases were fetched closed
+after this successful scan. Private `run-resource-{ownership.json,assessment-progress.json,alias-verification.json,validation-result.log}`
+and `run-resource-validation-manifest.json` record exact evidence. The refreshed
+10:17:37 UTC snapshot has 248 findings, 209 owned, 39 unowned and 177 open scanner
+issues. Follow-up normal job `58d58073-b120-4a26-9232-ec3860b860a0` is queued
+specifically to verify that newest alias after closure; its outcome remains pending.
+
+## Constraint repair review and new Paid PR acceptance gap
+
+Current immutable migrations in PRs #5617, #5618, #5619, #5620, #5621 and
+PR #5622 validate six different foreign keys; PR #5624 validates the delegation
+posture level check. Read-only catalog evidence at 10:15:47 UTC matches each
+foreign key's exact child column and parent table and confirms all seven remain
+NOT VALID. Bounded read-only orphan-existence probes found no current orphan for
+any of the six foreign keys. No constraint validation or application write was
+executed. These distinct constraints are not proven duplicate work; independent
+migration tests, check-constraint row validation and operating migration acceptance
+remain required. Private `constraint-repair-current-evidence.json` preserves
+catalog definitions and probe results without row identifiers.
+
+A grouping pass over current duplicate-index evidence found no remaining cases
+where different PRs remove prefixes covered by the same retained index. This
+narrow result does not prove every broader query repair is distinct.
+
+New Paid PR #5868, head `fb5efcca55cc30b7aed31bd196e601426a5a73ca`, implements
+source #5852's provider-key prefix removal and was read from a complete immutable
+comparison. It retains the unique user/name coverer, but its permanent spec mocks
+all DDL with no database; the reported catalog evidence is run-local and not
+independently verified. Its POSTGRESQL-PERSISTENCE-014 also collides with existing
+constraint PR #5617's different claim. Independent real-DDL/lookup/uniqueness
+coverage and a distinct intent ID are concrete remaining review work. No duplicate
+replacement PR was created and no untrusted PR code was executed. Private
+`provider-key-pr-current-diff.json` records all five changed files and exact refs.
