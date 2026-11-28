@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+When a PostgreSQL catalog confirms that a single-column index is covered by a
+non-partial composite index with the same leading column, a reviewed reversible
+concurrent migration may remove the redundant index. The rollback recreates the
+single-column index concurrently, preserving recovery without extending table
+locks.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_080515) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3861,7 +3861,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "settled_by_id", null: false
     t.datetime "updated_at", null: false
     t.index ["intent_checkpoint_id", "created_at"], name: "idx_pd_intent_settlements_checkpoint_created"
-    t.index ["intent_checkpoint_id"], name: "idx_on_intent_checkpoint_id_afe16ad6d6"
     t.index ["settled_by_id"], name: "index_project_delegation_intent_settlements_on_settled_by_id"
   end
 

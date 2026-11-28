@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When the PostgreSQL catalog confirms a
+  single-column index is covered by a non-partial composite index with the same
+  leading column, the reviewed migration SHALL remove only that redundant index
+  concurrently and SHALL recreate it concurrently on rollback.
+  *Tests:* `spec/migrations/remove_duplicate_intent_checkpoint_settlement_index_spec.rb`.
+  *Code:* `RemoveDuplicateIntentCheckpointSettlementIndex`.
