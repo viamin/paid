@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a reviewed PostgreSQL catalog
+  confirms that a valid non-partial index is covered by the leading columns of
+  another valid non-partial index, the redundant index SHALL be removed with
+  concurrent DDL and rollback SHALL restore it concurrently.
+  *Tests:* `spec/migrations/remove_redundant_project_convention_recommendations_project_index_dbless_spec.rb`.
+  *Code:* `RemoveRedundantProjectConventionRecommendationsProjectIndex`.

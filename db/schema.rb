@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_074249) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3831,7 +3831,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["dismissed_by_id"], name: "index_project_convention_recommendations_on_dismissed_by_id"
     t.index ["project_id", "convention_key", "action_type"], name: "index_convention_recs_on_project_key_action", unique: true, where: "((status)::text = 'pending'::text)"
     t.index ["project_id", "status"], name: "index_convention_recs_on_project_status"
-    t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
   create_table "project_delegation_intent_checkpoints", comment: "Grouped material intent questions and their immutable settlement binding.", force: :cascade do |t|
