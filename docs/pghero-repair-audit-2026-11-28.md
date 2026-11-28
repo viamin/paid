@@ -1517,3 +1517,42 @@ assessment, not deduplication success. Its ownership import nevertheless
 succeeded: #5790 maps to repair 1117 / PR #5879 and #5822 to repair 1138 / PR #5880,
 with neither source active. Private `recovery-publication-ownership.json` records
 those separate facts. The worker was left running; no duplicate job was enqueued.
+
+## Reconstructed remediation-prefix repair and watermark import
+
+Draft paid-automation PR #5883 implements #5863 at `638731223` on branch
+`fix/pghero-remediation-account-index`, worktree
+`/tmp/paid-pghero-remediation-account-index`. It drops only the nonunique account
+prefix, preserving the full budget coverer and all other indexes; rollback
+restores the prefix. Catalog guards reject changed uniqueness/keys/predicates
+or a missing, partial, invalid, differently keyed or non-btree coverer. Source
+has the waiting label and remains open. The earlier result commit was unavailable
+and its remote branch remained at base; a fresh PR search and active-run guard
+found no competing implementation/execution before publication. Its old
+waiting_recovery record was not cancelled or marked successful.
+
+Rails generated the migration; a guarded private test preparation applied its
+initial no-op before the failing-first suite (five examples, five failures).
+Implementation and real missing/partial/invalid/wrong-key coverer regressions,
+plus model tests, passed nine examples (seed 55339). The invalid-index fixture
+uses a failed concurrent unique build, rather than mocking index validity.
+Private full-schema up/down replay passed at 12:10:48 UTC: exactly one intended
+removal and restoration; all 13 application fixture rows, other indexes,
+constraints, RLS, policies, triggers and functions preserved. Source SHA-256 in
+`/tmp/paid-pghero-index-acceptance/remediation/manifest.json` matches the published
+commit; its published_pr field links #5883 to the pre-publication replay.
+Schema regeneration used the private test database. Staged lint and hooks passed;
+coherence completed with existing advisory gaps. POSTGRESQL-PERSISTENCE-042
+captures the repair. Simplicity review retained direct migration guards without
+a new runtime abstraction. CI, representative workload and physical operating
+migration/disappearance remain unverified.
+
+Normal watermark-import job `dee8e256-7686-4c50-b870-c59217d1da52` ran from
+12:07:41 to 12:09:15 UTC: 246 findings, two assessed, zero creates/updates/reopens/
+closures, 33 deferred, nil planning error and all categories collected. Both
+watermark-query findings now share repair 1166 / #5881 / PR #5882. A native read
+verified the shared ownership after terminal completion. This proves import and
+successful assessment for the exercised scope, not operating performance
+acceptance of the proposed watermark implementation. Private snapshot
+`post-watermark/snapshot.json` predates that import and must not be presented as
+a later terminal snapshot.
