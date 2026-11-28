@@ -19,6 +19,21 @@ RSpec.describe RemoveRedundantIndexForPgHero5610 do
     [ index.columns, index.unique, index.using, index.where, index.orders, index.opclasses, index.comment ]
   end
 
+  before do
+    ActiveRecord::Migration.suppress_messages do
+      connection.add_index :marketplace_entry_rules, :marketplace_entry_id,
+        name: removed_name, algorithm: :concurrently
+    end
+  end
+
+  after do
+    ActiveRecord::Migration.suppress_messages do
+      if indexes.key?(removed_name)
+        connection.remove_index :marketplace_entry_rules, name: removed_name, algorithm: :concurrently
+      end
+    end
+  end
+
   # @spec POSTGRESQL-PERSISTENCE-022
   it "removes only the redundant index and recreates its definition on rollback" do
     original = definition(indexes.fetch(removed_name))
