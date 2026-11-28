@@ -381,9 +381,10 @@ failures when no tmux socket responds.
 
 - [x] **RAILS-CONTROL-PLANE-036** — Successful detailed assessments SHALL persist
   their timestamp, observation fingerprint, disposition and reason. Bounded
-  selection SHALL include the least recently assessed pending observation,
-  prioritizing never-assessed observations, while permitting AI-selected related
-  findings. Unselected findings, failed assessments and previews SHALL NOT be
+  selection SHALL include a never-assessed observation when one exists and the
+  least recently assessed pending observation when one exists, while permitting
+  AI-selected related findings. Incoming observations SHALL NOT indefinitely
+  postpone reassessment of older deferrals. Unselected findings, failed assessments and previews SHALL NOT be
   recorded as completed detailed assessments.
   *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`,
   `spec/services/development/pg_hero_overview/issue_filer_sync_spec.rb`.

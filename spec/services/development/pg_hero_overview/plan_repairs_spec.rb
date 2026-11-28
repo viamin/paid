@@ -23,6 +23,21 @@ RSpec.describe Development::PgHeroOverview::PlanRepairs do
       persistence_required: false)
   end
 
+  def stub_required_deferrals(reassessed)
+    allow(Llm::Request).to receive(:call) do |**arguments|
+      input = JSON.parse(arguments.fetch(:prompt).split("BEGIN UNTRUSTED JSON EVIDENCE\n", 2).last.split("\nEND UNTRUSTED JSON EVIDENCE", 2).first)
+      response = if arguments.fetch(:timeout) == 90
+        reassessed << input["required_reassessment"]
+        { "finding_keys" => [ input.fetch("required_finding"), input["required_reassessment"] ].compact,
+          "work_numbers" => [], "reason" => "Other findings remain pending" }
+      else
+        { "repairs" => [], "deferred" => [ { "finding_keys" => input.fetch("findings").map { |f| f.fetch("identity") },
+          "reason" => "Need representative query measurements" } ] }
+      end
+      Struct.new(:output).new(JSON.generate(response))
+    end
+  end
+
   before do
     allow(Llm::Request).to receive(:call) { Struct.new(:output).new(JSON.generate(payload)) }
   end
@@ -189,5 +204,39 @@ RSpec.describe Development::PgHeroOverview::PlanRepairs do
       { "finding_keys" => [ first.identity ], "work_numbers" => [], "reason" => "Same scope again" })))
 
     expect { planner.call }.to raise_error(described_class::InvalidAssessment)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "rejects a new-only selection that starves an older deferred finding" do
+    work_items.concat((1..100).map { |number| { "number" => number, "kind" => "issue", "title" => "Repair", "body" => "x" * 3_000 } })
+    planner = described_class.new(project: project, findings: findings, work_items: work_items, existing_repairs: [],
+      assessments: { first.identity => { "assessed_at" => 1.day.ago.utc.iso8601 } })
+    proposal["finding_keys"] = [ second.identity ]
+    allow(Llm::Request).to receive(:call) do |**arguments|
+      response = arguments.fetch(:timeout) == 90 ?
+        { "finding_keys" => [ second.identity ], "work_numbers" => [], "reason" => "New findings first" } : payload
+      Struct.new(:output).new(JSON.generate(response))
+    end
+
+    expect { planner.call }.to raise_error(described_class::InvalidAssessment)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "rotates older deferrals while new findings arrive on every scan" do
+    work_items.concat((1..100).map { |number| { "number" => number, "kind" => "issue", "title" => "Repair", "body" => "x" * 3_000 } })
+    assessments = { first.identity => { "assessed_at" => 2.days.ago.utc.iso8601 },
+      second.identity => { "assessed_at" => 1.day.ago.utc.iso8601 } }
+    reassessed = []
+    stub_required_deferrals(reassessed)
+
+    2.times do |number|
+      incoming = finding("suggested_index/incoming_#{number}", {})
+      result = described_class.new(project: project, findings: findings + [ incoming ], work_items: work_items,
+        existing_repairs: [], assessments: assessments).call
+      result.fetch("assessed_finding_keys").each { |key| assessments[key] = { "assessed_at" => Time.current.utc.iso8601 } }
+      expect(result.fetch("assessed_finding_keys")).to include(incoming.identity)
+    end
+
+    expect(reassessed).to eq([ first.identity, second.identity ])
   end
 end

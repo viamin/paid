@@ -289,10 +289,11 @@ incomplete coverage; it never falls back to one issue per finding.
 
 Successful detailed assessments persist their time, evidence fingerprint and
 reason on each assessed observation. A selection-only deferral is pending work,
-not a completed assessment. Bounded selection must include the least recently
-assessed pending observation, with never-assessed observations first, while AI
-may add related findings and plausible owners from the complete indexes. This
-rotates the assessment frontier without grouping findings by naming rules.
+not a completed assessment. Bounded selection includes a never-assessed
+observation and the least recently assessed pending observation when each exists.
+This reserves progress for older deferrals even while new observations arrive.
+AI may add related findings and plausible owners from the complete indexes;
+selection does not group findings by naming rules.
 Failures and previews do not advance assessment history.
 
 Publication requires an explicit affirmative readiness decision with supporting

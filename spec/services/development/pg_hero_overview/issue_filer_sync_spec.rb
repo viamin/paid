@@ -327,7 +327,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler, "#sync" do
       response = if arguments.fetch(:timeout) == 90
         seed = input.fetch("required_finding")
         seeds << seed
-        { "finding_keys" => [ seed ], "work_numbers" => [], "reason" => "Assess remaining scope next" }
+        { "finding_keys" => [ seed, input["required_reassessment"] ].compact.uniq, "work_numbers" => [], "reason" => "Assess remaining scope next" }
       else
         { "repairs" => [], "deferred" => [ { "finding_keys" => input.fetch("findings").map { |finding| finding.fetch("identity") },
           "reason" => "Representative query plans are needed" } ] }
@@ -339,7 +339,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler, "#sync" do
     second_result = sync
 
     expect(first_result.assessed_keys).to eq([ first.identity ])
-    expect(second_result.assessed_keys).to eq([ second.identity ])
+    expect(second_result.assessed_keys).to contain_exactly(first.identity, second.identity)
     expect(seeds).to eq([ first.identity, second.identity ])
     expect(client).not_to have_received(:create_issue)
   end
