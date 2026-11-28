@@ -124,6 +124,10 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+The convention index repair also removes override and recommendation project
+prefixes. Retained compound indexes preserve override identity, pending-only
+recommendation uniqueness and project/status lookup coverage.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

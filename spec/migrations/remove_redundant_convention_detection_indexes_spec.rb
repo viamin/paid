@@ -22,6 +22,7 @@ RSpec.describe RemoveRedundantConventionDetectionIndexes do
     begin
       connection.schema_search_path = schema
       prepare_detection_table
+      prepare_override_and_recommendation_tables
       example.run
     ensure
       connection.schema_search_path = previous_path
@@ -71,6 +72,83 @@ RSpec.describe RemoveRedundantConventionDetectionIndexes do
     expect do
       connection.execute("INSERT INTO project_convention_detections (project_version_id, project_id, key, detector_key) VALUES (1, 2, 'language', 'detector')")
     end.to raise_error(ActiveRecord::RecordNotUnique)
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "removes override and recommendation prefixes while preserving other definitions and rows" do
+    before_indexes = related_indexes
+    before_rows = related_rows
+    2.times { migration.up }
+
+    expect(related_indexes).to eq(before_indexes.transform_values do |definitions|
+      definitions.except("index_project_convention_overrides_on_project_id", "index_project_convention_recommendations_on_project_id")
+    end)
+    expect(related_rows).to eq(before_rows)
+    2.times { migration.down }
+    expect(related_indexes).to eq(before_indexes)
+    expect(related_rows).to eq(before_rows)
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "preserves override identity and pending recommendation uniqueness" do
+    migration.up
+
+    expect do
+      connection.execute("INSERT INTO project_convention_overrides (project_id, key) VALUES (1, 'language')")
+    end.to raise_error(ActiveRecord::RecordNotUnique)
+    duplicate = "INSERT INTO project_convention_recommendations (project_id, convention_key, action_type, status) VALUES (1, 'language', 'open_pr', 'pending')"
+    expect { connection.execute(duplicate) }.to raise_error(ActiveRecord::RecordNotUnique)
+    expect { connection.execute(duplicate.sub("'pending'", "'dismissed'")) }.not_to raise_error
+    expect { connection.execute(duplicate.sub("VALUES (1,", "VALUES (2,")) }.not_to raise_error
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-018
+  it "retains override and recommendation lookup paths" do
+    migration.up
+    queries = {
+      "project_convention_overrides WHERE project_id = 1 AND key = 'language'" => "index_project_convention_overrides_on_project_id_and_key",
+      "project_convention_recommendations WHERE project_id = 1 AND status = 'dismissed'" => "index_convention_recs_on_project_status"
+    }
+    queries.each do |query, index|
+      plan = connection.transaction do
+        connection.execute("SET LOCAL enable_seqscan = off")
+        connection.select_value("EXPLAIN (FORMAT JSON) SELECT * FROM #{query}")
+      end
+      expect(plan).to include(index)
+    end
+  end
+
+  def related_indexes
+    %i[project_convention_overrides project_convention_recommendations].to_h do |table|
+      [ table, connection.indexes(table).to_h { |index| [ index.name, [ index.columns, index.unique, index.where ] ] } ]
+    end
+  end
+
+  def related_rows
+    %i[project_convention_overrides project_convention_recommendations].to_h do |table|
+      [ table, connection.select_all("SELECT * FROM #{table} ORDER BY id").to_a ]
+    end
+  end
+
+  def prepare_override_and_recommendation_tables
+    connection.create_table(:project_convention_overrides) do |t|
+      t.bigint :project_id
+      t.string :key
+    end
+    connection.add_index :project_convention_overrides, :project_id
+    connection.add_index :project_convention_overrides, %i[project_id key], unique: true
+    connection.create_table(:project_convention_recommendations) do |t|
+      %i[project_id applied_by_id dismissed_by_id].each { |column| t.bigint column }
+      %i[convention_key action_type status].each { |column| t.string column }
+    end
+    %i[project_id applied_by_id dismissed_by_id].each do |column|
+      connection.add_index :project_convention_recommendations, column
+    end
+    connection.add_index :project_convention_recommendations, %i[project_id status], name: "index_convention_recs_on_project_status"
+    connection.add_index :project_convention_recommendations, %i[project_id convention_key action_type],
+      unique: true, where: "status = 'pending'", name: "index_convention_recs_on_project_key_action"
+    connection.execute("INSERT INTO project_convention_overrides (project_id, key) VALUES (1, 'language')")
+    connection.execute("INSERT INTO project_convention_recommendations (project_id, convention_key, action_type, status) VALUES (1, 'language', 'open_pr', 'pending')")
   end
 
   def indexes

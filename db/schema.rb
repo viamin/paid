@@ -3806,7 +3806,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_28_051941) do
     t.datetime "updated_at", null: false
     t.jsonb "value", default: {}, null: false, comment: "Explicit project-scoped convention override payload."
     t.index ["project_id", "key"], name: "index_project_convention_overrides_on_project_id_and_key", unique: true
-    t.index ["project_id"], name: "index_project_convention_overrides_on_project_id"
   end
 
   create_table "project_convention_recommendations", comment: "Actionable convention-based recommendations for a project, with dismissal and audit tracking.", force: :cascade do |t|
@@ -3829,7 +3828,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_28_051941) do
     t.index ["dismissed_by_id"], name: "index_project_convention_recommendations_on_dismissed_by_id"
     t.index ["project_id", "convention_key", "action_type"], name: "index_convention_recs_on_project_key_action", unique: true, where: "((status)::text = 'pending'::text)"
     t.index ["project_id", "status"], name: "index_convention_recs_on_project_status"
-    t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
   create_table "project_delegation_intent_checkpoints", comment: "Grouped material intent questions and their immutable settlement binding.", force: :cascade do |t|

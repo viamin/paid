@@ -129,9 +129,10 @@
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
 
-- [x] **POSTGRESQL-PERSISTENCE-018** — Removing redundant convention-detection
-  prefix indexes SHALL preserve project/key lookup coverage, unique
-  version/key/detector enforcement and detection rows. Removal and rollback
+- [x] **POSTGRESQL-PERSISTENCE-018** — Removing redundant convention detection,
+  override and recommendation prefix indexes SHALL preserve project/key lookup
+  coverage, version/key/detector and override uniqueness, pending-recommendation
+  uniqueness, all other indexes and rows. Removal and rollback
   SHALL use concurrent index operations without changing tenant policies or
   foreign keys.
   *Tests:* `spec/migrations/remove_redundant_convention_detection_indexes_spec.rb`.
