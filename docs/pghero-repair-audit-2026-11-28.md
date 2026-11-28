@@ -1341,3 +1341,34 @@ waiting_recovery with commit `67601f05584e3ff47622e2672127a27edb2c3658` and no
 recorded PR. A GitHub search by its exact branch returned no PR. Its existing
 commit still needs inspection and recovery rather than duplicate implementation.
 These observations supersede the earlier recovery snapshot above.
+
+## Credential prefixes consolidated after Paid completion
+
+Sources #5871 and #5870 completed as PRs #5872 and #5877.
+PR #5877 was closed as superseded after a fresh active-run guard found neither
+source nor PR executing; its original description was preserved beneath the
+canonical repair link. Their actual patches
+removed different prefixes of the same retained full unique credential index.
+PR #5872 now contains both removals at `abe10df2c`, with `Fixes` references to both
+sources and paid-automation handoff. Both sources have the waiting label and
+remain open. The account/revocation lookup index is retained alongside full
+account/runner/name uniqueness. Ownership import and alias closure still require
+normal scanner verification before closing either source.
+
+The combined regression failed on the original migration (three examples, two
+failures), then the migration and RunnerCredential suite passed all 24 examples
+(seed 16686). Private schema fixtures verify both removals, exact rollback,
+reapplication, record preservation and uniqueness. Schema regeneration used only
+the private test database. Commit hooks passed; full Ruby lint passed all 4,983
+files and JavaScript lint passed. Full Markdown lint followed the temporary
+node_modules symlink into dependency READMEs and failed; the symlink was removed.
+Coherence exited successfully with existing advisory gaps. Full CI, workload
+performance and physical operating acceptance remain unverified.
+
+For #5863, GitHub's exact branch resolves to the base revision and cannot serve
+recorded commit `67601f05584e3ff47622e2672127a27edb2c3658`. No local workspace
+volume remains. Stored agent logs confirm a commit was created before successful
+container cleanup, but retained file-change records contain paths rather than
+patch bodies and command output is truncated. Private recovery log evidence is
+retained in `recovery-full-logs-32268.json`. Do not claim that implementation was
+published or its full source recovered.
