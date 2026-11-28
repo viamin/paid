@@ -21,6 +21,7 @@ RSpec.describe RemoveRedundantIndexForPgHero5667 do
 
   # @spec POSTGRESQL-PERSISTENCE-022
   it "removes only the redundant index and recreates its definition on rollback" do
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) }
     original = definition(indexes.fetch(removed_name))
     covering = definition(indexes.fetch(covering_name))
     count = connection.select_value("SELECT COUNT(*) FROM notification_rule_states")
@@ -31,6 +32,6 @@ RSpec.describe RemoveRedundantIndexForPgHero5667 do
     ActiveRecord::Migration.suppress_messages { migration.migrate(:down) }
     expect(definition(indexes.fetch(removed_name))).to eq(original)
   ensure
-    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) } unless indexes.key?(removed_name)
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:up) } if indexes.key?(removed_name)
   end
 end
