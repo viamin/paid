@@ -562,6 +562,25 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         }.not_to have_enqueued_job(RetryFailedManualRunJob)
       end
 
+      it "refuses replacement when publication retained an unpublished local commit" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          result_commit_sha: nil, unpublished_result_commit_sha: "a" * 40, iterations: 0, runners_attempted: [])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Publication lease rejected")
+        }.not_to change(AgentRun, :count)
+        expect(ActiveJob::Base.queue_adapter.enqueued_jobs.none? { |job| job[:job] == RetryFailedManualRunJob }).to be(true)
+
+        expect(agent_run.reload).to have_attributes(
+          status: "failed",
+          error_message: "Publication lease rejected",
+          result_commit_sha: nil,
+          unpublished_result_commit_sha: "a" * 40
+        )
+        expect(agent_run.manual_retry_attempt).to eq(0)
+        expect(OrchestrationDecision.last.outputs["reason"]).to eq("implementation_work_produced")
+      end
+
       it "does not schedule a retry when the run already performed iterations" do
         agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
           iterations: 3)
