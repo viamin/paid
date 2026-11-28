@@ -968,3 +968,49 @@ alias still needs a later normal scan. The independent #5860 repair remains
 unimplemented. Private `quality-events-ownership.json` and
 `quality-events-validation-result.log` preserve ownership and timeout evidence.
 No further blind retry was queued.
+
+## Quality-metric handoff and scanner lock correction
+
+The later all-open-PR audit at 09:33:53 UTC inspected 190 trusted open PRs,
+including work without PgHero titles or closing references. Complete immutable
+base/head comparisons found 158 PRs with index removals, 187 distinct targets,
+no repeated removal targets and no observed covering-index removals. This is an
+explicit index-removal audit, not a semantic review of every unrelated change;
+it predates PR #5866. Private `pr-all-0930/` preserves the evidence.
+
+Draft PR #5866 at `ac4916b1ac3bfb0d1ef61e96e7096b09f81ddf1a` implements
+source #5860 with two redundant quality_metrics index removals. It preserves the
+unique agent-run/metric-type index, the full prompt-version/time index and the
+partial scored-row history index. The full index remains necessary for unscored
+rows. Source waiting and PR paid-automation are set; only unclaimed queued run
+32265 was cancelled. In isolated `paid_test_pghero_quality_metrics`, the red
+regression failed and migration/model/trend/sample validation passed 71 examples;
+final migration validation passed four examples. Lint, hooks and coherence
+passed. No operating physical migration or full repository CI was run.
+
+Normal job `82ee435b-3361-41e0-b910-57085f3dd9a9` finished at 09:38:37 UTC:
+248 findings, six assessed, one created, no updates/reopens/closures, 41 deferred,
+all categories collected and no planning error. Both metric members remain
+repair 1158 / issue #5860 / PR #5866 with source instructions and rationale
+retained. Private `quality-metrics-*` artifacts preserve the evidence. Earlier
+actual cron job `1ff8b514-f7e5-48bf-9910-2e768308ea2e` ended in an inference
+timeout with zero assessed; all 25 closed aliases were fetched closed afterward.
+That timeout is not successful assessment evidence.
+
+A real two-connection regression demonstrated that the scanner's FOR UPDATE
+project lock blocks ordinary project updates while collection waits. Scanner
+revision `2796c2b2c` replaces it with a project-specific transaction-scoped
+advisory lock, retaining dirty-record rejection, preview rollback and same-project
+serialization. Different projects and non-key updates can proceed independently.
+The five concurrency examples and full focused scanner suite passed 105 examples,
+zero failures in both publication and operating workspaces. Lint and commit hooks
+passed; coherence completed with existing unrelated warnings. Simplicity review
+found no additional abstraction needed. The original worktree commit is
+`c0992aa22`; all intended changes are also applied locally. No PgHero job was
+unfinished at rollout. This establishes a causal contention defect, not proof
+that every historical slow UPDATE has been repaired.
+
+Normal external job `04bcd0bb-0a31-48f5-9003-cac34586fd94` was enqueued at
+09:57:34 UTC for operating validation. Its terminal outcome remains to be
+inspected; no successful native-run claim is made here. Physical repair acceptance
+and complete current finding accounting remain outstanding.
