@@ -73,6 +73,14 @@ schema-loaded or newer database retains enforcement without duplicate-trigger
 failures. Corrective rollback retains the current guards rather than
 restoring weaker legacy enforcement.
 
+PgHero-repair migrations remove redundant single-column btree indexes when a
+retained valid composite provides the same leading-column access path. The
+projects account_id index removal (#5850) dropped
+`index_projects_on_account_id` after measurements confirmed
+`index_projects_on_account_id_and_active` (account_id, active) serves
+account_id-only lookups; the concurrent, reversible migration guards on
+covering-index presence, validity, and leading column before dropping.
+
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The
