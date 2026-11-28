@@ -35,6 +35,7 @@ module Projects
       now = Time.current
       today_start = now.beginning_of_day
       month_start = now.beginning_of_month
+      today_cost, month_cost = llm_window_costs(today_start: today_start, month_start: month_start, ends_at: now)
       infra_today = infrastructure_cost_cents(starts_at: today_start, ends_at: now)
       infra_month = infrastructure_cost_cents(starts_at: month_start, ends_at: now)
       infra_total = infrastructure_total_cost_cents
@@ -47,15 +48,24 @@ module Projects
         infrastructure_cost_cents: infra_total,
         total_variable_cost_cents: project.total_cost_cents + infra_total,
         total_tokens: project.total_tokens_used,
-        cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents,
+        cost_today_cents: today_cost,
         infrastructure_cost_today_cents: infra_today,
-        total_variable_cost_today_cents: billable_scope.by_time_period(today_start, now).total_cost_cents + infra_today,
-        cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents,
+        total_variable_cost_today_cents: today_cost + infra_today,
+        cost_this_month_cents: month_cost,
         infrastructure_cost_this_month_cents: infra_month,
-        total_variable_cost_this_month_cents: billable_scope.by_time_period(month_start, now).total_cost_cents + infra_month,
+        total_variable_cost_this_month_cents: month_cost + infra_month,
         avg_cost_per_run_cents: avg_cost,
         total_runs: run_count
       }
+    end
+
+    # @spec EXEC-USAGE-012
+    def llm_window_costs(today_start:, month_start:, ends_at:)
+      table = TokenUsage.arel_table
+      today = Arel::Nodes::Case.new.when(table[:created_at].gteq(today_start)).then(table[:cost_cents]).else(0)
+      today_cost, month_cost = billable_scope.by_time_period(month_start, ends_at)
+        .pick(today.sum, table[:cost_cents].sum)
+      [ today_cost.to_i, month_cost.to_i ]
     end
 
     def cost_by_outcome

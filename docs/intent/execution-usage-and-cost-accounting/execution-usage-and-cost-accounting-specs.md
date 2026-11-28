@@ -142,3 +142,12 @@ prefix: EXEC-USAGE
   *Tests:* `spec/services/agent_runs/record_execution_usage_spec.rb`,
   `spec/models/agent_run_spec.rb`.
   *Code:* `AgentRuns::RecordExecutionUsage`.
+
+- [x] **EXEC-USAGE-012** — The project cost summary SHALL compute today/month
+  billable LLM totals in one aggregate and reuse them for total variable costs,
+  preserving billable fallback, attribution, tenant scope and inclusive local
+  time boundaries. It SHALL exclude future/out-of-window rows and return zero
+  for empty windows without changing infrastructure accounting.
+  *Code:* `Projects::CostDashboardStats`.
+  *Tests:* `spec/services/projects/cost_dashboard_stats_windows_spec.rb`,
+  `spec/services/projects/cost_dashboard_stats_spec.rb`.

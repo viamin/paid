@@ -192,3 +192,11 @@ model-level column immutability.
   resources fields on the new record come from `Capacity::RequestedResources`.
 - #3338 (Runner abstraction) — `ExecutionResult` already carries the
   fields the new model needs; the wiring lands in the same release.
+
+## LLM cost windows
+
+The project cost summary computes today's and this month's billable LLM spend
+in one aggregate over the month window and reuses those values for variable-cost
+totals. It preserves the billable fallback and project/tenant scopes, uses the
+application time zone's inclusive day/month boundaries, excludes future records
+and reports zero for empty windows. Infrastructure accounting remains separate.
