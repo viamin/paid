@@ -132,3 +132,9 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Staged-closeout mappings retain the unique `(issue_id, criterion_key, revision)`
+index and the `(project_id, status)` index. Their leading columns cover the
+removed nonunique single-column issue and project indexes. The corrective
+migration drops those indexes concurrently; rollback recreates them concurrently.
+Mapping rows, foreign keys, and tenant policies remain intact.

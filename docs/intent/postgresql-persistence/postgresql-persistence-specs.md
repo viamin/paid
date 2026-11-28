@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — Removing redundant staged-closeout
+  mapping indexes SHALL retain issue/revision uniqueness and project/status
+  lookup coverage. Removal and rollback SHALL use concurrent index operations
+  without changing mapping rows or tenant policies.
+  *Tests:* `spec/migrations/remove_redundant_staged_closeout_mapping_indexes_spec.rb`.
+  *Code:* `RemoveRedundantStagedCloseoutMappingIndexes`.
