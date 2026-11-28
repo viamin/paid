@@ -1224,10 +1224,12 @@ unrelated intent changes. No PgHero job was unfinished during rollout.
 Two read-only operating collections at 10:36:12 UTC found 201 duplicate-index
 observations, all with nonempty table-index context. Maximum context was 9,396
 bytes and maximum finding detail 10,303 bytes; all duplicate fingerprints matched
-across both collections. All collection categories were available. This measures
+across both collections. All collection categories were available. In-memory
+rendering with current observations and historical issue prefixes produced a
+maximum 22,410-byte managed body; no DB or GitHub writes occurred. This measures
 actual payloads, not publication or successful AI consolidation. Private
-`alternate-coverers-operating-probe.json` retains the measurements and credential
-example. A first filing run can refresh existing evidence bodies and fingerprints;
+`alternate-coverers-operating-probe.json` and `alternate-coverers-body-probe.json`
+retain the measurements and credential example. A first filing run can refresh existing evidence bodies and fingerprints;
 that alone is not unexpected new issue creation.
 
 Normal external job `72b9c0cf-0266-4857-b578-880397fc4445` was enqueued at
