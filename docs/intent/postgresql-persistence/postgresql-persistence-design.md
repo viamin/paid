@@ -33,6 +33,14 @@ check compares their checked-in schema files and rejects shared tables, so a
 dump from a contaminated database cannot silently commit cable tables into
 the primary schema.
 
+Duplicate-index findings raised by the development PgHero Overview scanner
+are resolved by dropping the covered index, never the covering one, through a
+reversible concurrent migration that verifies the covering index exists in
+the catalog before removing anything; rollback re-creates the dropped index.
+`project_mcp_servers` relies on `idx_project_mcp_servers_unique` as its sole
+`project_id` access path, and tables gaining a composite index whose leading
+column matches an existing single-column index should not keep both.
+
 Routine `bin/dev-update` setup and migration commands consume committed schema
 artifacts without automatically dumping local database state back into them.
 They set `PAID_SKIP_AUTO_SCHEMA_DUMP=1` only for those commands. Normal migration

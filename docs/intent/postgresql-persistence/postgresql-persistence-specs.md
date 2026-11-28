@@ -128,3 +128,16 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+## Redundant Index Removal
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a schema index is fully covered by
+  another index with the same leading column (for example
+  `project_mcp_servers.index_project_mcp_servers_on_project_id` beneath the
+  unique `idx_project_mcp_servers_unique` on `(project_id,
+  mcp_server_definition_id)`), the covered index SHALL be removed through a
+  reversible migration using concurrent index operations. The removal SHALL be
+  conditional on the covering index existing in the catalog so the access path
+  is never dropped, and rollback SHALL re-create the removed index.
+  *Tests:* `spec/migrations/remove_project_mcp_servers_project_id_index_spec.rb`.
+  *Code:* `RemoveProjectMcpServersProjectIdIndex`.

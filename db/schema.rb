@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_081910) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3889,7 +3889,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["mcp_server_definition_id"], name: "index_project_mcp_servers_on_mcp_server_definition_id"
     t.index ["project_id", "mcp_server_definition_id"], name: "idx_project_mcp_servers_unique", unique: true
-    t.index ["project_id"], name: "index_project_mcp_servers_on_project_id"
   end
 
   create_table "project_memberships", force: :cascade do |t|
