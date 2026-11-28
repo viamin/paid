@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Work-item execution indexes retain assignment lookup in both project and work-item
+directions, assignment uniqueness, continuation endpoint lookup and active-grant
+lookup. A corrective migration removes four covered single-column prefixes
+concurrently, with concurrent rollback. Grant state, tenant policies and foreign
+keys remain intact.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

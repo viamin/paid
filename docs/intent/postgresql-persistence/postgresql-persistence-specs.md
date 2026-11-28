@@ -128,3 +128,13 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-024** — Removing redundant assignment and
+  continuation-grant prefix indexes SHALL preserve assignment uniqueness,
+  project/work-item lookup coverage, grant state and endpoint/active lookup
+  coverage, rows, foreign keys and tenant policies. Removal and rollback SHALL
+  use concurrent index operations.
+  *Tests:* `spec/migrations/remove_redundant_work_item_execution_indexes_spec.rb`,
+  `spec/models/work_item_continuation_grant_spec.rb`,
+  `spec/services/work_items/assign_to_projects_spec.rb`.
+  *Code:* `RemoveRedundantWorkItemExecutionIndexes`.
