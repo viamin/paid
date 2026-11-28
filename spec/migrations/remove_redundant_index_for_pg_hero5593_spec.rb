@@ -21,6 +21,9 @@ RSpec.describe RemoveRedundantIndexForPgHero5593 do
 
   # @spec POSTGRESQL-PERSISTENCE-022
   it "removes only the redundant index and recreates its definition on rollback" do
+    # Schema-loaded test databases already reflect the migrated catalog, so
+    # roll back to the pre-migration catalog before capturing definitions.
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) } unless indexes.key?(removed_name)
     original = definition(indexes.fetch(removed_name))
     covering = definition(indexes.fetch(covering_name))
     count = connection.select_value("SELECT COUNT(*) FROM knowledge_runs")
@@ -31,6 +34,7 @@ RSpec.describe RemoveRedundantIndexForPgHero5593 do
     ActiveRecord::Migration.suppress_messages { migration.migrate(:down) }
     expect(definition(indexes.fetch(removed_name))).to eq(original)
   ensure
-    ActiveRecord::Migration.suppress_messages { migration.migrate(:down) } unless indexes.key?(removed_name)
+    # Leave the catalog migrated so later examples see the current schema.
+    ActiveRecord::Migration.suppress_messages { migration.migrate(:up) } if indexes.key?(removed_name)
   end
 end
