@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_045053) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4350,12 +4350,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.string "runner_key", limit: 64, null: false, comment: "Provider key (claude, codex, gemini, copilot)."
     t.datetime "updated_at", null: false
     t.index ["account_id", "attempted_at"], name: "idx_runner_auth_attempts_account_attempted"
-    t.index ["account_id"], name: "index_runner_auth_attempts_on_account_id"
     t.index ["agent_run_id", "attempt_stage", "attempted_at"], name: "idx_runner_auth_attempts_run_stage_attempted"
-    t.index ["agent_run_id"], name: "index_runner_auth_attempts_on_agent_run_id"
     t.index ["attempt_stage", "result", "attempted_at"], name: "idx_runner_auth_attempts_stage_result_attempted"
     t.index ["project_id", "attempted_at"], name: "idx_runner_auth_attempts_project_attempted"
-    t.index ["project_id"], name: "index_runner_auth_attempts_on_project_id"
     t.index ["result", "attempted_at"], name: "idx_runner_auth_attempts_result_attempted"
     t.index ["runner_credential_id"], name: "index_runner_auth_attempts_on_runner_credential_id"
     t.index ["runner_key", "auth_source", "container_host", "attempted_at"], name: "idx_runner_auth_attempts_provider_source_host_attempted"

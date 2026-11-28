@@ -132,3 +132,8 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Runner-auth attempt telemetry retains its compound account/time, run/stage/time
+and project/time indexes. A corrective migration removes the three redundant
+single-column prefix indexes concurrently, with concurrent recreation on rollback.
+The repair preserves telemetry rows, foreign keys and tenant policies.
