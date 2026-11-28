@@ -40,6 +40,11 @@ development and explicit `db:schema:dump` retain Rails defaults. This prevents
 local catalog differences from becoming auto-stashed edits that conflict with
 later upstream migrations.
 
+Reviewed index-maintenance migrations inspect the PostgreSQL catalog before
+removing a reported duplicate. An index is removed only when its named covering
+index retains the exact leading keys required by the removed index; rollback
+restores the removed index concurrently.
+
 The complete-policy bootstrap repair is a frozen, transactional metadata
 migration sourced from the migrated main policy catalog: 224 policies across
 200 tables at revision `2fb3a7103`. It restores their full current predicates

@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a reviewed migration removes a
+  PostgreSQL index reported as redundant, it SHALL confirm the named covering
+  index retains the redundant index's leading key and SHALL remove only that
+  redundant index concurrently. Rollback SHALL recreate the removed index
+  concurrently without changing the covering index.
+  *Tests:* `spec/migrations/remove_duplicate_project_convention_overrides_project_index_spec.rb`.
+  *Code:* `RemoveDuplicateProjectConventionOverridesProjectIndex`.
