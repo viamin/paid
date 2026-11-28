@@ -1142,3 +1142,57 @@ constraint PR #5617's different claim. Independent real-DDL/lookup/uniqueness
 coverage and a distinct intent ID are concrete remaining review work. No duplicate
 replacement PR was created and no untrusted PR code was executed. Private
 `provider-key-pr-current-diff.json` records all five changed files and exact refs.
+
+## Existing provider-key PR acceptance strengthened
+
+PR #5868 is updated in place at `9eea85f0e495e998299c630f266639ed69cbc3e4`;
+no replacement PR was opened. Source #5852 carries waiting, the draft PR carries
+paid-automation and now includes Fixes #5852. A fresh guard found no active source
+or PR run before publication. All five original changed files were reviewed;
+the application/runtime matches the trusted base, and the mock-only spec was
+replaced before test execution. The reviewed concurrent migration's operations
+are unchanged. Its intent claim is now POSTGRESQL-PERSISTENCE-030, removing the
+collision with constraint PR #5617.
+
+New isolated `paid_test_pghero_provider_keys` was verified empty before loading
+the trusted base schema. Actual upgrade/rollback/upgrade succeeded. Migration and
+ProviderApiKey model validation passed 26 examples, zero failures. A temporary
+negative control omitting index removal produced one expected failure; a finally
+block restored the exact reviewed source, then all four migration examples passed.
+Checks exercise PostgreSQL index definitions/validity, unchanged credential rows,
+per-user name uniqueness, rollback/reapplication and ordered user-prefix/full
+identity lookup usability. Lint/hooks and coherence completed, with existing
+unrelated coherence warnings. Simplicity/prose review retained direct fixtures
+and a specific provider-key contract instead of a generic prefix-removal rule.
+Private `provider-key-validation-manifest.json` records hashes and actual results.
+
+No operating physical migration, representative workload measurement or full
+repository CI was run. Normal job `0dcbedde-302d-431c-ba9e-5212aa1d8c6e` was
+enqueued at 10:28:53 UTC to verify import of the new explicit closing reference;
+its terminal outcome remains pending. Canonical issue #5852 remains open.
+
+Actual hourly cron `36ac432f-76f2-4a9d-8376-2d85350467d6` ran from 10:24:05
+to 10:26:18 UTC on scanner code 907314f27: 248 findings, zero issue changes,
+39 deferred, zero assessed, all categories collected and an inference timeout
+after 126,650 ms. All 26 aliases were fetched closed after terminal completion.
+This is scheduled failure-path stability, not successful assessment progress.
+Private `scheduled-1023-{receipt.json,validation-result.log,alias-verification.json}`
+preserves the evidence. The separate handoff job above has a changed publication
+reference to verify; it is not a blind inference retry.
+
+## Alternate coverers need repair-level review
+
+The selected-coverer grouping pass above was narrow. Read-only catalog evidence
+at 10:29:13 UTC confirms the full valid unique runner_credentials index on
+(account_id, runner_key, name) supports both account_id and account_id/runner_key
+prefixes. PgHero selected account_id/revoked_at as the coverer for the first
+finding and the unique index for the second. Therefore different selected coverer
+names do not establish separate repairs: both removals can be assessed as one
+credential-index cleanup while retaining the revoked-at path and uniqueness.
+Private `credential-coverer-evidence.json` records all six actual definitions.
+
+This establishes a consolidation candidate, not implemented or workload-verified
+coverage. Source #5871 has active Paid run 32272 and is untouched. Refresh that
+run and its resulting PR before consolidation. Assess whether scanner evidence
+should expose alternate covering indexes so bounded AI assessment can evaluate
+shared repairs without relying on PgHero's chosen pair or table-name grouping.
