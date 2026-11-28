@@ -124,6 +124,13 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Provider API key cleanup removes only the nonunique user prefix. The full unique
+user/name index retains ordered user lookups and per-user name uniqueness; the
+user/service-type index and credential records remain intact. Upgrade and rollback
+use concurrent index operations. Real PostgreSQL regression checks verify index
+definitions, stored rows, uniqueness and lookup usability; planner checks do not
+establish representative workload performance.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
