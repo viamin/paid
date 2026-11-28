@@ -156,6 +156,17 @@ PR. A matching active run is returned as a duplicate; otherwise the original
 uniqueness error propagates for diagnosis. Failed admission rolls back any
 enhancement-round accounting and does not enqueue queue processing.
 
+Admission dispatch is immediate after the admission transaction commits.
+Presentation broadcasts are noncritical to that handoff: a render failure is
+contained at the `AgentRun` broadcast callback and logged with the persisted
+run ID, allowing the activity to retain its runner-selection audit and enqueue
+the existing `ProcessRunQueueJob`. A caller retry reconciles the original
+queued row and re-enqueues that same processor; it never creates a replacement
+row or consumes another admission allocation. Before a new admission, the
+activity checks that migrations are current. A pending migration declines new
+work rather than relying on a Rails health endpoint that may be unavailable
+while a newly loaded execution path lacks its schema.
+
 ## Human-input pauses and stale recovery
 
 Stale recovery distinguishes a recoverable execution pause from a deliberate

@@ -4744,6 +4744,7 @@ class AgentRun < ApplicationRecord
     (from_status == "queued") != (to_status == "queued")
   end
 
+  # @spec TEMPORAL-ORCHESTRATION-022
   def broadcast_project_updates
     if previous_changes.key?("status") || previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
       project.broadcast_agent_runs_update
@@ -4783,6 +4784,14 @@ class AgentRun < ApplicationRecord
     end
 
     project.broadcast_agent_run_detail_update(self)
+  rescue ActionView::Template::Error => error
+    Rails.logger.error(
+      message: "agent_run.broadcast_failed",
+      agent_run_id: id,
+      project_id: project_id,
+      error_class: error.class.name,
+      error: error.message
+    )
   end
 
   def invalidate_runner_options_cache_on_change

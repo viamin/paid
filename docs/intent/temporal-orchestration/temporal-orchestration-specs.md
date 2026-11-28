@@ -196,6 +196,19 @@
   `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`.
   *Code:* `Activities::QueueAgentRunActivity#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-022** — When an agent-run admission commits,
+  a UI broadcast or render failure SHALL be logged with the persisted run ID
+  and SHALL NOT prevent its immediate `ProcessRunQueueJob` dispatch. A retry
+  that finds the committed queued run SHALL return that same run and re-enqueue
+  the existing queue processor without creating a replacement run or consuming
+  another admission allocation. Before admitting a new run, the activity SHALL
+  decline admission while database migrations are pending so newly loaded
+  execution paths do not receive work against a known-unready schema.
+  *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/models/agent_run_spec.rb`.
+  *Code:* `Activities::QueueAgentRunActivity#execute`,
+  `AgentRun#broadcast_project_updates`.
+
 - [x] **TEMPORAL-ORCHESTRATION-014** — When a new agent workflow needs a
   proxy-health check before clone or push, it SHALL schedule the existing
   `CheckProxyHealth` activity on the existing poll queue without increasing
