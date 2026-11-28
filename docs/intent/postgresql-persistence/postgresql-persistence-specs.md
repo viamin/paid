@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — A migration that removes a redundant
+  PostgreSQL index SHALL first be supported by catalog evidence that a retained
+  index has the redundant index's key columns as its leading prefix. The
+  migration SHALL remove and restore the index concurrently, and the canonical
+  schema dump SHALL retain the resulting index set.
+  *Tests:* `spec/migrations/remove_redundant_project_service_containers_project_index_dbless_spec.rb`.
+  *Code:* `RemoveRedundantProjectServiceContainersProjectIndex`.
