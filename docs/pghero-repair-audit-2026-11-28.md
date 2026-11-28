@@ -1410,5 +1410,14 @@ semantics, tenant isolation and implementation remain to verify. Private
 retain plans and the explicit remaining evidence.
 
 Repeat normal job `1ff79061-1571-4f9a-abba-46818d5f8d00` started 11:55:08 UTC;
-its assessment selected eight findings and one work item in 7,645 bytes. Terminal
-assessment, closed-alias stability and repeat publication remain unverified.
+its assessment selected eight findings and one work item in 7,645 bytes. It finished
+11:56:50 UTC with 246 findings, eight assessed, zero creates, one update, zero
+reopens/closures, 35 deferred, nil planning error and all categories collected.
+Alias #5871 was fetched closed after terminal completion. These consecutive
+successful runs demonstrate scope progress and credential ownership stability;
+they do not establish that every remaining repair scope is correct.
+
+A subsequent exact-branch fetch recovered #5790 commit ce44e362f from GitHub.
+It contains a real guarded concurrent migration and rollback, schema changes,
+intent and tests. Publication and independent validation remain pending; the
+recorded timeout did not mean its source was lost.
