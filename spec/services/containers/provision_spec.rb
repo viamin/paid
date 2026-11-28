@@ -120,7 +120,7 @@ RSpec.describe Containers::Provision do
   # Prepends a shim for command that fails whenever it sees argument, so
   # failure injection works even when the suite runs as root (where
   # permission-based read-only injections would not fail).
-  def with_failing_command_shim(command, argument)
+  def with_failing_command_shim(command, argument, login_shell_dir: nil)
     Dir.mktmpdir("paid-command-shim") do |shim_dir|
       real_command, = Open3.capture2("sh", "-c", "command -v #{command}")
       shim = File.join(shim_dir, command)
@@ -135,8 +135,28 @@ RSpec.describe Containers::Provision do
         exec #{real_command.strip} "$@"
       SH
       File.chmod(0o755, shim)
-      shim_path = "#{shim_dir}:#{ENV.fetch('PATH')}"
+      shim_path = [ login_shell_dir, shim_dir, ENV.fetch("PATH") ].compact.join(":")
       yield({ "PATH" => shim_path })
+    end
+  end
+
+  # Replaces PATH at login-shell startup, as Debian's login profile can. The
+  # local adapter must export its explicitly supplied PATH in the command
+  # script, after this replacement, for command-shim fault injection to work.
+  def with_login_shell_path_replacement
+    Dir.mktmpdir("paid-login-shell") do |shell_dir|
+      observed_uid_path = File.join(shell_dir, "uid")
+      File.write(File.join(shell_dir, "sh"), <<~SH)
+        #!/bin/sh
+        if [ "$1" = "-lc" ]; then
+          printf '%s' "$(id -u)" > #{Shellwords.escape(observed_uid_path)}
+          PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          export PATH
+        fi
+        exec /bin/sh "$@"
+      SH
+      File.chmod(0o755, File.join(shell_dir, "sh"))
+      yield(shell_dir, observed_uid_path)
     end
   end
 
@@ -4520,10 +4540,16 @@ RSpec.describe Containers::Provision do
 
         exclude_before = File.read(exclude_path)
 
-        with_failing_command_shim("git", "--assume-unchanged") do |shim_env|
-          expect {
-            preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
-          }.to raise_error(described_class::ExecutionError, /injected git --assume-unchanged failure/)
+        with_login_shell_path_replacement do |login_shell_dir, observed_uid_path|
+          with_failing_command_shim("git", "--assume-unchanged", login_shell_dir:) do |shim_env|
+            expect {
+              preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
+            }.to raise_error(described_class::ExecutionError, /injected git --assume-unchanged failure/) { |error|
+              expect(error.exit_code).to eq(1)
+            }
+          end
+
+          expect(File.read(observed_uid_path).to_i).to be > 0
         end
 
         expect(File.binread(paths[:tracked])).to eq(originals[:tracked])
@@ -4546,10 +4572,16 @@ RSpec.describe Containers::Provision do
 
         exclude_before = File.read(exclude_path)
 
-        with_failing_command_shim("base64", "-d") do |shim_env|
-          expect {
-            preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
-          }.to raise_error(described_class::ExecutionError, /injected base64 -d failure/)
+        with_login_shell_path_replacement do |login_shell_dir, observed_uid_path|
+          with_failing_command_shim("base64", "-d", login_shell_dir:) do |shim_env|
+            expect {
+              preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
+            }.to raise_error(described_class::ExecutionError, /injected base64 -d failure/) { |error|
+              expect(error.exit_code).to eq(1)
+            }
+          end
+
+          expect(File.read(observed_uid_path).to_i).to be > 0
         end
 
         expect(File.binread(paths[:tracked])).to eq(originals[:tracked])
