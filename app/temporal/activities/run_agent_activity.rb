@@ -374,6 +374,10 @@ module Activities
               output_chars: runner_result[:output_chars],
               execution_kind: AgentRun::MAIN_AGENT_EXECUTION_KIND,
               **resolved_run_info)
+            agent_run.record_review_execution_diagnostic!(
+              selected_execution_route: attempt_label,
+              agent_result_category: "completed"
+            )
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.

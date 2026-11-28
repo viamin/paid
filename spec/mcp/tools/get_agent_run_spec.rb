@@ -22,6 +22,8 @@ RSpec.describe Tools::GetAgentRun do
         goal: run.goal,
         agent_type: run.agent_type,
         pull_request_url: run.pull_request_url,
+        source_pull_request_number: run.source_pull_request_number,
+        expected_remote_head_sha: run.expected_remote_head_sha,
         iterations: run.iterations,
         tokens_input: run.tokens_input,
         tokens_output: run.tokens_output,
@@ -86,6 +88,31 @@ RSpec.describe Tools::GetAgentRun do
       run = create(:agent_run, project: create(:project, account: account))
 
       expect(tool.call(agent_run_id: run.id)).not_to include(:maintenance)
+    end
+
+    # @spec REVIEW-RESULT-004
+    it "includes the sanitized review-execution receipt for review runs" do
+      run = create(:agent_run, :review_goal, project: create(:project, account: account),
+        review_execution_diagnostics: {
+          "selected_execution_route" => "codex",
+          "agent_result_category" => "completed",
+          "publication_attempted" => true,
+          "publication_outcome" => "upstream_error",
+          "publication_http_status" => 500,
+          "publication_error_class" => "ActiveRecord::PendingMigrationError",
+          "untrusted" => "must not be exposed"
+        })
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result[:review_execution_diagnostics]).to eq(
+        "selected_execution_route" => "codex",
+        "agent_result_category" => "completed",
+        "publication_attempted" => true,
+        "publication_outcome" => "upstream_error",
+        "publication_http_status" => 500,
+        "publication_error_class" => "ActiveRecord::PendingMigrationError"
+      )
     end
 
     it "reuses the authorized run lookup during perform" do

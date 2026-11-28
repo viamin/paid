@@ -228,22 +228,35 @@ module Activities
     # this run, when available, so the failure is actionable without reading
     # raw logs. See Api::GithubProxyController#record_review_proxy_diagnostic.
     def proxy_diagnostic_suffix(agent_run)
+      execution_suffix = review_execution_suffix(agent_run)
       diagnostics = agent_run.review_proxy_diagnostics
-      return "." if diagnostics.blank?
+      return execution_suffix.presence || "." if diagnostics.blank?
 
       case diagnostics["outcome"]
       when "timeout"
-        " — the review-creation proxy POST timed out without a confirmed response from GitHub."
+        "#{execution_suffix} — the review-creation proxy POST timed out without a confirmed response from GitHub."
       when "connection_failed"
-        " — the review-creation proxy POST failed to connect to GitHub."
+        "#{execution_suffix} — the review-creation proxy POST failed to connect to GitHub."
       when "upstream_error"
         status = diagnostics["http_status"]
-        " — the review-creation proxy POST returned an upstream error from GitHub#{" (HTTP #{status})" if status}."
+        "#{execution_suffix} — the review-creation proxy POST returned an upstream error from GitHub#{" (HTTP #{status})" if status}."
       when "attempted"
-        " — a review-creation proxy POST was attempted but no confirmation was recorded."
+        "#{execution_suffix} — a review-creation proxy POST was attempted but no confirmation was recorded."
       else
-        "."
+        execution_suffix.presence || "."
       end
+    end
+
+    def review_execution_suffix(agent_run)
+      receipt = agent_run.review_execution_diagnostics.to_h
+      route = receipt["selected_execution_route"]
+      result = receipt["agent_result_category"]
+      return "" if route.blank? || result.blank?
+
+      publication = receipt["publication_outcome"]
+      status = receipt["publication_http_status"]
+      detail = publication.present? ? "; publication failed with #{publication}#{" (HTTP #{status})" if status}" : ""
+      " — agent #{result} via #{route}#{detail}"
     end
   end
 end

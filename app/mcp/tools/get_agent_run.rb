@@ -33,7 +33,10 @@ module Tools
         branch_name: run.branch_name,
         pull_request_url: run.pull_request_url,
         pull_request_number: run.pull_request_number,
+        source_pull_request_number: run.source_pull_request_number,
+        expected_remote_head_sha: run.expected_remote_head_sha,
         error_message: run.error_message,
+        review_execution_diagnostics: review_execution_diagnostics(run),
         assessment_diagnostics: PartialCloseouts::AcceptanceAuditFailure.diagnostic_for(run),
         iterations: run.iterations,
         duration_seconds: run.duration_seconds,
@@ -48,6 +51,16 @@ module Tools
     end
 
     private
+
+    # @spec REVIEW-RESULT-004
+    def review_execution_diagnostics(run)
+      return unless run.review_goal?
+
+      run.review_execution_diagnostics.to_h.slice(
+        "selected_execution_route", "agent_result_category", "publication_attempted",
+        "publication_outcome", "publication_http_status", "publication_error_class", "recorded_at"
+      )
+    end
 
     # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-061 PARTIAL-CLOSEOUT-060
     def source_closure_fields(run)

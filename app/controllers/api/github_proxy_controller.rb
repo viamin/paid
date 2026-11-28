@@ -514,6 +514,12 @@ module Api
     def record_review_proxy_diagnostic(outcome:, http_status: nil, error_class: nil, error_message: nil)
       return unless @agent_run
 
+      @agent_run.record_review_execution_diagnostic!(
+        publication_attempted: true,
+        publication_outcome: outcome,
+        publication_http_status: http_status,
+        publication_error_class: error_class
+      )
       @agent_run.update_columns(review_proxy_diagnostics: {
         "outcome" => outcome,
         "http_status" => http_status,

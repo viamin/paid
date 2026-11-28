@@ -109,6 +109,34 @@
 
 ## Metrics
 
+## Retained review-execution diagnosis (#5396)
+
+- [x] **REVIEW-RESULT-001** — When a review-goal main agent terminates, the
+  system SHALL retain a sanitized receipt identifying its selected execution
+  route and terminal result category. Auxiliary container commands SHALL NOT
+  be represented as the agent result.
+  *Code:* `AgentRun#record_review_execution_diagnostic!`,
+  `Activities::RunAgentActivity`.
+  *Tests:* `spec/temporal/activities/complete_review_goal_activity_spec.rb`.
+
+- [x] **REVIEW-RESULT-002** — When the review proxy is invoked, the system
+  SHALL retain whether publication was attempted and its proxy/upstream outcome
+  when available, without retaining prompts, credentials, or response bodies.
+  *Code:* `Api::GithubProxyController#record_review_proxy_diagnostic`.
+  *Tests:* `spec/requests/api/github_proxy_spec.rb`.
+
+- [x] **REVIEW-RESULT-003** — If completion finds no tracked review, it SHALL
+  keep existing tracked, untracked, and unavailable reconciliation outcomes
+  distinct and surface the retained execution receipt as an actionable failure.
+  *Code:* `Activities::CompleteReviewGoalActivity`.
+  *Tests:* `spec/temporal/activities/complete_review_goal_activity_spec.rb`.
+
+- [x] **REVIEW-RESULT-004** — Authorized run inspection SHALL expose the
+  bounded receipt with the source run lineage; it SHALL not fabricate a review
+  or reset the existing finite retry counter.
+  *Code:* `Tools::GetAgentRun`.
+  *Tests:* `spec/mcp/tools/get_agent_run_spec.rb`.
+
 - [x] **REVIEW-VERIFY-009** — Each run SHALL record candidate and verdict
   counts, dedup group count, posted comment count, outcome, per-stage and
   total latency, LLM call counts, model(s), and token usage with cost — via

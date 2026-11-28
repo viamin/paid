@@ -508,6 +508,18 @@
     </div>
   <% end %>
 
+  <% if agent_run.review_goal? && agent_run.review_execution_diagnostics.present? %>
+    <% review_receipt = agent_run.review_execution_diagnostics %>
+    <div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+      <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Review Publication Diagnosis</h2>
+      <dl class="mt-2 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+        <div><dt class="inline font-medium">Source PR:</dt> <dd class="inline">#<%= agent_run.source_pull_request_number %> at <%= agent_run.expected_remote_head_sha %></dd></div>
+        <div><dt class="inline font-medium">Agent:</dt> <dd class="inline"><%= review_receipt["agent_result_category"] %> via <%= review_receipt["selected_execution_route"] %></dd></div>
+        <div><dt class="inline font-medium">Publication:</dt> <dd class="inline"><%= review_receipt["publication_attempted"] ? review_receipt["publication_outcome"].presence || "attempted" : "not attempted" %><%= " (HTTP #{review_receipt["publication_http_status"]})" if review_receipt["publication_http_status"].present? %></dd></div>
+      </dl>
+    </div>
+  <% end %>
+
   <% if agent_run.model_selection.present? %>
     <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
       <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Model Selection</h2>

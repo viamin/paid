@@ -144,6 +144,26 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect(agent_run.error_message).to include("proxy POST timed out")
       end
 
+      # @spec REVIEW-RESULT-001 REVIEW-RESULT-003
+      it "retains the successful agent route separately from a failed publication" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_execution_diagnostics: {
+            "selected_execution_route" => "claude_code",
+            "agent_result_category" => "completed",
+            "publication_attempted" => true,
+            "publication_outcome" => "upstream_error",
+            "publication_http_status" => 500
+          })
+        stub_review_lookup(agent_run)
+        allow(github_client).to receive(:pull_request_reviews).and_return([])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /agent completed via claude_code/)
+
+        expect(agent_run.reload.error_message).to include("publication failed with upstream_error (HTTP 500)")
+      end
+
       it "includes the upstream HTTP status when the proxy POST returned an upstream error" do
         agent_run = create(:agent_run, :running, :review_goal, project: project,
           review_proxy_diagnostics: { "outcome" => "upstream_error", "http_status" => 422 })

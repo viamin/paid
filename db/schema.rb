@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_062000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -397,6 +397,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.jsonb "reconciliation", default: {}, null: false, comment: "Durable replay state for partial PR closeout gap reconciliation."
     t.string "result_commit_sha", limit: 40
     t.string "review_depth_snapshot", limit: 32, default: "balanced", null: false, comment: "Effective review_depth preset snapshotted at run creation. Focused/Balanced/Thorough."
+    t.jsonb "review_execution_diagnostics", default: {}, null: false, comment: "Sanitized review execution receipt: selected route, terminal agent result, publication attempt and proxy/upstream outcome. Retained after cleanup to diagnose missing review publication (#5396)."
     t.datetime "review_posted_at"
     t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500

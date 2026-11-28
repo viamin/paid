@@ -538,7 +538,7 @@ class AgentRun < ApplicationRecord
   # (recent activity) pass extra: %w[custom_prompt].
   LIST_PAYLOAD_EXCLUDED_COLUMNS = %w[
     streaming_turns_data external_metadata mcp_server_snapshot tool_sidecar_snapshot
-    mcp_provisioned_servers screenshot_hints review_proxy_diagnostics
+    mcp_provisioned_servers screenshot_hints review_proxy_diagnostics review_execution_diagnostics
   ].freeze
 
   scope :excluding_list_payload, ->(extra: []) {
@@ -3189,6 +3189,30 @@ class AgentRun < ApplicationRecord
 
     self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!
+  end
+
+  # The review agent and its auxiliary container commands are different
+  # execution surfaces. Retain only the main-agent terminal receipt and the
+  # bounded publication facts so a cleaned-up review can be diagnosed without
+  # preserving prompts, credentials, or tool output.
+  # @spec REVIEW-RESULT-001 REVIEW-RESULT-002
+  def record_review_execution_diagnostic!(selected_execution_route: nil, agent_result_category: nil,
+                                          publication_attempted: nil, publication_outcome: nil,
+                                          publication_http_status: nil, publication_error_class: nil)
+    return unless review_goal?
+
+    receipt = review_execution_diagnostics.to_h.slice(
+      "selected_execution_route", "agent_result_category", "publication_attempted",
+      "publication_outcome", "publication_http_status", "publication_error_class"
+    )
+    receipt["selected_execution_route"] = selected_execution_route.to_s.truncate(100) if selected_execution_route.present?
+    receipt["agent_result_category"] = agent_result_category.to_s if agent_result_category.present?
+    receipt["publication_attempted"] = publication_attempted unless publication_attempted.nil?
+    receipt["publication_outcome"] = publication_outcome.to_s if publication_outcome.present?
+    receipt["publication_http_status"] = publication_http_status.to_i if publication_http_status.present?
+    receipt["publication_error_class"] = publication_error_class.to_s.truncate(200) if publication_error_class.present?
+    receipt["recorded_at"] = Time.current.iso8601
+    update!(review_execution_diagnostics: receipt)
   end
 
   def observable_main_agent_execution?(attempt)
