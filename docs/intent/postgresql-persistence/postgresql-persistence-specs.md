@@ -128,3 +128,13 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-042** — When removing the redundant
+  `remediation_decisions` account index, the migration SHALL preserve records
+  and all other index definitions, require the original nonunique account key
+  and a valid full btree budget coverer on `(account_id, diagnosis_attempted_on)`,
+  reject incompatible catalog changes before removal, restore the original
+  index on rollback and permit reapplication.
+  *Issue:* #5863.
+  *Tests:* `spec/migrations/remove_redundant_remediation_account_index_spec.rb`.
+  *Code:* `RemoveRedundantRemediationAccountIndex`.
