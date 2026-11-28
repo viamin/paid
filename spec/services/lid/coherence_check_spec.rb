@@ -6,6 +6,7 @@ require "rails_helper"
 RSpec.describe Lid::CoherenceCheck do
   subject(:service) { described_class.call(agent_run: agent_run, container_service: container_service, logger: logger) }
 
+  let(:project) { instance_double(Project, default_branch: "main") }
   let(:agent_run) do
     instance_double(
       AgentRun,
@@ -13,7 +14,9 @@ RSpec.describe Lid::CoherenceCheck do
       goal: goal,
       external_metadata: {},
       update!: true,
-      log!: true
+      log!: true,
+      project: project,
+      base_commit_sha: "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3"
     )
   end
   let(:goal) { "create_pr" }
@@ -38,6 +41,43 @@ RSpec.describe Lid::CoherenceCheck do
 
     result = service
     expect(result["status"]).to eq("failed")
+  end
+
+  it "passes the integration target branch and base to the checker" do
+    allow(container_service).to receive(:execute)
+      .and_return(Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0))
+    allow(Lid::CoherenceReport).to receive(:parse).with("").and_return(
+      instance_double(Lid::CoherenceReport::Result, to_h: { "status" => "passed", "summary_line" => "ok" })
+    )
+
+    service
+
+    expect(container_service).to have_received(:execute).with(
+      kind_of(Array),
+      hash_including(
+        env: {
+          "LID_TARGET_BRANCH" => "main",
+          "LID_BASE_SHA" => "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3"
+        }
+      )
+    )
+  end
+
+  it "defaults the target branch when the project has none" do
+    allow(project).to receive(:default_branch).and_return(nil)
+    allow(agent_run).to receive(:base_commit_sha).and_return(nil)
+    allow(container_service).to receive(:execute)
+      .and_return(Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0))
+    allow(Lid::CoherenceReport).to receive(:parse).with("").and_return(
+      instance_double(Lid::CoherenceReport::Result, to_h: { "status" => "passed", "summary_line" => "ok" })
+    )
+
+    service
+
+    expect(container_service).to have_received(:execute).with(
+      kind_of(Array),
+      hash_including(env: { "LID_TARGET_BRANCH" => "main" })
+    )
   end
 
   it "skips non-LID repositories when the marker is emitted" do

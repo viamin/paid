@@ -20,7 +20,7 @@ module Lid
     def call
       return skipped_result("goal_not_supported") unless GOALS.include?(agent_run.goal)
 
-      result = container_service.execute(command, timeout: CHECK_TIMEOUT_SECONDS, stream: false)
+      result = container_service.execute(command, timeout: CHECK_TIMEOUT_SECONDS, stream: false, env: check_env)
       return persist_and_return(unavailable_result("exit_code_#{result[:exit_code]}")) unless result.success?
 
       output = [ result[:stdout], result[:stderr] ].compact.join("\n").strip
@@ -52,6 +52,23 @@ module Lid
     private
 
     attr_reader :agent_run, :container_service, :logger
+
+    # Structural inputs for the checker's spec-ID allocation collision
+    # analysis: the integration target branch and the base the run's branch
+    # grew from. The checker degrades to an advisory skip when either is
+    # unresolvable in the container checkout.
+    # @spec LID-RUNS-008
+    def check_env
+      {
+        "LID_TARGET_BRANCH" => target_branch,
+        "LID_BASE_SHA" => agent_run.base_commit_sha.presence
+      }.compact
+    end
+
+    def target_branch
+      default_branch = agent_run.project&.default_branch
+      default_branch.presence || "main"
+    end
 
     def command
       [

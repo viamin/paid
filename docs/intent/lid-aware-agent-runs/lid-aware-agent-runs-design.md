@@ -59,6 +59,61 @@ Finally, coherence checking is operational and intentionally soft-blocking:
 failed reports are persisted on the run and surfaced in the PR body rather
 than silently discarded.
 
+### Spec-ID allocation collision detection (LID-RUNS-008..011)
+
+Independently developed branches can allocate the same EARS ID for different
+new claims. When one branch merges and a sibling later integrates, the
+duplicates land without a Git conflict (the declarations are separate
+additions in separate hunks), leaving duplicate declarations and ambiguous
+Code/Test arrows that only surface during review (#5383: PR5370 vs merged
+PR5294 on `SUBSCRIPTION-RUNNER-AUTH-008`; PR5283 vs main on
+`CONTAINER-RUNTIME-054`; #5322 vs merged #5291 on `FOCUSED-RUN-011`).
+
+The coherence check includes a structural branch-vs-target analysis, reported
+in the same soft-block channel as the existing sections:
+
+- **Inputs.** `Lid::CoherenceCheck` exports the run's recorded integration
+  base (`agent_run.base_commit_sha`) as `LID_BASE_SHA` and the merge target
+  (`project.default_branch`) as `LID_TARGET_BRANCH` into the container
+  command. `bin/coherence-check.mjs` resolves the target ref from that env
+  (or auto-detects `origin/HEAD` / `origin/main` / `origin/master` when run
+  standalone), refreshes the target tip with a bounded `--depth 1` fetch
+  (best-effort; local ref on failure), and resolves the base from
+  `LID_BASE_SHA`, falling back to `git merge-base <target> HEAD`. When
+  neither resolves, the section is skipped with an advisory note — no
+  findings, no failure.
+- **Collision rule (structural).** A collision is an ID whose declaration is
+  new on both sides since the base — present in the working tree (the
+  proposed head, uncommitted work included) and newly declared on the target
+  tip, absent from the base tree. IDs declared at the base are excluded:
+  an amended or unchanged shared claim is legitimate (LID workflow Phase 3:
+  "Spec IDs are stable. Revisions mutate text, not IDs"). Two ancestry
+  refinements keep reconciled states clean: when the target tip is already an
+  ancestor of HEAD (the branch merged the target), independent-allocation
+  detection is skipped in favor of tree-level duplicate scanning; and a head
+  declaration whose text is byte-identical to the target's declaration for
+  the same ID is treated as an adopted claim, not an independent allocation.
+  No keyword or semantic content judgments are used.
+- **Duplicate declarations in the proposed integration tree.** The check
+  simulates the textual integration with `git merge-tree --write-tree`
+  (building a snapshot commit from the working tree through a temporary
+  index, so uncommitted agent work is included and the real index is never
+  touched) and reports IDs declared at more than one site in the merged tree
+  where at least one site is new since the base. This is what catches the
+  auto-merge-without-conflict case. When `merge-tree` is unavailable, the
+  check falls back to scanning the working tree and notes the limitation.
+- **Evidence.** Findings cite the colliding ID, the head and target
+  declaration sites (file:line plus the declaration text), the head's
+  `@spec` Code/Test annotation sites (so the incoming claim and its
+  annotations are renumbered together), and the base/head/target revisions.
+  The parser persists these as `collision_details` alongside the existing
+  counts, and the PR soft-block section renders them.
+- **Advisory posture unchanged.** Collision counts join the existing
+  coherence counts in the same failed/soft-block report; they do not create a
+  new merge blocker, and unrelated advisory findings stay advisory exactly as
+  before. The intent-rec conformance merge guard is a separate mechanism and
+  is not extended here.
+
 External-agent entry points now expose the same contract explicitly instead of
 assuming callers will infer it from run metadata:
 

@@ -75,3 +75,51 @@
   `app/temporal/activities/create_pull_request_activity.rb`.
   *Test:* `spec/services/lid/planning_contract_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+
+- [x] **LID-RUNS-008** — When a coherence check runs with a resolvable target
+  ref and integration base, it SHALL compare the set of spec IDs newly declared
+  in the proposed head (including uncommitted working-tree changes) since the
+  base against the set of IDs newly declared on the target tip since the same
+  base, and SHALL report each intersection as an independently allocated
+  collision. When either the target ref or the base cannot be resolved, the
+  collision section SHALL be skipped with an advisory note rather than
+  reported as a finding or a failure.
+  *Code:* `bin/coherence-check.mjs`,
+  `app/services/lid/coherence_check.rb` (env wiring).
+  *Test:* `spec/lib/coherence_check_script_spec.rb`,
+  `spec/services/lid/coherence_check_spec.rb`.
+
+- [x] **LID-RUNS-009** — The collision rule SHALL be structural: an ID
+  declared at the common base SHALL NOT be reported as a collision when the
+  head amends or leaves unchanged that existing claim, and a head declaration
+  byte-identical to the target's declaration of the same ID, or a target tip
+  already merged into the head, SHALL be treated as an adopted or reconciled
+  claim rather than an independent allocation. Each reported collision SHALL
+  cite the head and target declaration sites and the head's `@spec` code and
+  test annotation sites, so the incoming claim and its Code/Test annotations
+  are reconciled together. The rule SHALL NOT branch on spec text keywords or
+  other semantic content judgments.
+  *Code:* `bin/coherence-check.mjs`.
+  *Test:* `spec/lib/coherence_check_script_spec.rb`.
+
+- [x] **LID-RUNS-010** — When the textual integration of the proposed head
+  with the target tip (computed via `git merge-tree`, with uncommitted
+  working-tree state captured through a temporary index so the real index and
+  working tree are not modified) would leave an ID declared at more than one
+  site in the merged tree, and at least one of those sites is new since the
+  base, the check SHALL report a duplicate declaration finding naming the ID,
+  the merged-tree sites, and the base/head/target revisions. When merge
+  simulation is unavailable, the check SHALL fall back to scanning the
+  working tree and SHALL note the fallback.
+  *Code:* `bin/coherence-check.mjs`.
+  *Test:* `spec/lib/coherence_check_script_spec.rb`.
+
+- [x] **LID-RUNS-011** — Collision and duplicate-declaration findings SHALL
+  surface through the existing coherence soft-block contract — persisted on
+  the agent run, summarized in the report status, and rendered with their
+  detail evidence in the PR body — and SHALL NOT introduce a new merge
+  blocker, nor change the advisory status of unrelated coherence findings.
+  *Code:* `app/services/lid/coherence_report.rb`,
+  `app/services/lid/coherence_section.rb`.
+  *Test:* `spec/services/lid/coherence_report_spec.rb`,
+  `spec/services/lid/coherence_section_spec.rb`.

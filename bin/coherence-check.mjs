@@ -26,13 +26,24 @@
  *   2. Arrow reference integrity (broken file references in arrow detail docs)
  *   3. Arrow staleness (audited >30 days ago; UNMAPPED/MAPPED status)
  *   4. Coverage summary (per-arrow and repo-wide)
+ *   5. Spec ID allocation collisions (newly declared IDs on the working tree
+ *      vs the target branch since the integration base; duplicate
+ *      declarations in the simulated integration tree)
  *
  * Not a blocker. Not a CI gate. Just a fast report. Exit code is always 0.
+ *
+ * Paid-only extension: check 5 reads git history. It resolves the target
+ * branch from LID_TARGET_BRANCH (set by Lid::CoherenceCheck from the
+ * project's default branch) or auto-detects origin/HEAD, and the
+ * integration base from LID_BASE_SHA or `git merge-base`. Outside a git
+ * repository, or when neither resolves, the section is skipped with an
+ * advisory note. Re-apply this after re-syncing from upstream.
  */
 
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, rmSync } from 'fs';
 import { join, resolve } from 'path';
-import { execSync } from 'child_process';
+import { tmpdir } from 'os';
+import { execSync, spawnSync } from 'child_process';
 
 const ROOT = resolve(process.cwd());
 const INTENT_DIR = join(ROOT, 'docs', 'intent');
@@ -333,6 +344,308 @@ function checkDriftSignals() {
   return { untaggedCode, untaggedTests };
 }
 
+// ───────── 5. Spec ID allocation collisions ─────────
+
+const GIT_TIMEOUT_MS = 20_000;
+
+// Declaration forms, first match per line, mirroring collectSpecIdsFromSpecs.
+const DECLARATION_PATTERNS = [
+  /^-\s+\[([ xD])\]\s+\*\*([A-Z][\w-]+)\*\*/,
+  /^###\s+([A-Z][\w-]+)\b/,
+  /^(?:-\s+)?\*\*([A-Z][\w-]+)\*\*:/,
+  /^\|\s*\*\*([A-Z][\w-]+)\*\*\s*\|/
+];
+
+function git(args, extraEnv = {}) {
+  return spawnSync('git', args, {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    timeout: GIT_TIMEOUT_MS,
+    env: { ...process.env, ...extraEnv }
+  });
+}
+
+function gitOk(args, extraEnv = {}) {
+  const result = git(args, extraEnv);
+  return result.status === 0 ? result.stdout : null;
+}
+
+function parseDeclarationSites(content) {
+  const sites = [];
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    for (const pattern of DECLARATION_PATTERNS) {
+      const match = lines[i].match(pattern);
+      if (match) {
+        sites.push({ id: match[match.length - 1], line: i + 1, text: lines[i].trim() });
+        break;
+      }
+    }
+  }
+  return sites;
+}
+
+function addSites(map, sites, file) {
+  for (const site of sites) {
+    if (!map.has(site.id)) map.set(site.id, []);
+    map.get(site.id).push({ file, line: site.line, text: site.text });
+  }
+}
+
+function collectWorktreeSites() {
+  const map = new Map();
+  if (!existsSync(INTENT_DIR)) return map;
+
+  for (const file of walkSpecFiles(INTENT_DIR)) {
+    const content = readFile(file);
+    if (content) addSites(map, parseDeclarationSites(content), relative(file));
+  }
+  return map;
+}
+
+function collectRefSites(ref) {
+  const map = new Map();
+  const listing = gitOk(['ls-tree', '-r', '--name-only', ref, '--', 'docs/intent']);
+  if (listing === null) return null;
+
+  for (const path of listing.split('\n').filter(Boolean)) {
+    if (!path.endsWith('-specs.md')) continue;
+    const content = gitOk(['show', `${ref}:${path}`]);
+    if (content !== null) addSites(map, parseDeclarationSites(content), path);
+  }
+  return map;
+}
+
+// Best-effort refresh of the target tip so concurrently merged sibling PRs
+// are visible even when the checkout predates their merge.
+function refreshTargetTip(candidate) {
+  const remote = candidate.ref.match(/^origin\/(.+)$/);
+  if (!remote) return;
+
+  const remotes = gitOk(['remote']);
+  if (remotes === null || !remotes.split('\n').map(r => r.trim()).includes('origin')) return;
+
+  const shallow = gitOk(['rev-parse', '--is-shallow-repository']);
+  const depthArgs = shallow !== null && shallow.trim() === 'false' ? [] : ['--depth', '1'];
+  git(['fetch', ...depthArgs, 'origin', `+refs/heads/${remote[1]}:refs/remotes/origin/${remote[1]}`], {
+    GIT_TERMINAL_PROMPT: '0'
+  });
+}
+
+function resolveTargetRef() {
+  const requested = (process.env.LID_TARGET_BRANCH || '').trim();
+  const candidates = [];
+  const seen = new Set();
+  const addCandidate = (ref, label) => {
+    if (ref && !seen.has(ref)) {
+      seen.add(ref);
+      candidates.push({ ref, label });
+    }
+  };
+
+  if (requested) {
+    addCandidate(`origin/${requested}`, requested);
+    addCandidate(requested, requested);
+  } else {
+    const originHead = gitOk(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+    if (originHead) addCandidate(originHead.trim(), originHead.trim());
+    for (const fallback of ['origin/main', 'origin/master', 'main', 'master']) {
+      addCandidate(fallback, fallback);
+    }
+  }
+
+  if (candidates.length === 0) return { skipped: 'no target branch ref resolved' };
+
+  refreshTargetTip(candidates[0]);
+
+  for (const candidate of candidates) {
+    const sha = gitOk(['rev-parse', '--verify', candidate.ref]);
+    if (sha) return { ...candidate, sha: sha.trim() };
+  }
+  return { skipped: 'no target branch ref resolved' };
+}
+
+function resolveBaseRef(target) {
+  const recorded = (process.env.LID_BASE_SHA || '').trim();
+  if (recorded && gitOk(['cat-file', '-e', `${recorded}^{commit}`]) !== null) {
+    return { ref: recorded, sha: recorded };
+  }
+
+  const mergeBase = gitOk(['merge-base', target.ref, 'HEAD']);
+  if (mergeBase) return { ref: mergeBase.trim(), sha: mergeBase.trim() };
+
+  return null;
+}
+
+// True when the target tip is already an ancestor of HEAD (the branch merged
+// the target), false when it is not, null when ancestry cannot be decided.
+function targetAlreadyMerged(target) {
+  const result = git(['merge-base', '--is-ancestor', target.sha, 'HEAD']);
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  return null;
+}
+
+// Simulates the textual integration of the working tree (uncommitted agent
+// work included) with the target tip. The working tree is snapshotted into a
+// commit through a temporary index, so the real index and working tree are
+// never modified.
+function integrationTree(target) {
+  const scratch = mkdtempSync(join(tmpdir(), 'lid-coherence-'));
+  try {
+    const indexEnv = { GIT_INDEX_FILE: join(scratch, 'index') };
+    if (git(['read-tree', 'HEAD'], indexEnv).status !== 0) return null;
+    if (git(['add', '-A', '--', '.'], indexEnv).status !== 0) return null;
+
+    const tree = gitOk(['write-tree'], indexEnv);
+    if (tree === null) return null;
+
+    const snapshot = gitOk(['commit-tree', tree.trim(), '-p', 'HEAD', '-m', 'lid-coherence-check snapshot']);
+    if (snapshot === null) return null;
+
+    const merged = git(['merge-tree', '--write-tree', snapshot.trim(), target.ref]);
+    if (merged.status !== 0 && merged.status !== 1) return null;
+
+    const mergedTree = (merged.stdout || '').split('\n')[0]?.trim();
+    if (!mergedTree || !/^[0-9a-f]{40,}$/.test(mergedTree)) return null;
+
+    return { tree: mergedTree, conflicts: merged.status === 1 };
+  } catch {
+    return null;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function siteKey(site) {
+  return `${site.file}\u0000${site.text}`;
+}
+
+function duplicateDeclarations(sites, baseSites) {
+  const baseKeys = new Set();
+  for (const list of baseSites.values()) {
+    for (const site of list) baseKeys.add(siteKey(site));
+  }
+
+  const duplicates = [];
+  for (const [id, list] of sites) {
+    if (list.length < 2) continue;
+    if (list.some(site => !baseKeys.has(siteKey(site)))) duplicates.push({ id, sites: list });
+  }
+  return duplicates;
+}
+
+// @spec LID-RUNS-008, LID-RUNS-009, LID-RUNS-010
+function checkSpecIdCollisions(codeRefs) {
+  if (!existsSync(join(ROOT, '.git'))) return { skipped: 'not a git repository' };
+  if (!existsSync(INTENT_DIR)) return { skipped: 'no docs/intent directory' };
+
+  const target = resolveTargetRef();
+  if (target.skipped) return { skipped: target.skipped };
+
+  const base = resolveBaseRef(target);
+  if (!base) return { skipped: 'integration base unresolvable (no common ancestor)' };
+
+  const head = gitOk(['rev-parse', 'HEAD']);
+  if (head === null) return { skipped: 'HEAD unresolvable' };
+
+  const headSites = collectWorktreeSites();
+  const targetSites = collectRefSites(target.ref);
+  if (targetSites === null) return { skipped: 'target tree unreadable' };
+
+  const baseSites = collectRefSites(base.ref) || new Map();
+  if (headSites.size === 0 && targetSites.size === 0) {
+    return { skipped: 'no docs/intent spec declarations found' };
+  }
+
+  const notes = [];
+  const merged = targetAlreadyMerged(target);
+
+  let collisions = [];
+  if (merged === true) {
+    notes.push('target tip already merged into HEAD; independent-allocation detection skipped');
+  } else {
+    const baseIds = new Set(baseSites.keys());
+    const targetNew = new Set([...targetSites.keys()].filter(id => !baseIds.has(id)));
+    for (const [id, headList] of headSites) {
+      if (baseIds.has(id) || !targetNew.has(id)) continue;
+      // A head declaration byte-identical to the target's declaration is an
+      // adopted claim, not an independent allocation.
+      const headTexts = new Set(headList.map(site => site.text));
+      if (targetSites.get(id).some(site => headTexts.has(site.text))) continue;
+      collisions.push({ id, headSites: headList, targetSites: targetSites.get(id), codeRefs: codeRefs.get(id) });
+    }
+  }
+
+  let duplicates = [];
+  let integration = integrationTree(target);
+  if (integration) {
+    const mergedSites = collectRefSites(integration.tree);
+    if (mergedSites) {
+      duplicates = duplicateDeclarations(mergedSites, baseSites);
+    } else {
+      notes.push('integration tree unreadable; scanned the working tree only');
+      duplicates = duplicateDeclarations(headSites, baseSites);
+      integration = null;
+    }
+  } else {
+    notes.push('merge simulation unavailable; scanned the working tree only');
+    duplicates = duplicateDeclarations(headSites, baseSites);
+  }
+
+  return { target, base, headSha: head.trim(), collisions, duplicates, integration, notes };
+}
+
+function truncate(text, limit) {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function formatSites(sites) {
+  const first = sites[0];
+  const more = sites.length > 1 ? ` (+${sites.length - 1} more)` : '';
+  return `${first.file}:${first.line} "${truncate(first.text, 72)}"${more}`;
+}
+
+function renderCollisionSection(result) {
+  if (result.skipped) {
+    console.log(`  Collision check skipped: ${result.skipped}.`);
+    return;
+  }
+
+  console.log(`  Target: ${result.target.label} (${result.target.sha}) | Base: ${result.base.sha} | Head: ${result.headSha}`);
+
+  if (result.collisions.length) {
+    console.log(`  Collisions (${result.collisions.length}) — IDs newly declared on both head and target since base:`);
+    for (const collision of result.collisions) {
+      console.log(`    ${collision.id}`);
+      console.log(`      head: ${formatSites(collision.headSites)}`);
+      console.log(`      target: ${formatSites(collision.targetSites)}`);
+      const refs = (collision.codeRefs || [])
+        .slice()
+        .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+        .map(ref => `${ref.file}:${ref.line}`);
+      console.log(`      @spec in head: ${refs.length ? refs.join(', ') : '(none)'}`);
+    }
+  } else {
+    console.log('  No collisions detected.');
+  }
+
+  if (result.duplicates.length) {
+    console.log(`  Duplicate declarations (${result.duplicates.length}) — IDs declared more than once in the integration tree:`);
+    for (const duplicate of result.duplicates) {
+      const where = duplicate.sites.map(site => `${site.file}:${site.line}`).join(', ');
+      const origin = result.integration
+        ? ` (integration tree ${result.integration.tree}${result.integration.conflicts ? ', merge conflicts' : ', textual auto-merge'})`
+        : ' (working tree)';
+      console.log(`    ${duplicate.id}: ${where}${origin}`);
+    }
+  } else {
+    console.log('  No duplicate declarations in the integration tree.');
+  }
+
+  for (const note of result.notes) console.log(`  Note: ${note}.`);
+}
+
 // ───────── Report ─────────
 
 function section(title) {
@@ -421,6 +734,9 @@ function run() {
   console.log(`\n  Untagged test files (${drift.untaggedTests.length}) — tests with no @spec marker:`);
   for (const file of drift.untaggedTests.slice(0, 25)) console.log(`    ${file}`);
   if (drift.untaggedTests.length > 25) console.log(`    ... and ${drift.untaggedTests.length - 25} more`);
+
+  section('Spec ID Allocation Collisions');
+  renderCollisionSection(checkSpecIdCollisions(codeRefs));
   console.log('');
 }
 
