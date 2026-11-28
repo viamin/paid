@@ -146,3 +146,11 @@ produce the same reviewer chain during the schema transition.
 - **Not Paid's own repo scan coverage.** The host pre-commit secret scan and
   CI workflow scan are intentionally documented in their sibling intent
   segments to avoid duplication.
+
+## Style-guide version statistics
+
+Quality collection aggregates scored automated metrics for all versions exposed
+to the completed run in one grouped query. It preserves the existing scoreable
+run and tenant filters, distinct run counts, metric-weighted averages and
+four-decimal rounding. An exposed version without eligible rows resets to zero
+uses and a null average; versions not exposed to the run are not updated.

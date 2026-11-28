@@ -350,16 +350,23 @@ module QualityMetrics
       )
     end
 
+    # @spec QUALITY-LOOPS-010
     def update_style_guide_version_stats
-      agent_run.style_guide_run_exposures.includes(:style_guide_version).find_each do |exposure|
+      exposures = agent_run.style_guide_run_exposures
+      version_ids = exposures.distinct.pluck(:style_guide_version_id)
+      stats = StyleGuideRunExposure
+        .joins(agent_run: :quality_metrics)
+        .where(style_guide_version_id: version_ids)
+        .merge(QualityMetric.automated.with_composite_score)
+        .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
+        .group(:style_guide_version_id)
+        .pluck("style_guide_run_exposures.style_guide_version_id",
+          Arel.sql("COUNT(DISTINCT style_guide_run_exposures.agent_run_id)"),
+          Arel.sql("AVG(quality_metrics.composite_score)"))
+        .to_h { |id, count, average| [ id, [ count, average ] ] }
+      exposures.where(style_guide_version_id: version_ids).includes(:style_guide_version).find_each do |exposure|
         version = exposure.style_guide_version
-        stats = StyleGuideRunExposure
-          .joins(agent_run: :quality_metrics)
-          .where(style_guide_version: version)
-          .merge(QualityMetric.automated.with_composite_score)
-          .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
-          .pick(Arel.sql("COUNT(DISTINCT style_guide_run_exposures.agent_run_id), AVG(quality_metrics.composite_score)"))
-        count, avg = stats
+        count, avg = stats.fetch(version.id, [ 0, nil ])
         version.update_columns(
           usage_count: count.to_i,
           avg_quality_score: avg&.round(4)
