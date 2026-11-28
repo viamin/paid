@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-043** — When removing the redundant
+  `service_containers` account prefix, the migration SHALL preserve rows and
+  other index definitions, require the original nonunique account key and a
+  valid full unique btree coverer on `(account_id, name)`, reject incompatible
+  catalog changes, restore the prefix on rollback and permit reapplication.
+  *Issue:* #5878.
+  *Tests:* `spec/migrations/remove_redundant_service_container_account_index_spec.rb`.
+  *Code:* `RemoveRedundantServiceContainerAccountIndex`.
