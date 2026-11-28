@@ -11,7 +11,10 @@ module Development
     #   RAILS-CONTROL-PLANE-028 RAILS-CONTROL-PLANE-029
     class Scan
       Result = Data.define(:skipped, :created, :updated, :reopened, :closed, :deferred,
-        :deferred_keys, :incomplete_categories, :findings) do
+        :deferred_keys, :incomplete_categories, :findings, :planning_error, :repair_plans, :dry_run, :assessed_keys) do
+        def initialize(planning_error: nil, repair_plans: [], dry_run: false, assessed_keys: [], **attributes)
+          super(**attributes, planning_error: planning_error, repair_plans: repair_plans, dry_run: dry_run, assessed_keys: assessed_keys)
+        end
         def self.skipped_result
           new(skipped: true, created: 0, updated: 0, reopened: 0, closed: 0, deferred: 0,
             deferred_keys: [], incomplete_categories: [], findings: 0)
@@ -21,16 +24,17 @@ module Development
           new(skipped: false, created: filing.created, updated: filing.updated,
             reopened: filing.reopened, closed: filing.closed, deferred: filing.deferred,
             deferred_keys: filing.deferred_keys,
-            incomplete_categories: collection.incomplete_categories, findings: collection.findings.size)
+            incomplete_categories: collection.incomplete_categories, findings: collection.findings.size, planning_error: filing.planning_error, repair_plans: filing.repair_plans, assessed_keys: filing.assessed_keys)
         end
 
         def skipped? = skipped
 
-        def complete? = incomplete_categories.empty?
+        def complete? = incomplete_categories.empty? && planning_error.nil?
       end
 
       def initialize(project:, client: nil, environment: Rails.env, database: nil,
-        collector: nil, dashboard_base_url: nil, now: -> { Time.current })
+        collector: nil, dashboard_base_url: nil, dry_run: false, now: -> { Time.current })
+        @dry_run = dry_run
         @project = project
         @environment = environment.to_s
         @database = database
@@ -47,7 +51,12 @@ module Development
         # GoodJob does not apply its concurrency controls to perform_now.
         # Hold the owning project's row lock across GitHub lookup and issue
         # creation so scheduled and manual scans cannot file the same finding.
-        @project.with_lock { scan }
+        result = nil
+        @project.with_lock(requires_new: @dry_run) do
+          result = scan.with(dry_run: @dry_run)
+          raise ActiveRecord::Rollback if @dry_run
+        end
+        result
       end
 
       private
@@ -66,13 +75,13 @@ module Development
           !finding.persistence_required || rows[finding.key].consecutive_observations >= Policy::PERSISTENCE_ROUNDS
         end
         filing = IssueFiler.new(project: @project, client: @client,
-          dashboard_base_url: @dashboard_base_url, now: @now).sync(
+          dashboard_base_url: @dashboard_base_url, now: @now, dry_run: @dry_run).sync(
             observed_findings: collection.findings,
             actionable_findings: actionable,
             rows: rows,
             collected_categories: collection.coverage.select { |_, status| status == :collected }.keys.to_set)
 
-        result = Result.from_filing(collection, filing)
+        result = Result.from_filing(collection, filing).with(dry_run: @dry_run)
         log_scan(result, duration_ms: elapsed_ms(started_at))
         result
       end
@@ -101,6 +110,9 @@ module Development
           reopened: result.reopened,
           closed: result.closed,
           deferred: result.deferred,
+          assessed: result.assessed_keys.size,
+          dry_run: result.dry_run,
+          planning_error: result.planning_error,
           incomplete_categories: result.incomplete_categories,
           duration_ms: duration_ms)
       end

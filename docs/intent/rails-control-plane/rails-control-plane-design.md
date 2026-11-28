@@ -260,47 +260,86 @@ an informational exclusion with a recorded reason.
 | Replication lag | Informational exclusion: the development database is a primary, so the Overview's replica-only lag check does not apply. | — |
 | Autovacuum workers shown with long-running queries | Informational exclusion: expected maintenance activity. | — |
 
-### Issue lifecycle
+### Repair assessment and ownership
 
-Findings are deduplicated by the stable identities above. Each actionable
-finding owns at most one GitHub issue labeled `pghero-overview` in each
-tenant self repository; the issue
-body embeds a hidden marker with the finding identity so issues can be
-adopted even if local state is lost. Recovery checks open and closed issues
-and fills missing links even when observation recording has recreated the
-state row. Existing links take precedence; otherwise recovery prefers an
-open issue, then the oldest match. An actionable recurring finding reopens
-its recovered closed issue. A persisted `pghero_overview_findings`
-row (system infrastructure in the primary database, not tenant data) scopes
-first/last observation, consecutive observations, and the linked issue number
-to the target project. On subsequent scans the existing issue body is refreshed when the
-evidence changed; when the finding disappears the issue is closed with a
-comment recording when it was last observed; if the finding recurs after
-closure the issue is reopened. A per-run cap defers new-issue creation
-beyond the first few findings — deferred findings keep their accumulated
-state and are filed by the next scan, so nothing is dropped.
+Stable finding identities track observations independently of work ownership.
+A project-scoped repair owns a selected set of observations and one canonical
+issue or pull request. Several findings may share a repair, including different
+finding types resolved by the same action. An observation alone does not publish
+work. Existing issue links are imported without creating replacement issues;
+trusted PR closing references preserve explicit shared ownership. Consolidating
+existing repairs retains each source's distinct instructions and rationale under
+the canonical owner. Repeated imports do not append the same source again.
 
-Issue bodies carry the finding type, observed values against their
-thresholds, observation time, database, a PgHero dashboard link, and a
-concrete investigation prompt (run `EXPLAIN`, inspect the relation, check
-pool configuration) that stops short of instructing a schema change.
-Long-running and slow query text is passed through the same literal
-filtering used for stored history before it reaches an issue body; no
-credentials or connection URLs are included.
+Before publishing new work, the scanner supplies current findings, persisted
+repair coverage, and trusted open GitHub work to a bounded assessment through
+`Llm::Request` and `agent_harness`. The assessment proposes repairs, their exact
+finding keys, rationale, and existing owners, or defers findings with a reason.
+When full evidence exceeds the input budget, AI reads compact indexes of every
+pending observation and open work item, then selects a repair scope and plausible
+owners for detailed assessment. Unselected observations receive a reasoned
+deferral for later scans. Each inference input stays within 90 KB before prompt
+framing; arbitrary inventory tails are never silently discarded. Imported investigations retain their authored text;
+new shared membership appends aggregate evidence instead of replacing it.
+Code validates the complete partition of unassigned actionable findings, known
+same-project owners, database boundaries, and bounded input/output. It makes no
+semantic grouping decisions from table names, category strings, or title matches.
+Assessment, trust, lookup, or validation failure defers publication and surfaces
+incomplete coverage; it never falls back to one issue per finding.
+
+Successful detailed assessments persist their time, evidence fingerprint and
+reason on each assessed observation. A selection-only deferral is pending work,
+not a completed assessment. Bounded selection must include the least recently
+assessed pending observation, with never-assessed observations first, while AI
+may add related findings and plausible owners from the complete indexes. This
+rotates the assessment frontier without grouping findings by naming rules.
+Failures and previews do not advance assessment history.
+
+Publication requires an explicit affirmative readiness decision with supporting
+evidence and no missing prerequisites. Conditional proposals remain deferred
+with their missing evidence. Duplicate-index assessment includes the actual catalog definitions, validity and
+uniqueness flags for both the candidate and retained covering index. Zero
+recorded index scans alone do not establish a safe removal: representative workload, catalog redundancy or measured query
+behavior must support the repair. Retaining a needed covering or search index
+is part of assessing the repair, not a reason to delete it to clear a warning.
+
+The publisher renders all members of a managed repair together. A finding loses
+observation continuity when absent, but can be resolved only when its category
+was collected. The repair closes only after every member is resolved. A missing
+category retains its last evidence and keeps the owner open. Reused human issues
+and PRs remain externally managed; the scanner never rewrites or closes them.
+A `pghero-repair-covers` marker declares coverage without transferring lifecycle
+ownership; scanner-origin finding or repair markers establish managed work.
+Explicitly superseded legacy issue links remain historical aliases and are not
+reopened while a canonical repair owns the finding. Recurrence reuses that owner.
+
+GitHub bodies carry repair and finding markers for recovery after local state
+loss or a remote-write/local-rollback failure. Recovery includes closed issues,
+repairs unlinked observation rows, and preserves an existing link before choosing
+an open then oldest marked owner. Unpublished repairs retained by a capped scan
+recover ambiguous remote publication by their stable repair marker. Newly declared
+coverage joins the existing owner rather than creating another repair with the
+same issue number. Per-run publication caps apply to new repair
+issues, not to the number of observations assessed.
+
+`development:pg_hero_overview_preview` uses the scheduled path with GitHub writes
+suppressed and scan-state changes rolled back. It reports proposed publication,
+existing ownership, deferrals, and incomplete assessment without applying repairs.
+Normal development jobs use the repair-aware path after local schema migration.
 
 ### Coverage semantics
 
-A scan is complete only when every category could be collected. Collection
+A scan is complete only when every category could be collected and repair
+assessment succeeded. Collection
 statement timeouts (the same LockWaitTimeout/QueryCanceled cases the
 Overview rescues), unavailable query stats, and GitHub lookup or write
 failures each yield a failed or explicitly incomplete scan — never an
 apparent all-clear — and categories that could not be observed are excluded
 from disappearance decisions so a timed-out catalog read cannot close a
-still-open issue. The complete issue list is read first, and a lookup failure
-aborts the scan before any write. A later write failure may leave remote
-issues after local state rolls back; the next scan recovers their identity
-markers before creating issues. Database errors
-propagate so GoodJob records the failure.
+still-open issue. GitHub work is read before publishing; a lookup failure
+aborts before GitHub writes. Writes can succeed before their response or local
+transaction fails, so retries recover marked remote work before publishing.
+Database errors propagate so GoodJob records the failure.
 
 ### Scheduling and concurrency
 
@@ -317,7 +356,7 @@ the issues it already created instead of duplicating them.
 
 | Decision | Rationale | Alternative considered |
 | --- | --- | --- |
-| One issue per finding identity instead of one consolidated issue | Individual findings close independently when fixed; a consolidated issue cannot represent per-finding lifecycles without comment bookkeeping. | A single rolling issue is quieter but hides which findings are resolved. |
+| One work owner per assessed repair | A repair may resolve several observations; separate persisted membership preserves each observation and prevents premature closure. | Publishing per observation creates overlapping work and repeated CI; grouping by table alone does not establish shared repair coverage. |
 | Persist scan state in the primary database | Persistence gating and recurrence need observation history that survives process restarts; the table is system infrastructure like the PgHero history tables. | Rails.cache avoids a migration but loses state on cache clears, breaking persistence gating. |
 | Trust PgHero's windowed query stats for slow-query gating | The 3-hour aggregated window with the calls threshold already absorbs counter resets and cumulative totals. | Custom delta tracking duplicates PgHero's combining logic. |
 | Cap new issues per run and defer the rest | Bounds GitHub write volume per scan while the next scan retries deferred findings from persisted state. | Filing everything in one run can burst the API and the Inbox. |

@@ -185,7 +185,10 @@ module Development
           add_finding(findings, type: :duplicate_index, key: "duplicate_index/#{unneeded.fetch(:schema)}/#{unneeded.fetch(:name)}",
             title: "Duplicate index #{unneeded.fetch(:name)} covered by #{covering.fetch(:name)}",
             observed: { table: "#{unneeded.fetch(:schema)}.#{unneeded.fetch(:table)}",
-                        unneeded_index: unneeded.fetch(:name), covering_index: covering.fetch(:name) })
+                        unneeded_index: unneeded.fetch(:name), covering_index: covering.fetch(:name),
+                        unneeded_definition: unneeded[:definition], covering_definition: covering[:definition],
+                        unneeded_valid: unneeded[:valid], covering_valid: covering[:valid],
+                        unneeded_unique: unneeded[:unique], covering_unique: covering[:unique] }.compact)
         end
         indexes
       end

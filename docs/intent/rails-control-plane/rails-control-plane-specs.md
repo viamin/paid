@@ -285,30 +285,18 @@ failures when no tmux socket responds.
   `spec/jobs/pg_hero_overview_scan_job_spec.rb`,
   `spec/services/development/pg_hero_overview/scan_spec.rb`,
   `spec/lib/tasks/development_pghero_rake_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
   *Design:* `rails-control-plane-design.md`, Development PgHero Overview
   finding issues.
 
-- [x] **RAILS-CONTROL-PLANE-027** — When the development PgHero overview
-  scan files a finding, it SHALL key the finding by the target project's self
-  repository and a stable identity (database, finding type, and relation/index
-  identity or query hash) and
-  maintain at most one GitHub issue per identity in the tenant's self
-  repository: a new finding creates one issue whose body carries the finding
-  type, observed values against thresholds, observation time, database, a
-  PgHero dashboard link, and a concrete investigation prompt that treats
-  suggested indexes and slow queries as investigation leads rather than
-  schema-change instructions; a recurring finding updates the existing
-  issue, recovering open or closed marked issues when local linkage is
-  missing, including when an unlinked observation row already exists;
-  existing links SHALL take precedence, otherwise recovery SHALL prefer
-  an open issue, then the oldest matching issue;
-  a finding that disappears closes its issue with when it was last
-  observed; a finding that recurs after closure reopens its issue. Query
-  text embedded in issues SHALL be filtered of literal values and SHALL NOT
-  include credentials.
+- [x] **RAILS-CONTROL-PLANE-027** — The development overview scanner SHALL
+  retain stable project/database/finding identities while publishing one issue
+  per assessed repair with explicit member identities and evidence. Recovery
+  SHALL adopt marked open or closed work even when observation rows already
+  exist, preserve established ownership, and never duplicate an ambiguous write.
+  Embedded query text SHALL be literal-filtered and contain no credentials.
   *Tests:* `spec/services/development/pg_hero_overview/issue_filer_spec.rb`.
-  *Design:* `rails-control-plane-design.md`, Development PgHero Overview
-  finding issues.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
 
 - [x] **RAILS-CONTROL-PLANE-028** — When the development PgHero overview
   scan observes a transient category — long-running queries (excluding
@@ -364,3 +352,48 @@ failures when no tmux socket responds.
 - [D] **RAILS-CONTROL-PLANE-005** — When a Phlex migration is approved, the
   control plane SHALL update this segment to replace the ERB-specific claim with
   the new shipped component-layer behavior.
+
+- [x] **RAILS-CONTROL-PLANE-033** — Before creating repair issues, the development
+  overview scanner SHALL assess current observations and trusted existing work
+  through bounded `Llm::Request`/`agent_harness` inference, validate an explicit
+  partition into repair coverage or reasoned deferrals and same-project owners,
+  and defer publication on malformed, incomplete, unavailable, or oversized
+  evidence. No failure SHALL fall back to per-observation issue creation.
+  *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-034** — The scanner SHALL persist repair membership,
+  retain one canonical owner across recurrence and trusted supersession, and
+  close managed repair issues only when every member is no longer observed in
+  successfully collected categories. Shared evidence SHALL be rendered together;
+  consolidation SHALL retain each source repair's instructions and rationale
+  without appending them again on repeated imports;
+  externally managed issues and PRs SHALL NOT be rewritten, reopened, or closed.
+  *Tests:* `spec/services/development/pg_hero_overview/issue_filer_sync_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-035** — Development preview SHALL execute the same
+  collection, assessment and planning path with no GitHub writes and no committed
+  observation or repair changes, and expose proposed work and incomplete coverage.
+  *Tests:* `spec/services/development/pg_hero_overview/scan_spec.rb`,
+  `spec/lib/tasks/development_pghero_rake_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-036** — Successful detailed assessments SHALL persist
+  their timestamp, observation fingerprint, disposition and reason. Bounded
+  selection SHALL include the least recently assessed pending observation,
+  prioritizing never-assessed observations, while permitting AI-selected related
+  findings. Unselected findings, failed assessments and previews SHALL NOT be
+  recorded as completed detailed assessments.
+  *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`,
+  `spec/services/development/pg_hero_overview/issue_filer_sync_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.
+
+- [x] **RAILS-CONTROL-PLANE-037** — The scanner SHALL publish only proposals with
+  affirmative publication readiness, supporting evidence and no missing evidence.
+  Conditional proposals SHALL become reasoned deferrals. Assessment SHALL seek
+  a safe repair to the underlying concern; zero recorded scans alone SHALL NOT
+  establish index-removal readiness. Duplicate-index evidence SHALL include the
+  actual candidate and covering index definitions, validity and uniqueness.
+  *Tests:* `spec/services/development/pg_hero_overview/plan_repairs_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Repair assessment and ownership.

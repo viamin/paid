@@ -270,4 +270,19 @@ RSpec.describe Development::PgHeroOverview::Collect do
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")
     end
   end
+  # @spec RAILS-CONTROL-PLANE-037
+  it "supplies actual catalog evidence for duplicate-index repair assessment" do
+    stub_overview_clean
+    unneeded = { schema: "public", table: "issues", name: "issues_project",
+      definition: "CREATE INDEX issues_project ON issues USING btree (project_id)", valid: true, unique: false }
+    covering = { schema: "public", table: "issues", name: "issues_project_status",
+      definition: "CREATE INDEX issues_project_status ON issues USING btree (project_id, status)", valid: true, unique: false }
+    allow(database).to receive(:duplicate_indexes).and_return([ { unneeded_index: unneeded, covering_index: covering } ])
+
+    finding = collect.call.findings.find { |entry| entry.type == :duplicate_index }
+
+    expect(finding.observed).to include(unneeded_definition: unneeded[:definition],
+      covering_definition: covering[:definition], unneeded_valid: true, covering_valid: true,
+      unneeded_unique: false, covering_unique: false)
+  end
 end

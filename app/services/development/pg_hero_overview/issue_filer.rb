@@ -2,16 +2,9 @@
 
 module Development
   module PgHeroOverview
-    # Files finding issues into the tenant's self repository and maintains
-    # the one-issue-per-identity lifecycle: create with evidence, update on
-    # changed evidence, reopen on recurrence (or a human close while the
-    # finding persists), close when the finding disappears from a category
-    # this scan could observe. The GitHub issue list is read before any
-    # write, so a failed lookup aborts without filing or closing anything,
-    # and issues carrying the identity marker are adopted when local
-    # state is missing — a retried or concurrent scan cannot duplicate.
-    #
+    # Persists repair coverage and maintains one lifecycle for all its observations.
     # @spec RAILS-CONTROL-PLANE-027 RAILS-CONTROL-PLANE-028 RAILS-CONTROL-PLANE-029
+    #   RAILS-CONTROL-PLANE-033 RAILS-CONTROL-PLANE-034
     class IssueFiler
       LABEL = "pghero-overview"
       IDENTITY_MARKER = "pghero-overview-finding"
@@ -19,48 +12,11 @@ module Development
       DEFAULT_CAP = Policy::MAX_NEW_ISSUES_PER_RUN
       BODY_TEXT_LIMIT = 1_500
 
-      Result = Data.define(:created, :updated, :reopened, :closed, :deferred, :deferred_keys)
+      Result = Data.define(:created, :updated, :reopened, :closed, :deferred, :deferred_keys,
+        :planning_error, :repair_plans, :assessed_keys)
 
-      INVESTIGATION_PROMPTS = {
-        slow_query: "Run EXPLAIN (ANALYZE, BUFFERS) locally for this shape (bind parameters are already " \
-                    "filtered), confirm the plan and row estimates, and decide whether the query needs a " \
-                    "tighter scope, batching, or a covering index. This is an investigation lead: measure " \
-                    "before any schema change and verify with the focused test suite.",
-        suggested_index: "Reproduce with EXPLAIN and confirm an index on these columns would actually be " \
-                         "chosen. Treat the suggestion as a lead: validate with measurements before proposing " \
-                         "a migration; do not create the index from this issue alone.",
-        invalid_index: "Inspect the index build state (look for a failed CREATE INDEX CONCURRENTLY) and " \
-                       "rebuild it deliberately, then confirm pg_index reports it valid.",
-        invalid_constraint: "Identify why the constraint was left NOT VALID; either validate existing rows " \
-                            "(VALIDATE CONSTRAINT) or drop it deliberately.",
-        duplicate_index: "Confirm the covering relationship through the catalog before removing the " \
-                         "unneeded index; drop only with a reviewed migration.",
-        unused_index: "Check the index has genuinely been unused across a representative workload window " \
-                      "(statistics reset on restart), then consider removal through a reviewed migration.",
-        sequence_danger: "Check the sequence usage rate and, if genuine, widen the column type or reseed; " \
-                         "verify headroom afterwards.",
-        unreadable_sequence: "Restore sequence readability (privileges) so capacity monitoring works; the " \
-                             "scanner cannot judge that sequence otherwise.",
-        xid_danger: "Run VACUUM FREEZE (or aggressive autovacuum settings) on the listed relation and " \
-                    "re-check the remaining transaction IDs.",
-        replication_slot: "Drop the stale slot if its consumer is gone (retained WAL grows without bound), " \
-                          "or restart the consumer.",
-        long_running_query: "Inspect the statement (text is literal-filtered) and the session state; decide " \
-                            "whether it is stuck and blocking others or legitimate long work, and whether a " \
-                            "statement timeout should bound it.",
-        connection_pressure: "Check pool sizing and connection sources (PgHero's Connections page); change " \
-                             "the threshold or the pool deliberately.",
-        idle_in_transaction: "Find the holders via pg_stat_activity (idle in transaction) and fix the code " \
-                             "path that leaves transactions open.",
-        cache_hit_rate: "Compare database memory against the working-set size; these counters are cumulative " \
-                        "since reset, so confirm the rate is persistently low rather than cold-start noise.",
-        replication_lag: "Inspect the replica's replay position and load; confirm the lag is sustained " \
-                         "rather than a burst.",
-        query_stats_unavailable: "Install the pg_stat_statements extension (bin/setup provisions it in " \
-                                 "development) so slow-query detection works again."
-      }.freeze
-
-      def initialize(project:, client:, dashboard_base_url: nil, cap: DEFAULT_CAP, now: -> { Time.current })
+      def initialize(project:, client:, dashboard_base_url: nil, cap: DEFAULT_CAP, now: -> { Time.current }, dry_run: false)
+        @dry_run = dry_run
         @project = project
         @client = client
         @dashboard_base_url = dashboard_base_url || ENV.fetch("PAID_PGHERO_BASE_URL", "http://localhost:3000")
@@ -69,113 +25,291 @@ module Development
       end
 
       def sync(observed_findings:, actionable_findings:, rows:, collected_categories:)
-        issues = @client.all_issues(@project.full_name, labels: LABEL, state: "all")
-        open_issues = issues.reject { |issue| issue.state == "closed" }
-        open_by_number = open_issues.to_h { |issue| [ issue.number.to_i, issue ] }
-        adopt_marked_issues(issues, rows)
-
-        actionable_keys = actionable_findings.map(&:key).to_set
-        created = updated = reopened = 0
-
+        @snapshot = WorkSnapshot.new(project: @project, client: @client)
+        @counts = { created: 0, updated: 0, reopened: 0, closed: 0 }
+        @plans = []
+        @actionable_identities = actionable_findings.map(&:identity).to_set
+        observed = observed_findings.index_by(&:identity)
         observed_findings.each do |finding|
-          row = rows[finding.key]
-          issue_number = row&.github_issue_number
-
-          if issue_number.nil?
-            next unless actionable_keys.include?(finding.key)
-            next unless created < @cap
-
-            rows[finding.key] = create_issue_for(finding, row)
-            created += 1
-          elsif actionable_keys.include?(finding.key) && (row.resolved_at.present? || !open_by_number.key?(issue_number))
-            reopen_issue(finding, row, issue_number)
-            reopened += 1
-          elsif refresh_issue_body(finding, row, issue_number, open_by_number[issue_number])
-            updated += 1
-          end
+          rows[finding.key] ||= findings_scope.find_or_initialize_by(database: finding.database, finding_key: finding.key)
+          row = rows.fetch(finding.key)
+          row.update!(finding_type: finding.type, observation: finding.to_h.as_json,
+            first_seen_at: row.first_seen_at || @now.call, last_seen_at: @now.call,
+            consecutive_observations: [ row.consecutive_observations.to_i, 1 ].max, resolved_at: nil)
         end
+        recover_owners
+        import_pr_coverage
+        pending = actionable_findings.select do |finding|
+          row = rows.fetch(finding.key).reload
+          repair = row.repair
+          if repair && !repair.managed_issue && @snapshot.work_items.none? { |item|
+            item["number"] == repair.github_issue_number || item["number"] == repair.github_pr_number
+          }
+            row.update!(repair: nil)
+          end
+          row.repair_id.nil?
+        end
+        planning_error = nil
+        assessed_keys = []
+        begin
+          assessment = PlanRepairs.new(project: @project, findings: pending,
+            work_items: @snapshot.work_items,
+            assessments: pending.to_h { |finding| [ finding.identity, rows.fetch(finding.key).assessment ] },
+            existing_repairs: repairs_scope.includes(:findings).map do |repair|
+              { title: repair.title, instructions: repair.instructions, rationale: repair.rationale,
+                owner_issue_number: repair.github_issue_number, owner_pr_number: repair.github_pr_number,
+                finding_keys: repair.finding_identities, observations: repair.findings.map(&:observation) }
+            end).call
+          assessment.fetch("repairs").each { |plan| assign_plan(plan) }
+          assessed_keys = assessment.fetch("assessed_finding_keys")
+          record_assessment(assessment, observed)
+          @plans.concat(assessment.fetch("deferred").map { |entry| entry.merge("action" => "defer") })
+        rescue PlanRepairs::InvalidAssessment, AgentHarness::Error => error
+          planning_error = error.is_a?(PlanRepairs::InvalidAssessment) ? error.reason : error.class.name
+          Rails.logger.warn(message: "pghero_overview.assessment_deferred", project_id: @project.id,
+            error_class: error.class.name, reason: planning_error)
+        end
+        findings_scope.find_each do |row|
+          next if observed.key?("#{row.database}/#{row.finding_key}") || row.resolved_at.present?
+          next unless collected_categories.include?(Policy.category_for(row.finding_type.to_sym))
 
-        closed = close_disappeared(observed_keys: observed_findings.map(&:key).to_set,
-          collected_categories: collected_categories)
-        # Cap-deferred findings keep their state rows; the next scan retries
-        # them, so nothing is dropped.
-        deferred_keys = actionable_findings.filter_map { |f| f.key if rows[f.key]&.github_issue_number.nil? }
-
-        Result.new(created: created, updated: updated, reopened: reopened, closed: closed,
-          deferred: deferred_keys.size, deferred_keys: deferred_keys)
+          row.update!(resolved_at: @now.call)
+        end
+        repairs_scope.includes(:findings).find_each { |repair| maintain_repair(repair) }
+        deferred = actionable_findings.filter_map do |finding|
+          row = rows.fetch(finding.key).reload
+          finding.key unless row.repair && (row.repair.github_issue_number || row.repair.github_pr_number)
+        end
+        Result.new(**@counts, deferred: deferred.size, deferred_keys: deferred,
+          planning_error: planning_error, repair_plans: @plans, assessed_keys: assessed_keys)
       end
 
       private
 
-      def create_issue_for(finding, row)
-        issue = @client.create_issue(@project.full_name,
-          title: title_for(finding), body: body_for(finding), labels: issue_labels)
-        row ||= PgHeroOverviewFinding.create!(
-          project: @project, database: finding.database, finding_key: finding.key, finding_type: finding.type.to_s,
-          first_seen_at: @now.call, last_seen_at: @now.call, consecutive_observations: 1)
-        row.update!(github_issue_number: issue.number, resolved_at: nil, issue_last_updated_at: @now.call)
-        log(:created, finding: finding, issue_number: issue.number)
-        row
-      end
-
-      def refresh_issue_body(finding, row, issue_number, issue)
-        return false if issue.nil?
-        return false if issue.body.to_s.include?("#{FINGERPRINT_MARKER}: #{finding.fingerprint}")
-
-        @client.update_issue(@project.full_name, issue_number, body: body_for(finding))
-        row.update!(github_issue_number: issue_number, issue_last_updated_at: @now.call)
-        log(:updated, finding: finding, issue_number: issue_number)
-        true
-      end
-
-      def reopen_issue(finding, row, issue_number)
-        @client.update_issue(@project.full_name, issue_number, state: "open", body: body_for(finding))
-        @client.add_comment(@project.full_name, issue_number,
-          "Finding observed again at #{finding.observed_at.utc.iso8601} — reopening.")
-        row.update!(resolved_at: nil, issue_last_updated_at: @now.call)
-        log(:reopened, finding: finding, issue_number: issue_number)
-      end
-
-      # Only categories this scan actually observed may have their issues
-      # closed — a timed-out catalog read must not look like a resolution.
-      def close_disappeared(observed_keys:, collected_categories:)
-        closed = 0
-        findings_scope.open_issues.find_each do |row|
-          next if observed_keys.include?(row.finding_key)
-          next unless collected_categories.include?(Policy.category_for(row.finding_type.to_sym))
-
-          @client.update_issue(@project.full_name, row.github_issue_number, state: "closed")
-          @client.add_comment(@project.full_name, row.github_issue_number,
-            "Finding no longer observed at #{@now.call.utc.iso8601}; last observed #{row.last_seen_at.utc.iso8601}.")
-          row.update!(resolved_at: @now.call)
-          log(:closed, finding_key: row.finding_key, issue_number: row.github_issue_number)
-          closed += 1
+      # @spec RAILS-CONTROL-PLANE-036
+      def record_assessment(assessment, observed)
+        selected = assessment.fetch("assessed_finding_keys").to_set
+        entries = assessment.fetch("repairs").map do |plan|
+          [ plan.fetch("finding_keys"), "covered_by_repair", plan.fetch("rationale"), plan.fetch("evidence") ]
         end
-        closed
-      end
+        entries.concat(assessment.fetch("deferred").map do |entry|
+          [ entry.fetch("finding_keys"), "deferred", entry.fetch("reason"), nil ]
+        end)
+        entries.each do |keys, disposition, reason, evidence|
+          keys.each do |identity|
+            next unless selected.include?(identity)
 
-      # Observation recording may already have recreated an unlinked row.
-      # Prefer an open issue, then the oldest issue, without replacing a link.
-      def adopt_marked_issues(issues, rows)
-        issues.sort_by { |issue| [ issue.state == "closed" ? 1 : 0, issue.number.to_i ] }.each do |issue|
-          identity = issue.body.to_s[/<!-- #{IDENTITY_MARKER}: (.+?) -->/, 1]
-          next if identity.blank?
-
-          database_id, key = identity.split("/", 2)
-          next if key.blank?
-
-          row = rows[key] || findings_scope.find_or_create_by!(database: database_id, finding_key: key) do |new_row|
-            new_row.finding_type = key.split("/").first
-            new_row.first_seen_at = @now.call
-            new_row.last_seen_at = @now.call
-            new_row.consecutive_observations = 1
+            finding = observed.fetch(identity)
+            row = findings_scope.find_by!(database: finding.database, finding_key: finding.key)
+            row.update!(assessment: { disposition: disposition, reason: reason, evidence: evidence,
+              fingerprint: finding.fingerprint, assessed_at: @now.call.utc.iso8601(6) })
           end
-          next if row.github_issue_number.present?
-
-          row.update!(github_issue_number: issue.number, resolved_at: issue.state == "closed" ? @now.call : nil)
-          rows[key] = row
-          log(:adopted, finding_key: key, issue_number: issue.number)
         end
+      end
+
+      def repairs_scope
+        PgHeroOverviewRepair.where(project: @project)
+      end
+
+      def recover_owners
+        unpublished = repairs_scope.where(github_issue_number: nil, github_pr_number: nil)
+        recoverable = findings_scope.where(repair_id: nil)
+          .or(findings_scope.where(repair_id: unpublished.select(:id)))
+        recoverable.includes(:repair).find_each do |row|
+          identity = "#{row.database}/#{row.finding_key}"
+          candidates = @snapshot.records.reject { |record| @snapshot.pull_request?(record) }
+            .select { |record| @snapshot.finding_keys(record).include?(identity) }
+          local_repair = row.repair
+          if local_repair
+            candidates.select! { |record| @snapshot.repair_key(record) == local_repair.repair_key }
+          end
+          owner = candidates.find { |record| record.number.to_i == row.github_issue_number } ||
+            candidates.min_by { |record| [ record.state == "open" ? 0 : 1, record.number.to_i ] }
+          owner ||= @snapshot.issue(row.github_issue_number) if row.github_issue_number && local_repair.nil?
+          next unless owner
+
+          repair = repairs_scope.find_by(database: row.database, github_issue_number: owner.number) || local_repair ||
+            repairs_scope.find_by(database: row.database, repair_key: @snapshot.repair_key(owner))
+          repair ||= repairs_scope.new(database: row.database,
+            repair_key: @snapshot.repair_key(owner).presence || "issue/#{owner.number}",
+            title: owner.title.to_s.presence || "PgHero repair ##{owner.number}",
+            instructions: "Investigate the evidence and verify the existing repair.",
+            rationale: "Recovered existing finding ownership.")
+          if repair.github_issue_number.nil?
+            repair.assign_attributes(github_issue_number: owner.number,
+              managed_issue: @snapshot.managed_issue?(owner))
+          end
+          repair.save! if repair.changed? || repair.new_record?
+          row.update!(repair: repair, github_issue_number: row.github_issue_number || owner.number)
+        end
+      end
+
+      def import_pr_coverage
+        @snapshot.records.select { |record| @snapshot.pull_request?(record) && record.state == "open" }.each do |pr|
+          sources = repairs_scope.where(github_issue_number: @snapshot.closing_numbers(pr)).order(:github_issue_number).to_a
+          explicit_rows = findings_scope.where(repair_id: nil).select do |row|
+            @snapshot.finding_keys(pr).include?("#{row.database}/#{row.finding_key}")
+          end
+          (sources.map(&:database) + explicit_rows.map(&:database)).uniq.each do |database|
+            same_database = sources.select { |repair| repair.database == database }
+            canonical = same_database.first || repairs_scope.find_or_create_by!(database: database, repair_key: "pr/#{pr.number}") do |repair|
+              repair.title = pr.title
+              repair.instructions = "Verify the repair declared in PR ##{pr.number}."
+              repair.rationale = "Existing PR explicitly declares coverage."
+              repair.github_pr_number = pr.number
+              repair.managed_issue = false
+            end
+            if same_database.many?
+              canonical.assign_attributes(
+                instructions: same_database.map(&:instructions).uniq.join("\n\n"),
+                rationale: same_database.map(&:rationale).uniq.join("\n\n"))
+            end
+            canonical.update!(github_pr_number: pr.number)
+            same_database.drop(1).each do |alias_repair|
+              alias_repair.findings.each { |row| row.update!(repair: canonical) }
+              alias_repair.findings.reset
+              alias_repair.destroy!
+            end
+            explicit_rows.select { |row| row.database == database }.each { |row| row.update!(repair: canonical) }
+          end
+        end
+      end
+
+      def assign_plan(plan)
+        member_rows = plan.fetch("finding_keys").map do |identity|
+          database, key = identity.split("/", 2)
+          findings_scope.find_by!(database: database, finding_key: key)
+        end
+        issue, pr = plan.values_at("owner_issue_number", "owner_pr_number")
+        key = if issue
+          "issue/#{issue}"
+        elsif pr
+          "pr/#{pr}"
+        else
+          "assessment/#{Digest::SHA256.hexdigest(plan.fetch('finding_keys').sort.join('|'))}"
+        end
+        existing_owner = if issue
+          repairs_scope.find_by(database: member_rows.first.database, github_issue_number: issue)
+        elsif pr
+          repairs_scope.find_by(database: member_rows.first.database, github_pr_number: pr)
+        end
+        repair = existing_owner || repairs_scope.find_or_initialize_by(database: member_rows.first.database, repair_key: key)
+        if repair.new_record?
+          repair.assign_attributes(title: plan.fetch("title").truncate(255), instructions: plan.fetch("instructions"),
+            rationale: plan.fetch("rationale"), github_issue_number: issue, github_pr_number: pr,
+            managed_issue: issue.nil? && pr.nil?)
+          repair.managed_issue = @snapshot.managed_issue?(@snapshot.issue(issue)) if issue
+          repair.save!
+        end
+        member_rows.each { |row| row.update!(repair: repair, github_issue_number: row.github_issue_number || issue) }
+        @plans << plan.merge("action" => issue || pr ? "reuse" : "create")
+      end
+
+      def maintain_repair(repair)
+        members = repair.findings.to_a
+        return if members.empty?
+
+        active = members.any? { |row| row.resolved_at.nil? }
+        if !repair.managed_issue
+          repair.update!(resolved_at: active ? nil : (repair.resolved_at || @now.call))
+          return
+        end
+        if repair.github_issue_number.nil?
+          actionable = members.any? { |row| @actionable_identities.include?("#{row.database}/#{row.finding_key}") }
+          return unless active && actionable && @counts[:created] < @cap
+
+          body = repair_body(repair, members)
+          number = if @dry_run
+            -(@counts[:created] + 1)
+          else
+            @client.create_issue(@project.full_name, title: "[pghero] #{repair.title}".truncate(255),
+              body: body, labels: issue_labels).number
+          end
+          repair.update!(github_issue_number: number, issue_last_updated_at: @now.call)
+          members.each { |row| row.update!(github_issue_number: number) if row.github_issue_number.nil? }
+          @counts[:created] += 1
+          return
+        end
+        issue = @snapshot.issue(repair.github_issue_number)
+        # Missing or newly untrusted work is not evidence of a closed issue.
+        return unless issue
+
+        if !active
+          if issue.state == "open"
+            write_issue(issue.number, state: "closed")
+            @client.add_comment(@project.full_name, issue.number,
+              "Covered findings no longer observed; last observed #{members.map(&:last_seen_at).max.utc.iso8601}.") unless @dry_run
+            @counts[:closed] += 1
+          end
+          repair.update!(resolved_at: repair.resolved_at || @now.call)
+        elsif issue.state != "open"
+          return unless members.any? { |row| @actionable_identities.include?("#{row.database}/#{row.finding_key}") }
+          write_issue(issue.number, state: "open", body: refreshed_body(repair, members, issue))
+          repair.update!(resolved_at: nil, issue_last_updated_at: @now.call)
+          @client.add_comment(@project.full_name, issue.number, "Covered finding observed again; reopening.") unless @dry_run
+          @counts[:reopened] += 1
+        else
+          marker = "<!-- pghero-overview-repair:"
+          imported = !issue.body.to_s.include?(marker)
+          covered = @snapshot.finding_keys(issue)
+          return if imported && members.all? { |row| covered.include?("#{row.database}/#{row.finding_key}") }
+
+          body = refreshed_body(repair, members, issue)
+          observation_time = /^\*\*Observed at:\*\* .*$/
+          return if issue.body.to_s.gsub(observation_time, "") == body.gsub(observation_time, "")
+
+          write_issue(issue.number, body: body)
+          repair.update!(resolved_at: nil, issue_last_updated_at: @now.call)
+          @counts[:updated] += 1
+        end
+      end
+
+      def refreshed_body(repair, members, issue)
+        original = issue.body.to_s.split("<!-- pghero-overview-repair:", 2).first.to_s.strip
+        [ original.presence, repair_body(repair, members) ].compact.join("\n\n")
+      end
+
+      def write_issue(number, **attributes)
+        @client.update_issue(@project.full_name, number, **attributes) unless @dry_run
+      end
+
+      def repair_body(repair, members)
+        evidence = members.sort_by(&:finding_key).map do |row|
+          data = row.observation.deep_symbolize_keys
+          next "<!-- #{IDENTITY_MARKER}: #{row.database}/#{row.finding_key} -->\nEvidence unavailable; retain existing investigation." if data.empty?
+
+          data[:type] = data[:type].to_sym
+          data[:category] = data[:category].to_sym
+          data[:observed_at] = Time.iso8601(data[:observed_at]) if data[:observed_at].is_a?(String)
+          finding = Finding.new(**data)
+          <<~MEMBER
+            <!-- #{IDENTITY_MARKER}: #{finding.identity} -->
+            <!-- #{FINGERPRINT_MARKER}: #{finding.fingerprint} -->
+            ### #{finding.title}
+            **Finding type:** #{finding.type}
+            **Observed at:** #{finding.observed_at.utc.iso8601}
+            Status: #{row.resolved_at ? 'no longer observed' : 'observed; incomplete categories retain previous evidence'}
+            #{observed_sections(finding)}
+          MEMBER
+        end.join("\n")
+        <<~BODY.strip
+          <!-- pghero-overview-repair: #{repair.repair_key} -->
+          Development PgHero repair investigation lead. Validate with measurements before changing the schema.
+
+          ## Proposed repair
+          #{repair.instructions}
+
+          ## Coverage rationale
+          #{repair.rationale}
+
+          **Database:** #{repair.database}
+          **Dashboard:** #{@dashboard_base_url}/pghero?database=#{repair.database}
+
+          ## Covered observations
+          #{evidence}
+
+          This issue closes only when every covered observation disappears from a successfully collected category.
+        BODY
       end
 
       def issue_labels
@@ -184,34 +318,6 @@ module Development
 
       def findings_scope
         PgHeroOverviewFinding.where(project: @project)
-      end
-
-      def title_for(finding)
-        "[pghero] #{finding.title}".truncate(255)
-      end
-
-      def body_for(finding)
-        <<~BODY.strip
-          <!-- #{IDENTITY_MARKER}: #{finding.identity} -->
-          <!-- #{FINGERPRINT_MARKER}: #{finding.fingerprint} -->
-
-          _Automatically filed by the development PgHero Overview scanner. This is an investigation lead, not an instruction to change the schema._
-
-          **Finding type:** #{finding.type}
-          **Database:** #{finding.database}
-          **Observed at:** #{finding.observed_at.utc.iso8601}
-          **Dashboard:** #{@dashboard_base_url}/pghero?database=#{finding.database}
-
-          ## Observed values
-
-          #{observed_sections(finding)}
-
-          ## Investigation prompt
-
-          #{INVESTIGATION_PROMPTS.fetch(finding.type, "Inspect the PgHero Overview entry for this finding.")}
-
-          _Subsequent scans update this issue while the finding persists and close it when it disappears._
-        BODY
       end
 
       def observed_sections(finding)
@@ -254,11 +360,6 @@ module Development
           return value unless value.nil?
         end
         nil
-      end
-
-      def log(event, finding: nil, **payload)
-        extra = finding ? { finding_type: finding.type, finding_key: finding.key } : {}
-        Rails.logger.info(message: "pghero_overview.issue_#{event}", project_id: @project.id, **extra, **payload)
       end
     end
   end

@@ -5,20 +5,21 @@ require "pghero"
 
 RSpec.describe Development::PgHeroOverview::Scan do
   let(:account) { create(:account) }
-  let(:project) { create(:project, account: account, owner: "viamin", repo: "paid") }
+  let(:project) { create(:project, account: account, owner: "viamin", repo: "paid", allowed_github_usernames: [ "viamin" ]) }
   let(:client) { instance_double(GithubClient) }
   let(:database) do
     PgHero::Database.new(:primary, "url" => ActiveRecord::Base.connection_db_config.configuration_hash,
       "filter_data" => true)
   end
+  let(:remote) { [] }
   let(:now) { Time.utc(2026, 11, 21, 12) }
 
-  def scanner(findings: [], coverage: nil, collector: nil, target_project: project, target_client: client)
+  def scanner(findings: [], coverage: nil, collector: nil, target_project: project, target_client: client, dry_run: false)
     resolved_collector = collector || -> do
       Development::PgHeroOverview::Collect::Result.new(findings: findings, coverage: coverage || complete_coverage)
     end
     described_class.new(project: target_project, client: target_client, environment: "development",
-      database: database, collector: resolved_collector,
+      database: database, collector: resolved_collector, dry_run: dry_run,
       dashboard_base_url: "http://localhost:3000", now: -> { now })
   end
 
@@ -28,21 +29,6 @@ RSpec.describe Development::PgHeroOverview::Scan do
       observed: { index: key }, observed_at: now, database: "primary",
       persistence_required: false, category: :indexes
     )
-  end
-
-  def stub_partial_filing(remote_issues)
-    fail_next_create = true
-    allow(client).to receive(:all_issues) { remote_issues.dup }
-    allow(client).to receive(:create_issue) do |repo, title:, body:, labels:|
-      if remote_issues.any? && fail_next_create
-        fail_next_create = false
-        raise GithubClient::Error, "write failed"
-      end
-
-      Struct.new(:number, :body, :state).new(77 + remote_issues.size, body, "open").tap do |issue|
-        remote_issues << issue
-      end
-    end
   end
 
   def transient_finding(key: "connection_pressure")
@@ -62,12 +48,33 @@ RSpec.describe Development::PgHeroOverview::Scan do
     }
   end
 
+  def github_issue(number, body, state)
+    Struct.new(:number, :body, :state, :title, :user).new(number, body, state, "PgHero repair", Struct.new(:login).new("viamin"))
+  end
+
   before do
-    allow(client).to receive(:create_issue) do |repo, title:, body:, labels:|
-      Struct.new(:number, :body, :state).new(77, body, "open")
+    # These lifecycle cases receive independent repairs from the external assessor.
+    allow(Llm::Request).to receive(:call) do |prompt:, **|
+      input = JSON.parse(prompt.split("BEGIN UNTRUSTED JSON EVIDENCE\n", 2).last
+        .split("\nEND UNTRUSTED JSON EVIDENCE", 2).first)
+      assessment = { "repairs" => input.fetch("findings").map do |finding|
+        { "title" => finding.fetch("title"), "instructions" => "Investigate and verify this repair",
+          "rationale" => "Independent repair", "evidence" => "Catalog evidence",
+          "publication_ready" => true, "missing_evidence" => [],
+          "finding_keys" => [ finding.fetch("identity") ], "owner_issue_number" => nil, "owner_pr_number" => nil }
+      end, "deferred" => [] }
+      Struct.new(:output).new(JSON.generate(assessment))
     end
-    allow(client).to receive(:update_issue) { |repo, number, **| Struct.new(:number).new(number) }
-    allow(client).to receive_messages(all_issues: [], add_comment: nil)
+    allow(client).to receive(:create_issue) do |repo, title:, body:, labels:|
+      github_issue(77, body, "open").tap { |issue| remote << issue }
+    end
+    allow(client).to receive(:update_issue) do |repo, number, **attributes|
+      issue = remote.find { |record| record.number == number }
+      attributes.each { |key, value| issue.public_send("#{key}=", value) } if issue
+      issue
+    end
+    allow(client).to receive(:all_issues) { remote }
+    allow(client).to receive(:add_comment)
   end
 
   # @spec RAILS-CONTROL-PLANE-025
@@ -103,7 +110,7 @@ RSpec.describe Development::PgHeroOverview::Scan do
     expect(row.consecutive_observations).to eq(1)
     expect(row.github_issue_number).to eq(77)
 
-    allow(client).to receive(:all_issues) { [ Struct.new(:number, :body, :state).new(77, "stale body", "open") ] }
+    allow(client).to receive(:all_issues) { [ github_issue(77, "stale body", "open") ] }
     second = scanner.call
     expect(second.created).to eq(0)
     expect(second.updated).to eq(1)
@@ -113,23 +120,24 @@ RSpec.describe Development::PgHeroOverview::Scan do
   end
 
   # @spec RAILS-CONTROL-PLANE-027
-  it "recovers remote issues after a later filing failure rolls back observation state" do
+  it "recovers the first remote issue when a later publication rolls back local observation state" do
     first = structural_finding
     second = structural_finding(key: "invalid_index/public/idx_other")
-    remote_issues = []
-    stub_partial_filing(remote_issues)
+    fail_next_create = true
+    allow(client).to receive(:create_issue) do |_, body:, **|
+      if remote.any? && fail_next_create
+        fail_next_create = false
+        raise GithubClient::Error, "later write failed"
+      end
+      github_issue(77 + remote.size, body, "open").tap { |issue| remote << issue }
+    end
     scan = scanner(findings: [ first, second ])
 
-    expect {
-      Project.transaction(requires_new: true) { scan.call }
-    }.to raise_error(GithubClient::Error, "write failed")
+    expect { Project.transaction(requires_new: true) { scan.call } }.to raise_error(GithubClient::Error, "later write failed")
     expect(PgHeroOverviewFinding.where(project: project)).to be_empty
-    expect(remote_issues.size).to eq(1)
-
-    result = scan.call
-
-    expect(result.created).to eq(1)
-    expect(remote_issues.size).to eq(2)
+    expect(remote.size).to eq(1)
+    expect(scan.call.created).to eq(1)
+    expect(remote.size).to eq(2)
     expect(PgHeroOverviewFinding.where(project: project).pluck(:finding_key, :github_issue_number))
       .to contain_exactly([ first.key, 77 ], [ second.key, 78 ])
   end
@@ -193,13 +201,14 @@ RSpec.describe Development::PgHeroOverview::Scan do
   it "closes the issue when a collected category no longer shows the finding and reopens on recurrence" do
     scanner(findings: [ structural_finding ]).call
     row = PgHeroOverviewFinding.find_by!(finding_key: "invalid_index/public/idx_broken")
-    allow(client).to receive(:all_issues) { [ Struct.new(:number, :body, :state).new(77, "body", "open") ] }
+    allow(client).to receive(:all_issues) { [ github_issue(77, "body", "open") ] }
 
     closed = scanner(findings: []).call
     expect(closed.closed).to eq(1)
     expect(client).to have_received(:update_issue).with("viamin/paid", 77, state: "closed")
     expect(row.reload.resolved_at).to be_present
 
+    allow(client).to receive(:all_issues) { [ github_issue(77, "body", "closed") ] }
     recurred = scanner(findings: [ structural_finding ]).call
     expect(recurred.reopened).to eq(1)
     expect(client).to have_received(:update_issue).with(
@@ -254,5 +263,56 @@ RSpec.describe Development::PgHeroOverview::Scan do
     second = scan.call
     expect(second.created).to eq(1)
     expect(second.deferred_keys).to be_empty
+  end
+
+  # @spec RAILS-CONTROL-PLANE-035
+  it "previews the same assessment without GitHub writes or committed scanner state" do
+    result = nil
+    expect {
+      result = scanner(findings: [ structural_finding ], dry_run: true).call
+    }.not_to change(PgHeroOverviewFinding, :count)
+
+    expect(PgHeroOverviewRepair.count).to eq(0)
+    expect(result.dry_run).to be(true)
+    expect(result.created).to eq(1)
+    expect(result.repair_plans.first.fetch("action")).to eq("create")
+    expect(client).not_to have_received(:create_issue)
+    expect(client).not_to have_received(:update_issue)
+    expect(client).not_to have_received(:add_comment)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-036
+  it "does not advance persisted assessment history during a preview" do
+    finding = structural_finding
+    row = PgHeroOverviewFinding.create!(project: project, database: finding.database, finding_key: finding.key,
+      finding_type: finding.type, first_seen_at: now, last_seen_at: now, consecutive_observations: 1,
+      assessment: { "assessed_at" => 1.day.ago.utc.iso8601, "reason" => "Previous evidence" })
+    previous = row.assessment
+
+    result = scanner(findings: [ finding ], dry_run: true).call
+
+    expect(result.assessed_keys).to eq([ finding.identity ])
+    expect(row.reload.assessment).to eq(previous)
+    expect(client).not_to have_received(:create_issue)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-027
+  it "recovers a remote issue when publication succeeded before the local transaction failed" do
+    allow(client).to receive(:create_issue) do |_, body:, **|
+      remote << github_issue(77, body, "open")
+      raise GithubClient::Error, "Response lost after remote publication"
+    end
+    scan = scanner(findings: [ structural_finding ])
+
+    expect { scan.call }.to raise_error(GithubClient::Error)
+    expect(PgHeroOverviewFinding.count).to eq(0)
+    expect(PgHeroOverviewRepair.count).to eq(0)
+
+    result = scan.call
+
+    expect(result.created).to eq(0)
+    expect(client).to have_received(:create_issue).once
+    expect(PgHeroOverviewRepair.sole.github_issue_number).to eq(77)
+    expect(PgHeroOverviewFinding.sole.github_issue_number).to eq(77)
   end
 end

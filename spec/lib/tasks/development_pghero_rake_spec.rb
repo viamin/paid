@@ -23,4 +23,12 @@ RSpec.describe "development:pg_hero_overview_scan rake task" do # rubocop:disabl
     expect(rake_source).to include("desc \"Scan the development PgHero Overview")
     expect(rake_source).to include("PgHeroOverviewScanJob.perform_now")
   end
+
+  # @spec RAILS-CONTROL-PLANE-035
+  it "previews through the scheduled job with writes disabled" do
+    allow(PgHeroOverviewScanJob).to receive(:perform_now).with(dry_run: true).and_return([])
+
+    expect { Rake.application.invoke_task("development:pg_hero_overview_preview") }.to output("[]\n").to_stdout
+    expect(PgHeroOverviewScanJob).to have_received(:perform_now).with(dry_run: true)
+  end
 end

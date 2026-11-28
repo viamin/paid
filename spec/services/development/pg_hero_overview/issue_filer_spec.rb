@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Development::PgHeroOverview::IssueFiler do
   let(:account) { create(:account) }
-  let(:project) { create(:project, account: account, owner: "viamin", repo: "paid") }
+  let(:project) { create(:project, account: account, owner: "viamin", repo: "paid", allowed_github_usernames: [ "viamin" ]) }
   let(:client) { instance_double(GithubClient) }
   let(:filer) do
     described_class.new(project: project, client: client,
@@ -31,20 +31,39 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   end
 
   def github_issue(number:, body: "", state: "open")
-    Struct.new(:number, :body, :state).new(number, body, state)
+    Struct.new(:number, :body, :state, :title, :user).new(number, body, state, "PgHero repair", Struct.new(:login).new("viamin"))
+  end
+
+  def legacy_body(finding)
+    "<!-- pghero-overview-finding: #{finding.identity} -->\nAuthored investigation."
   end
 
   before do
+    # These lifecycle cases receive independent repairs from the external assessor.
+    allow(Llm::Request).to receive(:call) do |prompt:, **|
+      input = JSON.parse(prompt.split("BEGIN UNTRUSTED JSON EVIDENCE\n", 2).last
+        .split("\nEND UNTRUSTED JSON EVIDENCE", 2).first)
+      assessment = { "repairs" => input.fetch("findings").map do |finding|
+        { "title" => finding.fetch("title"), "instructions" => "Investigate and verify this repair",
+          "rationale" => "Independent repair", "evidence" => "Catalog evidence",
+          "publication_ready" => true, "missing_evidence" => [],
+          "finding_keys" => [ finding.fetch("identity") ], "owner_issue_number" => nil, "owner_pr_number" => nil }
+      end, "deferred" => [] }
+      Struct.new(:output).new(JSON.generate(assessment))
+    end
     allow(client).to receive(:create_issue) do |repo, title:, body:, labels:|
       created_bodies << body
       github_issue(number: 50 + created_bodies.size, body: body)
     end
     allow(client).to receive(:update_issue) { |repo, number, **| github_issue(number: number) }
     allow(client).to receive_messages(all_issues: [], add_comment: nil)
+    allow(client).to receive(:issue) do |_, number|
+      github_issue(number: number, state: "closed", body: "<!-- pghero-overview-finding: primary/invalid_index/public/idx_broken -->")
+    end
   end
 
   # @spec RAILS-CONTROL-PLANE-027
-  it "creates one labeled issue per finding in the self repo" do
+  it "creates one labeled issue per independently assessed repair in the self repo" do
     structural = finding(observed: { table: "public.issues", index: "idx_broken", valid: "f" })
     slow = finding(type: :slow_query, key: "slow_query/991", category: :query_stats,
       observed: { query: "SELECT * FROM issues WHERE token = $1", average_ms: 245.3, calls: 12,
@@ -92,10 +111,10 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   end
 
   # @spec RAILS-CONTROL-PLANE-027
-  it "updates an existing tracked issue only when the evidence changed" do
+  it "preserves the authored investigation when importing an existing issue" do
     f = finding
     row = row_for(f, github_issue_number: 7)
-    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: legacy_body(f)) ] }
 
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
       collected_categories: Set.new(%i[indexes]))
@@ -105,11 +124,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
     filer.sync(observed_findings: [ changed ], actionable_findings: [ changed ],
       rows: { changed.key => row }, collected_categories: Set.new(%i[indexes]))
 
-    expect(client).to have_received(:update_issue).once do |repo, number, **options|
-      expect(repo).to eq("viamin/paid")
-      expect(number).to eq(7)
-      expect(options[:body]).to include("pghero-overview-finding: primary/#{changed.key}")
-    end
+    expect(client).not_to have_received(:update_issue)
   end
 
   # @spec RAILS-CONTROL-PLANE-027
@@ -133,7 +148,7 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
     f = finding
     row = row_for(f, github_issue_number: 7)
     row.update!(last_seen_at: Time.utc(2026, 11, 20, 12))
-    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 7, body: legacy_body(f)) ] }
     comments = []
     allow(client).to receive(:add_comment) { |_, _, body| comments << body }
 
@@ -189,78 +204,13 @@ RSpec.describe Development::PgHeroOverview::IssueFiler do
   # @spec RAILS-CONTROL-PLANE-027
   it "adopts an open GitHub issue carrying the finding marker when local state is missing" do
     f = finding
-    allow(client).to receive(:all_issues) { [ github_issue(number: 31, body: filer.send(:body_for, f)) ] }
+    allow(client).to receive(:all_issues) { [ github_issue(number: 31, body: legacy_body(f)) ] }
 
     filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: {}, collected_categories: Set.new(%i[indexes]))
 
     expect(client).not_to have_received(:create_issue)
     adopted = PgHeroOverviewFinding.find_by!(project: project, database: "primary", finding_key: f.key)
     expect(adopted.github_issue_number).to eq(31)
-  end
-
-  # @spec RAILS-CONTROL-PLANE-027
-  it "adopts an existing issue when observation recording already created an unlinked row" do
-    f = finding
-    row = row_for(f)
-    allow(client).to receive(:all_issues) { [ github_issue(number: 31, body: filer.send(:body_for, f)) ] }
-
-    result = filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
-      collected_categories: Set.new(%i[indexes]))
-
-    expect(client).not_to have_received(:create_issue)
-    expect(row.reload.github_issue_number).to eq(31)
-    expect(result.created).to eq(0)
-  end
-
-  # @spec RAILS-CONTROL-PLANE-027
-  it "recovers and reopens a closed issue after losing its local linkage" do
-    f = finding
-    row = row_for(f)
-    allow(client).to receive(:all_issues).with("viamin/paid", labels: described_class::LABEL, state: "all")
-      .and_return([ github_issue(number: 31, body: filer.send(:body_for, f), state: "closed") ])
-
-    result = filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
-      collected_categories: Set.new(%i[indexes]))
-
-    expect(client).not_to have_received(:create_issue)
-    expect(row.reload.github_issue_number).to eq(31)
-    expect(client).to have_received(:update_issue).with("viamin/paid", 31, state: "open", body: kind_of(String))
-    expect(result.reopened).to eq(1)
-  end
-
-  # @spec RAILS-CONTROL-PLANE-027
-  it "prefers the oldest open issue when several issues match an unlinked finding" do
-    f = finding
-    row = row_for(f)
-    allow(client).to receive(:all_issues) do
-      [ github_issue(number: 3, body: filer.send(:body_for, f), state: "closed"),
-        github_issue(number: 31, body: filer.send(:body_for, f)),
-        github_issue(number: 7, body: filer.send(:body_for, f)) ]
-    end
-
-    filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
-      collected_categories: Set.new(%i[indexes]))
-
-    expect(row.reload.github_issue_number).to eq(7)
-    expect(client).not_to have_received(:create_issue)
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec RAILS-CONTROL-PLANE-027
-  it "preserves an existing issue link when other marked issues have the same identity" do
-    f = finding
-    row = row_for(f, github_issue_number: 7)
-    allow(client).to receive(:all_issues) do
-      [ github_issue(number: 31, body: filer.send(:body_for, f)),
-        github_issue(number: 7, body: filer.send(:body_for, f)) ]
-    end
-
-    filer.sync(observed_findings: [ f ], actionable_findings: [ f ], rows: { f.key => row },
-      collected_categories: Set.new(%i[indexes]))
-
-    expect(row.reload.github_issue_number).to eq(7)
-    expect(client).not_to have_received(:create_issue)
-    expect(client).not_to have_received(:update_issue)
   end
 
   # @spec RAILS-CONTROL-PLANE-027
