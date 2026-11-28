@@ -124,6 +124,12 @@ a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an
 older migration list is not sufficient cleanup for a randomized suite.
 
+Remediation-decision index cleanup removes only the nonunique account prefix
+while retaining the valid full account/diagnosis-date budget lookup and all
+other indexes. Migration guards reject a changed uniqueness contract or missing,
+partial, invalid or differently keyed budget coverer before removing the prefix.
+Rollback restores the original account index.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
