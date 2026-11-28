@@ -130,6 +130,10 @@ indexes concurrently, with concurrent rollback. Provider/native identity,
 project and global lifecycle uniqueness, other indexes, rows, foreign keys and
 tenant policies remain intact.
 
+The work-item identity repair also removes the mapping-target single-column
+index while retaining its unique mapping/project compound index and project
+lookup index. Mapping membership uniqueness and lookup coverage remain intact.
+
 ## Deferred Work
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning

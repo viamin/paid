@@ -8,8 +8,8 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
 
   let(:connection) { ActiveRecord::Base.connection }
   let(:migration) { described_class.new }
-  let(:tables) { %i[work_item_lifecycle_conflicts work_item_lifecycle_mappings work_item_project_mappings work_items] }
-  let(:removed_names) { tables.map { |table| "index_#{table}_on_account_id" } }
+  let(:tables) { %i[work_item_lifecycle_conflicts work_item_lifecycle_mappings work_item_project_mappings work_items work_item_project_mapping_targets] }
+  let(:removed_names) { tables.reject { |table| table == :work_item_project_mapping_targets }.map { |table| "index_#{table}_on_account_id" } + [ "index_mapping_targets_on_mapping" ] }
   let(:fixture_indexes) do
     [
       %q{CREATE INDEX index_work_item_lifecycle_conflicts_on_account_id ON work_item_lifecycle_conflicts USING btree (account_id)},
@@ -32,7 +32,10 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
       %q{CREATE INDEX index_work_items_on_account_id ON work_items USING btree (account_id)},
       %q{CREATE INDEX index_work_items_on_tracker_configuration_id ON work_items USING btree (tracker_configuration_id)},
       %q{CREATE UNIQUE INDEX index_work_items_on_provider_identity ON work_items USING btree (account_id, provider, resource_type, external_id)},
-      %q{CREATE INDEX index_work_items_on_native_project_id ON work_items USING btree (native_project_id)}
+      %q{CREATE INDEX index_work_items_on_native_project_id ON work_items USING btree (native_project_id)},
+      %q{CREATE INDEX index_mapping_targets_on_mapping ON work_item_project_mapping_targets USING btree (work_item_project_mapping_id)},
+      %q{CREATE UNIQUE INDEX index_mapping_targets_on_mapping_and_project ON work_item_project_mapping_targets USING btree (work_item_project_mapping_id, project_id)},
+      %q{CREATE INDEX index_work_item_project_mapping_targets_on_project_id ON work_item_project_mapping_targets USING btree (project_id)}
     ]
   end
 
@@ -51,7 +54,7 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-025
-  it "removes only the four account prefixes and preserves all other index definitions and rows" do
+  it "removes only the five redundant prefixes and preserves all other index definitions and rows" do
     original_indexes = indexes
     original_rows = rows
     2.times { migration.up }
@@ -100,6 +103,7 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
       "work_item_lifecycle_conflicts WHERE account_id = 1 AND resolved_at IS NULL" => "index_lifecycle_conflicts_on_account_and_resolved",
       "work_item_lifecycle_mappings WHERE account_id = 1 AND project_id = 1 AND provider = 'linear' AND native_state = 'InProgress'" => %w[index_lifecycle_mappings_on_native_state index_lifecycle_mappings_on_paid_state],
       "work_item_project_mappings WHERE account_id = 1 AND provider = 'linear' AND native_project_id = 'proj'" => "index_work_item_project_mappings_on_native_identity",
+      "work_item_project_mapping_targets WHERE work_item_project_mapping_id = 1" => "index_mapping_targets_on_mapping_and_project",
       "work_items WHERE account_id = 1 AND provider = 'linear' AND resource_type = 'issue' AND external_id = 'ticket'" => "index_work_items_on_provider_identity"
     }
     queries.each do |query, index|
@@ -109,6 +113,18 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
       end
       expect(plan).to match(Regexp.union(Array(index)))
     end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-025
+  it "preserves unique mapping targets while allowing another project or mapping" do
+    migration.up
+
+    expect do
+      connection.execute("INSERT INTO work_item_project_mapping_targets (work_item_project_mapping_id, project_id) VALUES (1, 1)")
+    end.to raise_error(ActiveRecord::RecordNotUnique)
+    expect do
+      connection.execute("INSERT INTO work_item_project_mapping_targets (work_item_project_mapping_id, project_id) VALUES (1, 2), (2, 1)")
+    end.not_to raise_error
   end
 
   def indexes
@@ -145,11 +161,16 @@ RSpec.describe RemoveRedundantWorkItemIdentityIndexes do
       %i[account_id tracker_configuration_id legacy_issue_id].each { |column| t.bigint column }
       %i[native_project_id provider resource_type external_id].each { |column| t.string column }
     end
+    connection.create_table(:work_item_project_mapping_targets) do |t|
+      t.bigint :work_item_project_mapping_id
+      t.bigint :project_id
+    end
     fixture_indexes.each { |sql| connection.execute(sql) }
     connection.execute("INSERT INTO work_item_lifecycle_conflicts (account_id, work_item_id) VALUES (1, 1)")
     insert_mapping(nil, "Todo", "open")
     insert_mapping(1, "InProgress", "in_progress")
     connection.execute("INSERT INTO work_item_project_mappings (account_id, provider, native_project_id) VALUES (1, 'linear', 'proj')")
+    connection.execute("INSERT INTO work_item_project_mapping_targets (work_item_project_mapping_id, project_id) VALUES (1, 1)")
     connection.execute("INSERT INTO work_items (account_id, provider, resource_type, external_id, legacy_issue_id) VALUES (1, 'linear', 'issue', 'ticket', 7)")
   end
 end

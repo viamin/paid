@@ -130,7 +130,8 @@
   functions and triggers.
 
 - [x] **POSTGRESQL-PERSISTENCE-025** — Removing redundant work-item account
-  prefix indexes SHALL preserve provider/native identity and global/project
+  and mapping-target prefix indexes SHALL preserve unique mapping/project pairs,
+  provider/native identity and global/project
   lifecycle uniqueness, conflict and identity lookup coverage, all other indexes,
   rows, foreign keys and tenant policies. Removal and rollback SHALL use
   concurrent index operations.

@@ -5233,7 +5233,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_28_071130) do
     t.bigint "work_item_project_mapping_id", null: false
     t.index ["project_id"], name: "index_work_item_project_mapping_targets_on_project_id"
     t.index ["work_item_project_mapping_id", "project_id"], name: "index_mapping_targets_on_mapping_and_project", unique: true
-    t.index ["work_item_project_mapping_id"], name: "index_mapping_targets_on_mapping"
   end
 
   create_table "work_item_project_mappings", comment: "Maps one provider-native project (e.g. a Linear project) to one or more repository-backed Paid projects.", force: :cascade do |t|
