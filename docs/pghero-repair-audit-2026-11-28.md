@@ -1421,3 +1421,27 @@ A subsequent exact-branch fetch recovered #5790 commit ce44e362f from GitHub.
 It contains a real guarded concurrent migration and rollback, schema changes,
 intent and tests. Publication and independent validation remain pending; the
 recorded timeout did not mean its source was lost.
+
+## Recovered unpublished catalog repairs
+
+Exact remote branches retained #5790 commit
+`ce44e362f2e8511f0f0be2f2b2620eff26c426db` and #5822 commit
+`9163e9474e42e1b836c932aa294cace06556359b`. Exact-head GitHub searches found
+no existing PRs. Fresh native execution guards found neither source active.
+Both actual migrations passed isolated combined up/down replay at 11:58:00 UTC:
+exactly two intended targets removed and restored, with all 13 fixture rows,
+other indexes, constraints, RLS, policies, triggers and functions preserved.
+Private `/tmp/paid-pghero-index-acceptance/recovery/` retains source hashes,
+manifest, before/up/down snapshots and passing result. Its manifest `pr` values
+are source issue numbers because validation preceded publication.
+
+Draft #5879 publishes the existing project-MCP-server prefix repair for #5790;
+draft #5880 publishes the existing trusted-measurement project-prefix repair for #5822.
+Each has its `Fixes` reference and paid-automation label; sources have
+waiting labels and remain open. No replacement implementation was created.
+Bodies distinguish independently observed replay from unrun permanent suites,
+full CI, workload and operating acceptance. Both inherited spec-ID collisions
+need integration cleanup; #5880 has mock-only permanent specs, while #5879's
+coverer guard needs invalid/partial-index review. These are explicit remaining
+review requirements, not proof that each PR is ready to merge. Normal ownership
+import remains to verify. No physical operating migration was run.
