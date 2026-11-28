@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class RemoveRedundantPromptVersionsPromptIdIndex < ActiveRecord::Migration[8.1]
   # @spec POSTGRESQL-PERSISTENCE-014
   disable_ddl_transaction!
