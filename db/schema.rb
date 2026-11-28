@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_070122) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5165,9 +5165,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["account_id"], name: "index_work_item_assignments_on_account_id"
     t.index ["assigned_by_id"], name: "index_work_item_assignments_on_assigned_by_id"
     t.index ["project_id", "work_item_id"], name: "index_work_item_assignments_on_project_and_work_item"
-    t.index ["project_id"], name: "index_work_item_assignments_on_project_id"
     t.index ["work_item_id", "project_id"], name: "index_work_item_assignments_on_work_item_and_project", unique: true
-    t.index ["work_item_id"], name: "index_work_item_assignments_on_work_item_id"
     t.index ["work_item_project_mapping_id"], name: "index_work_item_assignments_on_work_item_project_mapping_id"
   end
 
@@ -5185,9 +5183,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_work_item_continuation_grants_on_created_by_id"
     t.index ["issue_id", "revoked_at", "completed_at"], name: "index_continuation_grants_active_lookup"
-    t.index ["issue_id"], name: "index_work_item_continuation_grants_on_issue_id"
     t.index ["project_id", "issue_id", "endpoint"], name: "index_continuation_grants_work_item_endpoint"
-    t.index ["project_id"], name: "index_work_item_continuation_grants_on_project_id"
     t.index ["revoked_by_id"], name: "index_work_item_continuation_grants_on_revoked_by_id"
   end
 
