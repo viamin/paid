@@ -1010,7 +1010,16 @@ found no additional abstraction needed. The original worktree commit is
 unfinished at rollout. This establishes a causal contention defect, not proof
 that every historical slow UPDATE has been repaired.
 
-Normal external job `04bcd0bb-0a31-48f5-9003-cac34586fd94` was enqueued at
-09:57:34 UTC for operating validation. Its terminal outcome remains to be
-inspected; no successful native-run claim is made here. Physical repair acceptance
-and complete current finding accounting remain outstanding.
+Normal external job `04bcd0bb-0a31-48f5-9003-cac34586fd94` began at
+09:58:48 UTC. At 09:59:04 UTC, a separate tenant-scoped transaction acquired
+FOR NO KEY UPDATE NOWAIT on project 19 while the scanner advisory lock was
+granted, then rolled back without data changes. Private
+`scan-lock-operating-observation.json` records this operating contention proof.
+The scan reported 248 findings, zero creates, three updates, zero reopens/closures,
+41 deferred and zero assessed, with all categories collected and an inference
+timeout after 122,367 ms. This is failed assessment evidence despite successful
+collection and lock behavior. `scan-lock-validation-{manifest.json,result.log}`
+records source hashes and results. The live 10:00:22 UTC snapshot has 248 findings,
+207 owned, 41 unowned and 176 open scanner issues, with three active Paid runs.
+Physical repair acceptance and complete current finding accounting remain
+outstanding; no blind retry was queued.
