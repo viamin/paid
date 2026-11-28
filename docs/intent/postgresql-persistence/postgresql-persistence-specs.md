@@ -128,3 +128,12 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When `runner_credentials` has both
+  `index_runner_credentials_on_account_id` and the valid btree index
+  `index_runner_credentials_on_account_id_and_revoked_at`, a reversible,
+  concurrent migration SHALL remove only the standalone `account_id` index,
+  retain the composite index, restore the standalone index on rollback, and
+  remove it again on reapplication.
+  *Tests:* `spec/migrations/remove_redundant_runner_credentials_account_id_index_spec.rb`.
+  *Code:* `RemoveRedundantRunnerCredentialsAccountIdIndex`.
