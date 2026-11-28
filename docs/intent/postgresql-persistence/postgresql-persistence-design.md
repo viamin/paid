@@ -132,3 +132,8 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Project memberships retain their unique `(user_id, project_id)` index and
+`(project_id, role)` index. A corrective migration removes the redundant
+single-column user and project indexes concurrently, with concurrent recreation
+on rollback. Membership rows, foreign keys and tenant policies remain intact.
