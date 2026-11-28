@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-016** — Removing redundant project-membership
+  prefix indexes SHALL preserve user/project uniqueness and project/role lookup
+  coverage. Removal and rollback SHALL use concurrent index operations without
+  changing membership rows, tenant policies or foreign keys.
+  *Tests:* `spec/migrations/remove_redundant_project_membership_indexes_spec.rb`.
+  *Code:* `RemoveRedundantProjectMembershipIndexes`.
