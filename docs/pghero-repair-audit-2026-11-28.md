@@ -1050,3 +1050,49 @@ service_containers' account prefix. The former auth-materialization observation
 now belongs to repair 1161 / issue #5867. Before implementing any of these,
 refresh all open PRs and active runs, inspect catalog and callers, and compare
 concrete repair coverage. No issue was closed merely from this classification.
+
+## Current accounting and run-resource ledger repair
+
+The 10:05:32 UTC snapshot still contains 248 findings, 207 owned and 41 unowned,
+with three active Paid runs. An all-open-PR comparison completed at 10:07:25 UTC:
+191 trusted PRs, 159 with explicit index removals, 189 distinct removal targets,
+no repeated removal targets and no observed covering-index removals. Private
+`pr-all-run-resource/` preserves complete immutable comparison evidence. Active
+PRs were read only. The subsequent PR #5869 is not included in that audit.
+
+`pre-run-resource/finding-dispositions.json` accounts for all 248 findings:
+189 match a named index removal in an open PR; eight have PR claims requiring
+causal implementation review; 12 catalog redundancies require implementation;
+22 queries need causal evidence; 16 unused-index observations need representative
+usage and dependency evidence; one cache observation needs representative workload
+evidence. These are explicit unfinished dispositions, not verified closeout.
+Closing or Tracks references alone do not establish causal coverage. Before
+mutations, refresh active runs and PR heads again.
+
+Sources #5855 and #5867 now share draft PR #5869 at
+`065a00451bd028acd1d79507c360dbf1c2aa49c9`, with both closing references and
+paid-automation. Both sources carry waiting; only unclaimed queued runs 32262 and
+32269 were cancelled. Original source instructions and rationale are retained in
+private `run-resource-source-requirements.json`. The migration removes two
+nonunique agent-run prefixes, retaining full unique provisioning run/kind/attempt
+identity and runner-auth run/runner/container provenance, plus all other indexes.
+The partial provisioning request-ID index is not used as the sole coverer.
+
+In new isolated `paid_test_pghero_run_resources`, confirmed empty before schema
+loading, the removal regression failed against the empty migration (four examples,
+one failure). Concurrent upgrade/rollback/upgrade succeeded. Final migration,
+ProvisioningIntent, LocalDockerRunner and managed-auth/login-flow checks passed
+236 examples, zero failures. Checks cover retained index definitions/validity,
+unchanged ledger rows and credential-generation provenance, uniqueness and usable
+run-prefix/full-identity paths including intents without request IDs. Schema
+is Rails-generated with exactly two removals and version change; a later dump's
+unrelated trigger-order churn was discarded in favor of that generated snapshot.
+Lint, hooks and coherence completed, with existing unrelated coherence warnings.
+Simplicity/prose review found no additional abstraction necessary.
+
+Physical migration, representative workload measurements and full repository CI
+remain unrun in the operating environment. Normal job
+`47290059-6bd7-4a98-a075-ecce577adef6` was enqueued at 10:11:51 UTC to verify
+ownership import and source-requirement retention. Its outcome remains pending;
+no superseded source has been closed yet. Private
+`run-resource-validation-manifest.json` records revision, hashes and actual tests.
