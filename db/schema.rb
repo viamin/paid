@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_050820) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4814,11 +4814,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.bigint "style_guide_version_id", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_run_id", "guide_name"], name: "index_style_guide_run_exposures_on_run_and_name", unique: true
-    t.index ["agent_run_id"], name: "index_style_guide_run_exposures_on_agent_run_id"
     t.index ["style_guide_ab_test_assignment_id"], name: "idx_on_style_guide_ab_test_assignment_id_d2bca3fb4e"
-    t.index ["style_guide_ab_test_assignment_id"], name: "index_style_guide_run_exposures_on_assignment_id"
     t.index ["style_guide_id", "created_at"], name: "idx_on_style_guide_id_created_at_4675f78c23"
-    t.index ["style_guide_id"], name: "index_style_guide_run_exposures_on_style_guide_id"
     t.index ["style_guide_version_id"], name: "index_style_guide_run_exposures_on_style_guide_version_id"
   end
 

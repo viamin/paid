@@ -128,3 +128,11 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-017** — Removing redundant style-guide exposure
+  indexes SHALL preserve run/name uniqueness, retained run, assignment and guide
+  lookup indexes, unrelated version lookup coverage and exposure rows. Removal
+  and rollback SHALL use concurrent index operations without changing tenant
+  policies or foreign keys.
+  *Tests:* `spec/migrations/remove_redundant_style_guide_exposure_indexes_spec.rb`.
+  *Code:* `RemoveRedundantStyleGuideExposureIndexes`.
