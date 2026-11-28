@@ -156,6 +156,13 @@ RSpec.describe IssueEnhancements::TechnicalStopRecovery do
     expect(ProcessRunQueueJob).not_to have_received(:perform_later)
   end
 
+  # @spec ISSUE-ENHANCEMENT-021 LABEL-CONTROL-007
+  it "uses the project setting as the Paid-local activation decision" do
+    project.update!(label_integration_mode: "ignored", auto_enhance_enabled: true)
+
+    expect(described_class.call(agent_run:).outcome).to eq(:recovered)
+  end
+
   # @spec ISSUE-ENHANCEMENT-021
   %w[auto_enhance paid_in_full].each do |feature|
     it "honors trusted legacy #{feature} activation for this issue" do

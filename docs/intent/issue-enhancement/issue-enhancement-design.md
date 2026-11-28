@@ -383,6 +383,18 @@ The delayed claim separately rechecks the same effective skip-label or
 Paid-local exclusion hold used by normal queue/dequeue admission. Project
 activation does not override a hold added while recovery was waiting, and a
 held attempt consumes neither its recovery claim nor its budget check.
+
+The continuation-admission inventory is deliberately small:
+
+| Entry point | Original admission decision retained | Separate boundaries retained |
+|---|---|---|
+| Initial automatic enhancement queue (`Automation::Strategies::AutoPick`) | `Automation::FeatureActivation.issue_auto_enhance_enabled?` | Candidate-source effective skip-label or Paid-local hold, policy, budget, ownership, and questions |
+| Delayed technical-stop recovery (`RecoverTechnicalEnhancementStopJob` → `IssueEnhancements::TechnicalStopRecovery`) | `Automation::FeatureActivation.issue_auto_enhance_enabled?` | Candidate-source effective skip-label or Paid-local hold at claim time, current revision, policy, budget, ownership, and questions |
+| Explicit operator-triggered enhancement | Operator action, not automatic feature activation | Its existing manual-run and issue-state boundaries |
+
+The recovery job only schedules the delayed claim; it introduces no separate
+authorization interpretation or renewal of an automatic attempt.
+
 The shared deduplication statuses define existing work ownership: a rate-limited
 run still owns its work while awaiting recovery and blocks another successor.
 Human questions, independent holds, and exhausted recovery remain actionable
