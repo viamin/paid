@@ -40,6 +40,12 @@ development and explicit `db:schema:dump` retain Rails defaults. This prevents
 local catalog differences from becoming auto-stashed edits that conflict with
 later upstream migrations.
 
+When a PostgreSQL catalog confirms that a composite B-tree index has the same
+leading column as a redundant single-column index, the redundant index is
+removed through a reversible concurrent migration. The composite index remains
+the query access path, preserving the leading-column lookup while eliminating
+duplicated index storage and write maintenance.
+
 The complete-policy bootstrap repair is a frozen, transactional metadata
 migration sourced from the migrated main policy catalog: 224 policies across
 200 tables at revision `2fb3a7103`. It restores their full current predicates
