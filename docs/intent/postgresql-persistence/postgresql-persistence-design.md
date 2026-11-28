@@ -132,3 +132,8 @@ policies, and production `pg_stat_statements` monitoring. The development
 PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
 stats; production monitoring remains operational evolution.
 These steps are not blockers to the implemented PostgreSQL foundation.
+
+Token usage retains its knowledge-run/time and request-type/time indexes. The
+corrective migration removes their redundant single-column prefixes concurrently
+and recreates them concurrently on rollback. Other lookup indexes, usage rows,
+cost/token values, foreign keys and tenant policies remain intact.

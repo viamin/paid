@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_28_060847) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4975,10 +4975,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_25_140337) do
     t.index ["chat_session_id"], name: "index_token_usages_on_chat_session_id"
     t.index ["created_at"], name: "index_token_usages_on_created_at"
     t.index ["knowledge_run_id", "created_at"], name: "idx_token_usages_knowledge_run_created_at"
-    t.index ["knowledge_run_id"], name: "index_token_usages_on_knowledge_run_id"
     t.index ["llm_model"], name: "index_token_usages_on_llm_model"
     t.index ["request_type", "created_at"], name: "idx_token_usages_request_type_created_at"
-    t.index ["request_type"], name: "index_token_usages_on_request_type"
     t.check_constraint "((agent_run_id IS NOT NULL)::integer + (knowledge_run_id IS NOT NULL)::integer + (chat_session_id IS NOT NULL)::integer) = 1", name: "token_usages_exactly_one_run"
   end
 
