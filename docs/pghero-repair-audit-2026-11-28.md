@@ -1481,3 +1481,39 @@ duplicate enqueue was attempted. Ownership reads before execution still had null
 PR references for #5790 and #5822, so import remains unverified. PR #5605's body
 now records the two earlier successful terminal scans instead of calling them
 queued; broad semantic correctness and physical operating acceptance remain open.
+
+## Shared watermark-query implementation and recovered ownership
+
+Source #5881 and draft paid-automation PR #5882 implement one shared repair for
+queries `-5925980023722500190` and `-5891326464486699645`: compute count and latest
+update together for each durable watermark scope, including account-grouped
+runners. The 197-PR immutable audit had no change to this file; fresh native reads
+found both findings unowned, and a subsequent exact-symbol GitHub search found
+no open issue. Both observation markers and `Fixes #5881` are on the PR. Source
+has the waiting label; normal ownership import remains unverified.
+
+Feature worktree `/tmp/paid-pghero-watermark-aggregation`, branch
+`fix/pghero-watermark-aggregation`, commit `4466ec9a8` contains source, intent
+(PARTIAL-CLOSEOUT-042) and permanent regressions. The original code failed one of
+four new examples by issuing two aggregations. After implementation, 27 focused
+watermark/reconciliation/invalidation/projection-security examples passed (seed
+44622); the final test prose cleanup rerun passed four (39334). Changed-file
+lint and commit hooks passed, and coherence completed with existing advisory
+gaps. Simplicity review retained one small shared grouped-input helper and no
+new service, dependency or index.
+
+Read-only repeatable-read operating comparison at 12:05:28 UTC preserved every
+old/new fingerprint and watermark for projects 19 (Paid), 14 and 15 under a
+frozen local clock. Source loaded only into the diagnostic runner, not the
+operating app. Private `watermark-operating-parity.json` retains exact snapshots.
+The earlier EXPLAIN sample suggests reduced scan work but is not representative
+performance acceptance. CI/review, operating process exercise and successful
+collector disappearance without a replacement regression remain required.
+
+Recovery-import job `2d387806-4ac2-45fc-a143-bc3e8dc200c4` ran from 12:01:57 to
+12:03:57 UTC: 245 findings, zero creates/updates/reopens/closures, 34 deferred,
+zero assessed, all categories collected and an inference timeout. This is failed
+assessment, not deduplication success. Its ownership import nevertheless
+succeeded: #5790 maps to repair 1117 / PR #5879 and #5822 to repair 1138 / PR #5880,
+with neither source active. Private `recovery-publication-ownership.json` records
+those separate facts. The worker was left running; no duplicate job was enqueued.
