@@ -1196,3 +1196,51 @@ coverage. Source #5871 has active Paid run 32272 and is untouched. Refresh that
 run and its resulting PR before consolidation. Assess whether scanner evidence
 should expose alternate covering indexes so bounded AI assessment can evaluate
 shared repairs without relying on PgHero's chosen pair or table-name grouping.
+
+## Alternate index evidence implemented and applied locally
+
+Scanner revision `e463769ba9be134604ae21c1b7470737896fb7f4` supplies all indexes
+from the already-collected same-schema/table catalog with complete definitions,
+validity and uniqueness. Entries are sorted by name; partial and invalid entries
+remain evidence, not approved coverers. PgHero's selected pair remains intact.
+The assessment prompt asks AI to inspect alternatives and shared repair scope,
+checking actual predicates, keys, validity and uniqueness. Collection makes no
+semantic eligibility or repair-grouping decision. No additional catalog query,
+provider wrapper or new abstraction was introduced. Input budgets, trust gates,
+publication readiness and ownership/lifecycle validation remain unchanged.
+
+The missing-evidence regression first failed (two examples, one failure). Final
+focused scanner validation passed 109 examples in both publication and operating
+workspaces using isolated `paid_test_pghero_repair_filing`; lint/hooks and coherence
+completed, with existing unrelated coherence warnings. Tests cover same-schema/
+table isolation, preservation of partial and invalid alternatives, unchanged
+chosen-pair evidence and stable fingerprints under reordered catalog context,
+plus full context reaching Llm::Request and acceptance of a shared proposal.
+These mocked inference checks do not prove improved semantic grouping quality.
+Original implementation commit is `d929d3b19d5ef691e3a772a346b8cb1ec266fcb8`;
+checked patches were also applied to the operating workspace without overwriting
+unrelated intent changes. No PgHero job was unfinished during rollout.
+
+Two read-only operating collections at 10:36:12 UTC found 201 duplicate-index
+observations, all with nonempty table-index context. Maximum context was 9,396
+bytes and maximum finding detail 10,303 bytes; all duplicate fingerprints matched
+across both collections. All collection categories were available. This measures
+actual payloads, not publication or successful AI consolidation. Private
+`alternate-coverers-operating-probe.json` retains the measurements and credential
+example. A first filing run can refresh existing evidence bodies and fingerprints;
+that alone is not unexpected new issue creation.
+
+Normal external job `72b9c0cf-0266-4857-b578-880397fc4445` was enqueued at
+10:37:27 UTC to validate the changed collector and assessment prompt. Its terminal
+outcome and semantic progress remain pending. Source #5871's active Paid run is
+untouched; any existing credential work must be refreshed before consolidation.
+
+The preceding provider-key handoff job `0dcbedde-302d-431c-ba9e-5212aa1d8c6e`
+finished at 10:32:58 UTC on the earlier scanner code: 250 findings, zero creates,
+one update, zero reopens/closures, 41 deferred, zero assessed, all categories
+collected and an inference timeout after 137,745 ms. This is not healthy
+assessment evidence. Its independent import succeeded: repair 1154 / #5852 /
+PR #5868 retains the original source instructions and rationale, with no active
+source run. Private `provider-key-{ownership.json,validation-result.log}` records
+both import and timeout evidence. No physical repair was applied to the operating
+database, and full repository CI remains unverified.
