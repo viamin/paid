@@ -38,3 +38,5 @@ prefix: TEST-SUITE
 - [x] **TEST-SUITE-029** — When the runner startup-budget regression asserts an exact remaining run budget, it SHALL freeze the scenario's wall clock and restore it afterward, preserving exact execution and startup timeout expectations and the application budget calculation.
 
 - [x] **TEST-SUITE-030** — When an assignment-update spec checks a later explicit variant override, it SHALL start with a different explicit variant, verify both persisted states, and retain the existing assignment record so the update path is exercised independently of randomized selection.
+
+- [x] **TEST-SUITE-031** — When a container-watchdog spec waits for the watchdog to poll, stop, or recover after a handled poll error, it SHALL synchronize on a bounded observed signal (queue push or stop flag) rather than a fixed sleep; heartbeat activity attributed to the monitored command SHALL be produced by that command's own exec thread; and a fixture whose bounded progress wait fails SHALL still stop the watchdog it owns.

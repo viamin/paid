@@ -303,3 +303,20 @@ their own mutation boundaries. Do not restore a suite-wide prepared-statement
 opt-out to mask a local fixture problem. Existing complete DATABASE_URL routing,
 transactional fixtures, callbacks, RLS roles and the aggregate coverage gate
 remain authoritative.
+
+## Watchdog recovery probe synchronization
+
+Container-watchdog specs synchronize on observed watchdog progress instead of
+fixed sleeps. The poll-error recovery probe waits for a bounded queue signal
+pushed by the observed subsequent heartbeat poll, and a negative control
+disables recovery after the first handled error so the follow-up poll never
+completes; that control proves the bounded wait fails on its timeout rather
+than passing on elapsed time, while the fixture still stops the watchdog it
+owns. Specs waiting for a stop poll the shared stop flag under
+`Timeout.timeout`. Remaining fixed sleeps are scenario durations — command
+runtime and agent heartbeat cadence — produced by the monitored command's own
+exec thread and outlasting the product deadline under assertion, because a
+negative assertion (no timeout fired) can only be proven by time beyond the
+deadline. Heartbeat activity attributed to the monitored command is produced
+by that command's exec thread rather than a racing side thread. The watchdog
+poll interval and execution limits are product behavior and stay unchanged.

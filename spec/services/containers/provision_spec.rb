@@ -5218,16 +5218,16 @@ RSpec.describe Containers::Provision do
         }.to raise_error(described_class::IdleTimeoutError)
       end
 
+      # @spec TEST-SUITE-031
       it "suppresses wall-clock timeout when heartbeat is fresh" do
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          Thread.new do
-            20.times do
-              FileUtils.touch(heartbeat_path)
-              sleep 0.01
-            end
+          # The monitored command touches its own heartbeat while it runs; a
+          # fresh heartbeat suppresses the wall-clock deadline that elapses
+          # during the exec.
+          25.times do
+            FileUtils.touch(heartbeat_path)
+            sleep 0.01
           end
-          # With heartbeat suppressing wall-clock timeout, exec completes normally
-          sleep 0.25
           [ [], [], 0 ]
         end
 
@@ -5361,6 +5361,7 @@ RSpec.describe Containers::Provision do
       allow(service).to receive(:watchdog_poll_interval).and_return(0.05)
     end
 
+    # @spec TEST-SUITE-031
     it "logs unexpected poll errors and keeps running" do
       allow(service).to receive(:log_system)
       heartbeat_checks = 0
@@ -5382,6 +5383,38 @@ RSpec.describe Containers::Provision do
       )
       expect(heartbeat_checks).to be >= 2
       expect(watchdog_state[:timeout_reason]).to be_nil
+    end
+
+    # @spec TEST-SUITE-031
+    it "fails the bounded progress wait when recovery after the first poll error is disabled" do
+      # Negative control for the recovery case above: when no subsequent poll
+      # completes after the first handled error — the condition the PR5370
+      # acceptance failure observed — the bounded wait must fail on its timeout
+      # rather than pass on elapsed time, and the fixture still stops its watchdog.
+      allow(service).to receive(:log_system)
+      heartbeat_checks = 0
+      resumed_polling = Queue.new
+      watchdog_thread = nil
+      allow(service).to receive(:heartbeat_age_seconds).with("/tmp/heartbeat") do
+        watchdog_thread ||= Thread.current
+        heartbeat_checks += 1
+        raise Errno::ELOOP, "/tmp/heartbeat" if heartbeat_checks == 1
+
+        # Recovery disabled: the follow-up poll never completes, so no
+        # observed-progress signal can arrive.
+        Queue.new.pop
+      end
+
+      expect {
+        with_running_watchdog { expect(resumed_polling.pop(timeout: 0.5)).to be(true) }
+      }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+
+      expect(heartbeat_checks).to be >= 1
+      expect(service).to have_received(:log_system).with(
+        "container.watchdog.poll_failed", error: anything, error_class: "Errno::ELOOP"
+      )
+      expect(watchdog_state[:timeout_reason]).to be_nil
+      expect(watchdog_thread.alive?).to be false
     end
   end
 
