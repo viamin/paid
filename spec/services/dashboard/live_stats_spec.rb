@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Dashboard::LiveStats do
+RSpec.describe Dashboard::LiveStats do # @spec DASHBOARD-LIVE-STATS-001 DASHBOARD-LIVE-STATS-003
   around do |example|
     original_store = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new

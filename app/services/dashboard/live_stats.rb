@@ -20,9 +20,12 @@ module Dashboard
 
     attr_reader :account
 
+    # @spec DASHBOARD-LIVE-STATS-001 DASHBOARD-LIVE-STATS-002 DASHBOARD-LIVE-STATS-003
     def build_stats
       today = Time.current.beginning_of_day
-      run_counts = agent_runs.pick(
+      contributing_runs = agent_runs.where(status: %w[running queued])
+        .or(agent_runs.where(completed_at: today..))
+      run_counts = contributing_runs.pick(
         Arel.sql("COUNT(*) FILTER (WHERE status = 'running')"),
         Arel.sql("COUNT(*) FILTER (WHERE status = 'queued' AND temporal_workflow_id IS NULL)"),
         Arel.sql(completed_today_sql(today)),
