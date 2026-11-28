@@ -119,6 +119,12 @@ attributes, and the token records retain change history through Logidze.
 Knowledge search uses PostgreSQL text-search features (`tsvector`, `pg_trgm`,
 GIN indexes, trigger-maintained search vectors) for the shipped full-text path.
 
+Redundant indexes are removed only after catalog verification confirms a valid
+retained btree index has the removed index's columns as its leading prefix. The
+`project_versions` `(project_id, committed_at DESC)` index therefore remains
+the lookup path for `project_id` while the duplicate single-column index is
+removed with reversible concurrent DDL.
+
 Migration replay tests isolate their DDL in rollback-only transactions. Testing
 a historical rollback must restore the exact pre-example catalog, including
 policies and enable/force flags added by later migrations; replaying only an

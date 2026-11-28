@@ -128,3 +128,10 @@
   `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
   *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
   functions and triggers.
+
+- [x] **POSTGRESQL-PERSISTENCE-014** — When a valid btree index on
+  `project_versions(project_id, committed_at DESC)` exists, the persistence
+  layer SHALL remove the redundant `project_versions(project_id)` index using
+  reversible concurrent DDL while retaining the covering index.
+  *Tests:* `spec/migrations/remove_redundant_project_versions_project_index_spec.rb`.
+  *Code:* `RemoveRedundantProjectVersionsProjectIndex`.
