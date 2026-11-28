@@ -162,10 +162,14 @@ class AutoReleaseEvaluationJob < ApplicationJob
       return
     end
 
-    client.merge_pull_request(
-      project.full_name, result.pr_number,
-      merge_method: project.merge_method
-    )
+    options = { merge_method: project.merge_method }
+    if MainCi::Policy.new(project).enabled?
+      head_sha = client.pull_request(project.full_name, result.pr_number).head.sha
+      return unless MainCi::MergeGate.allowed?(project: project, number: result.pr_number, head_sha: head_sha, client: client)
+
+      options[:expected_head_sha] = head_sha
+    end
+    client.merge_pull_request(project.full_name, result.pr_number, **options)
 
     add_label(client, project, result.pr_number)
     add_comment(client, project, result)

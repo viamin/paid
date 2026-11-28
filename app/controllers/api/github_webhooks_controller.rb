@@ -27,6 +27,8 @@ module Api
         handle_issue_comment
       when "issues"
         handle_issue
+      when "workflow_run"
+        handle_main_workflow_run
       when "check_suite"
         handle_check_suite
       when "check_run"
@@ -171,8 +173,21 @@ module Api
       head :ok
     end
 
+    def handle_main_workflow_run
+      enqueue_main_ci_reconciliation if payload["action"] == "completed"
+      head :ok
+    end
+
+    def enqueue_main_ci_reconciliation
+      return unless @project && MainCi::Policy.new(@project).enabled?
+
+      MainCiReconciliationJob.perform_later(@project.id)
+    end
+
     def handle_check_suite
       return head(:ok) unless payload["action"] == "completed"
+
+      enqueue_main_ci_reconciliation
 
       if @project&.auto_release_enabled?
         enqueue_auto_release_evaluation
@@ -187,6 +202,8 @@ module Api
 
     def handle_check_run
       return head(:ok) unless payload["action"] == "completed"
+
+      enqueue_main_ci_reconciliation
 
       if @project&.auto_release_enabled?
         enqueue_auto_release_evaluation

@@ -100,6 +100,10 @@ module Automation
             raise PROVIDER_ERROR, "Unsupported merge method: #{method.inspect}"
           end
 
+          unless MainCi::MergeGate.allowed?(project: project, number: number, head_sha: expected_head_sha, client: client)
+            raise PROVIDER_ERROR, "Required main CI recovery blocks this merge"
+          end
+
           options = { merge_method: method.to_s, commit_title:, commit_message: }
           options[:expected_head_sha] = expected_head_sha if expected_head_sha
           response = with_errors { client.merge_pull_request(repo, number, **options) }

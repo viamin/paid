@@ -833,6 +833,9 @@ class ProjectsController < ApplicationController
     return {} unless rs
 
     settings = rs.to_h
+    if @project.review_settings.is_a?(Hash) && @project.review_settings.key?("main_ci_recovery")
+      settings["main_ci_recovery"] = @project.review_settings["main_ci_recovery"]
+    end
     cast_review_settings(settings)
   end
 

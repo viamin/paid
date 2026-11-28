@@ -783,6 +783,29 @@ class GithubClient
     end
   end
 
+  # @spec MAIN-CI-001 MAIN-CI-006
+  def default_branch_head(repo)
+    handle_errors do
+      branch = client.repository(repo).default_branch
+      { branch: branch, sha: client.ref(repo, "heads/#{branch}").object.sha }
+    end
+  end
+
+  # Exact-SHA proofs reject truncation; branch history is bounded discovery only.
+  # @spec MAIN-CI-002 MAIN-CI-006
+  def full_verification_runs(repo, sha: nil, branch:, event: "push")
+    handle_errors do
+      options = { head_sha: sha, event: event, branch: (branch if event == "push"), per_page: WORKFLOW_RUNS_PER_PAGE }.compact
+      response = client.repository_workflow_runs(repo, **options)
+      raise Error, "Full verification workflow results are truncated" if sha && response.total_count > WORKFLOW_RUNS_PER_PAGE
+
+      response.workflow_runs.map do |run|
+        { id: run.id, run_attempt: run.run_attempt, path: run.path, event: run.event, head_branch: run.head_branch,
+          head_sha: run.head_sha, status: run.status, conclusion: run.conclusion, html_url: run.html_url }
+      end
+    end
+  end
+
   # Lists GitHub Actions workflow runs for a specific commit SHA, deduped to
   # the latest run per workflow file. Used as a fallback CI verifier when
   # callers cannot read the Checks API (e.g., fine-grained tokens, which
