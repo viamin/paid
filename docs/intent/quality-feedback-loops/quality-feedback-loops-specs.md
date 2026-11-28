@@ -103,3 +103,12 @@
   `app/services/dashboard/stats.rb`.
   *Test:* `spec/services/quality_metrics/collect_spec.rb`,
   `spec/services/dashboard/stats_spec.rb`.
+
+- [x] **QUALITY-LOOPS-010** — Quality collection SHALL aggregate statistics for
+  the versions exposed to a run in one query, preserving distinct run counts,
+  automated scored-metric and scoreable-run filters, tenant boundaries and
+  four-decimal averages. It SHALL reset empty exposed groups to zero/null and
+  leave unexposed versions unchanged.
+  *Code:* `QualityMetrics::Collect`.
+  *Test:* `spec/services/quality_metrics/collect_style_guide_version_stats_spec.rb`,
+  `spec/services/quality_metrics/collect_spec.rb`.
